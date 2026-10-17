@@ -131,7 +131,8 @@ test/                node --test
 ## Publishing
 
 `.github/workflows/pages.yml` publishes `site/` to GitHub Pages on every push to `main` that
-touches it. One-time setting: **Settings → Pages → Source: GitHub Actions**.
+touches it. One-time setting: **Settings → Pages → Source: GitHub Actions**. (Under the older
+"Deploy from a branch" setting, the root `index.html` sends visitors on to `site/`.)
 
 ## Related
 
