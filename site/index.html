@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>open-ALERT configurator</title>
+<meta name="description" content="Plan ALERT and ALERT2 flood-warning field stations, repeaters and base stations: say what each site must do, see the hardware that fits, and what each choice costs and commits you to.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the configurator</a>
+<header class="hero">
+  <div class="wrap hero-in">
+    <img src="icon.svg" width="52" height="52" alt="">
+    <div class="hero-text">
+      <h1>open-ALERT <span>configurator</span></h1>
+      <p>Plan ALERT and ALERT2 flood-warning sites — field stations, repeaters and base stations. Say what each must do; see the hardware that fits, open and closed, budget to industrial; then what your choices cost and commit you to.</p>
+    </div>
+    <button type="button" class="ghost theme-btn" data-act="theme" aria-label="Colour theme" title="Colour theme"><span id="theme-label">Auto</span></button>
+  </div>
+  <nav class="wrap tabs" role="tablist" aria-label="Views">
+    <button type="button" role="tab" id="tab-configure" data-act="view" data-view="configure" aria-controls="view-configure">Configure</button>
+    <button type="button" role="tab" id="tab-network" data-act="view" data-view="network" aria-controls="view-network">Network</button>
+    <button type="button" role="tab" id="tab-catalogue" data-act="view" data-view="catalogue" aria-controls="view-catalogue">Hardware catalogue</button>
+    <button type="button" role="tab" id="tab-about" data-act="view" data-view="about" aria-controls="view-about">How it works</button>
+  </nav>
+</header>
+
+<main id="main" class="wrap">
+  <noscript><p class="note bad">This configurator needs JavaScript.</p></noscript>
+  <section id="view-configure" role="tabpanel" aria-labelledby="tab-configure" class="view"></section>
+  <section id="view-network" role="tabpanel" aria-labelledby="tab-network" class="view" hidden></section>
+  <section id="view-catalogue" role="tabpanel" aria-labelledby="tab-catalogue" class="view" hidden></section>
+  <section id="view-about" role="tabpanel" aria-labelledby="tab-about" class="view" hidden>
+    <article class="prose">
+      <h2>How it works</h2>
+      <p>Every site in an ALERT network does one of three jobs. A <b>field station</b> measures rain or river level and sends each reading by VHF radio; a <b>repeater</b> on a hilltop hears field stations and sends their readings on; a <b>base station</b> receives the bursts and forwards them — to <a href="https://floodwarning.net/" target="_blank" rel="noopener">Flood-Net</a>, a council's SCADA, or the Bureau.</p>
+      <figure class="diagram" aria-label="Field stations send to repeaters, repeaters send to base stations, base stations forward over the internet">
+        <svg viewBox="0 0 760 150" role="img" aria-hidden="true">
+          <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+          <g class="d-node"><rect x="10" y="40" width="150" height="70" rx="10"/><text x="85" y="70">Field station</text><text x="85" y="92" class="d-sub">rain · river</text></g>
+          <g class="d-node"><rect x="215" y="40" width="150" height="70" rx="10"/><text x="290" y="70">Repeater</text><text x="290" y="92" class="d-sub">hilltop relay</text></g>
+          <g class="d-node"><rect x="420" y="40" width="150" height="70" rx="10"/><text x="495" y="70">Base station</text><text x="495" y="92" class="d-sub">receive · forward</text></g>
+          <g class="d-node d-cloud"><rect x="625" y="40" width="125" height="70" rx="35"/><text x="687" y="70">Flood-Net</text><text x="687" y="92" class="d-sub">or your system</text></g>
+          <g class="d-link"><line x1="162" y1="75" x2="212" y2="75" marker-end="url(#arr)"/><text x="187" y="62">VHF</text></g>
+          <g class="d-link"><line x1="367" y1="75" x2="417" y2="75" marker-end="url(#arr)"/><text x="392" y="62">VHF</text></g>
+          <g class="d-link"><line x1="572" y1="75" x2="622" y2="75" marker-end="url(#arr)"/><text x="597" y="62">IP</text></g>
+          <path class="d-direct" d="M85 112 C 85 140, 495 140, 495 112" marker-end="url(#arr)"/><text x="290" y="146" class="d-sub">or straight to a base in range</text>
+        </svg>
+      </figure>
+      <h3>Four steps for each site</h3>
+      <ol>
+        <li><b>Needs.</b> Answer what the site must do: the protocol, what it measures, its power, where the electronics live, how much reliability matters against cost, whether it must be open source.</li>
+        <li><b>Requirements.</b> The answers become a list of requirements — each a <i>must</i> or a <i>should</i>, each traced to the answer it came from.</li>
+        <li><b>Hardware.</b> Each part of the site — the controller, the radio, the antenna, the battery — lists every catalogued option, sorted so the ones that meet the requirements come first. Those that don't say why. The supporting parts a choice drags in (coax, arrestor, a supply, a boot card, an adapter) are added for you.</li>
+        <li><b>Result.</b> The bill of materials, the power budget with the battery and panel sized for it, whether every requirement is met, and the consequences: the firmware and who maintains it, what is closed, licensing, the skills it needs, the life of each part, the maintenance it commits you to.</li>
+      </ol>
+      <p>Add as many sites as the network has — each with a quantity — and the <b>Network</b> tab adds them up and checks that what the field sends, the repeaters relay and the bases receive actually meet.</p>
+
+      <h3>ALERT and ALERT2</h3>
+      <div class="table-wrap"><table class="tbl">
+        <thead><tr><th scope="col"></th><th scope="col">ALERT (ALERT1, "ERTS" / "ERRTS" in Australia)</th><th scope="col">ALERT2</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">On the air</th><td>300-baud AFSK on narrowband VHF FM. Queensland's bursts use tones of about 1,300 and 2,100 Hz (the CCITT V.23 pair, as RPi ALERT and Flood-Net decode them); US equipment uses 1,920 / 2,133 Hz — check before buying overseas gear.</td><td>4,800 bit/s 2-FSK with forward error correction, in 12.5 kHz channels.</td></tr>
+          <tr><th scope="row">When it sends</th><td>Whenever it has something to say (ALOHA): a burst of about a third of a second per reading. Bursts collide in storms, exactly when they matter.</td><td>In its own GPS-timed slot (TDMA), so stations do not collide. Each message is time-stamped at the source and carries up to five sensor reports.</td></tr>
+          <tr><th scope="row">A reading</th><td>A 13-bit address and an 11-bit value — 8,192 addresses, values 0–2,047. Formats: ALERT Binary, Enhanced iFLOWS (CRC-6), and others.</td><td>65,535 sites with up to 255 sensors each; integers, floats and time stamps.</td></tr>
+          <tr><th scope="row">Moving between them</th><td colspan="2">An ALERT2 repeater can <b>concentrate</b> legacy ALERT — hear an ALERT1 burst and send the reading on in its own ALERT2 slot — so the backbone can move first and the field stations follow. The recommended order: base stations, then repeaters, then gauges.</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small dim">Sources: the Bureau's ALERT2 protocol overview (Logan, Gayl and Thompson, 2015); ELPRO's ERT-A2 datasheet and 2024 ALERT2 introduction; NHWC's ALERT2 specifications (AirLink, MANT, Application Layer, IND API — free from the <a href="https://www.hydrologicwarning.org/" target="_blank" rel="noopener">National Hydrologic Warning Council</a>); Flood-Net's <code>alert-dsp.js</code>.</p>
+
+      <h3>The assumptions behind the numbers</h3>
+      <ul>
+        <li><b>Prices</b> are indicative, in Australian dollars, gathered in October 2026 from Australian retailers where possible and converted at US$0.69 and €0.61 to the dollar otherwise. Most ALERT equipment is quote-only: where a public planning figure exists (Flood-Net's ALERT2 transition plan) it is used and labelled an estimate; where none does, the price is blank — type your quote into the bill of materials and every total follows. Each price shows its basis: retail, list, estimate, used, quote.</li>
+        <li><b>GST.</b> Prices show including GST by default; switch it off on the Network tab. Planning figures quoted ex-GST are grossed up.</li>
+        <li><b>Power.</b> Each part's average draw, from its datasheet. A field station's radio is powered only to send: its average is its transmit draw for about half a second per send, times the sends on a wet day you set. A repeater's receiver listens all day. A 12 V → 5 V converter loses about 12%.</li>
+        <li><b>Battery.</b> Capacity = daily energy × days of autonomy ÷ (12 V × usable depth of discharge × 0.85). Usable depth: 50% for lead-acid, 80% for lithium iron phosphate.</li>
+        <li><b>Solar.</b> Panel = daily energy × 1.2 ÷ (worst-month peak-sun-hours × 0.75 with an MPPT controller, 0.65 with PWM). South-east Queensland's winter gives about 3.5 sun-hours on a tilted panel.</li>
+        <li><b>Heat.</b> A sealed box in full Queensland sun runs 20–25 °C over the air: about 65 °C inside on a hot day (an estimate, not a measurement). That is what "sealed enclosure in full sun" checks parts against; a sun shield or vented box takes 10–15 °C off.</li>
+        <li><b>Labour.</b> $700 a person-day and $700 a crew-day of travel (ex GST), as in Flood-Net's ALERT2 plan: a field station takes a crew of two a day (a day and a half with a level sensor), a repeater a day and a half (not counting tower work), a base a day plus a day per receive chain; one site visit a year. Change the rates, or switch labour off, on the Network tab.</li>
+        <li><b>Grades.</b> 1 hobby · 2 consumer, works if looked after · 3 prosumer or light industrial · 4 industrial · 5 proven in hydromet and utility field use.</li>
+      </ul>
+
+      <h3>What the law asks (Australia)</h3>
+      <ul>
+        <li>A transmitter on an ALERT channel runs under an <a href="https://www.acma.gov.au/apparatus-licences" target="_blank" rel="noopener">ACMA apparatus licence</a>, normally held by the network owner — the Bureau, a council, a water authority. An amateur licence does not cover it.</li>
+        <li>The transmitter must be compliant for Australian land-mobile use (AS/NZS 4295) and carry the RCM. Cheap handhelds such as the Quansheng UV-K5 and Baofeng UV-5R are not: on the bench, into a dummy load, they are fine; on a licensed channel they are an offence, with penalties up to two years' imprisonment for unlicensed operation.</li>
+        <li>Receiving needs no licence: a base station or a survey kit can listen with an SDR stick.</li>
+        <li>Mains wiring past a plug-in supply is a licensed electrician's job; climbing a tower is a qualified rigger's.</li>
+      </ul>
+      <p class="small dim">Not legal advice: check with the network owner and ACMA before transmitting.</p>
+
+      <h3>The software in this ecosystem</h3>
+      <ul>
+        <li><a href="https://github.com/cdomotor-g/RPi_ALERT" target="_blank" rel="noopener">RPi ALERT</a> (MIT) — a Raspberry Pi base-station OS: RTL-SDR sticks (several ALERT1 channels each), Quansheng radios on the ALERT firmware, ELPRO ERT-A2 (ALERT2), GPS; forwards to Flood-Net.</li>
+        <li><a href="https://github.com/cdomotor-g/quansheng_alert_v3" target="_blank" rel="noopener">quansheng_alert_v3</a> (Apache-2.0) — turns a Quansheng UV-K5 V3 or UV-K1 into a receive-only ALERT1 decoder on USB-C; <a href="https://github.com/cdomotor-g/quansheng_alert" target="_blank" rel="noopener">quansheng_alert</a> for the older DP32G030 radios.</li>
+        <li><a href="https://github.com/cdomotor-g/ALERT1v3" target="_blank" rel="noopener">FW-LAB Receiver (ALERT1v3)</a> — an RTL-SDR and GNU Radio ALERT receiver with MQTT and a web UI.</li>
+        <li><a href="https://github.com/cdomotor-g/MegaNet" target="_blank" rel="noopener">Flood-Net</a> — the network's web app: the Serial Monitor in Chrome reads the same receivers from a desk PC, and its ingest takes HTTPS, MQTT and the Bureau's HFEM lines.</li>
+        <li><a href="https://github.com/cdomotor-g/ALERT_PACKETS" target="_blank" rel="noopener">ALERT_PACKETS</a> — encode and decode ALERT frames by hand: the test bench for any encoder you build.</li>
+      </ul>
+
+      <h3>Adding hardware</h3>
+      <p>The catalogue is plain JavaScript in <code>site/data/</code>, one file per family, each part a short record: where it fits, what it can do, its price and where the price came from, its power, temperature range and grade, its firmware, and its sources. Add a part, run <code>npm test</code>, and open a pull request — the tests check every record and every preset.</p>
+      <p class="small dim">Specifications are from datasheets and vendor pages; confirm them before you buy. The catalogue is a starting point, not an endorsement. Corrections are welcome as issues on <a href="https://github.com/cdomotor-g/open-ALERT" target="_blank" rel="noopener">GitHub</a>.</p>
+    </article>
+  </section>
+</main>
+
+<dialog id="dlg" aria-labelledby="dlg-title"><div id="dlg-body"></div></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<footer class="wrap small dim">
+  <p>open-ALERT · MIT licence · <a href="https://github.com/cdomotor-g/open-ALERT" target="_blank" rel="noopener">source on GitHub</a> · prices indicative, October 2026 · specifications from vendors' datasheets: confirm before you buy.</p>
+</footer>
+
+<script src="data/alert.js"></script>
+<script src="data/compute.js"></script>
+<script src="data/radio.js"></script>
+<script src="data/sensors.js"></script>
+<script src="data/power.js"></script>
+<script src="data/site.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/presets.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "open-alert",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A configurator for ALERT and ALERT2 flood-warning field stations, repeaters and base stations.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "cd site && python3 -m http.server 8000"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
