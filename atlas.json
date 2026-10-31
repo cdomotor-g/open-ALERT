@@ -1,0 +1,259 @@
+{
+  "$schema": "https://cdomotor-g.github.io/atlas/schema/atlas.schema.json",
+  "atlas": 1,
+  "id": "open-alert",
+  "repo": "cdomotor-g/open-ALERT",
+  "name": "open-ALERT",
+  "tagline": "A configurator for ALERT and ALERT2 flood-warning sites: say what a site must do, see the hardware that fits, its costs and consequences.",
+  "about": "For anyone planning ALERT or ALERT2 field stations, repeaters or base stations. Each site goes from needs to requirements to hardware picked from a 248-part catalogue (open and closed, Raspberry Pi to industrial), then to a bill of materials, a power budget with battery and panel sized, labour and running costs, and the consequences of the choices. The Network tab adds sites up and checks that what field stations send, repeaters relay and bases receive actually meet. A static page with no server: state lives in the browser and in share links.",
+  "kind": "static web app (configurator)",
+  "logo": "site/icon.svg",
+  "site": "https://cdomotor-g.github.io/open-ALERT/",
+  "docs": {
+    "readme": "README.md",
+    "agents": "CLAUDE.md",
+    "catalogue": "site/data/",
+    "engine": "site/js/engine.js"
+  },
+  "version": {
+    "file": "package.json",
+    "pattern": "\"version\":\\s*\"([^\"]+)\""
+  },
+  "status": {
+    "phase": "beta",
+    "updated": "2026-10-31",
+    "summary": "Published in one push on 17 Oct 2026 and untouched since: it works end to end, but some catalogue entries already lag their sources (it says RPi ALERT 0.11; RPi ALERT is 0.15.x).",
+    "next": [
+      "Bring the RPi ALERT entry to 0.15.x: version, off-air ALERT2 AirLink, cons",
+      "Point the Quansheng V3 entry at quansheng_alert_ALL's browser installer",
+      "Re-check the FW-LAB entry: Flood-Net's runbook says to retire and archive it"
+    ],
+    "later": [
+      "Write the open-ALERT ALERT1 encoder firmware (catalogued as planned)",
+      "Write the open-ALERT store-and-forward repeater on RPi ALERT's receive side",
+      "Re-check quote-only and estimated prices with suppliers"
+    ]
+  },
+  "components": [
+    {
+      "id": "engine",
+      "name": "Rules engine",
+      "what": "Needs → requirements → per-slot fit → supporting parts → power, cost and consequences.",
+      "paths": [
+        "site/js/engine.js"
+      ],
+      "status": "live"
+    },
+    {
+      "id": "catalogue",
+      "name": "Hardware catalogue",
+      "what": "248 parts in six family files, each with price and its source, power, temperature, grade, openness and sources.",
+      "paths": [
+        "site/data/"
+      ],
+      "status": "live"
+    },
+    {
+      "id": "alert-catalogue",
+      "name": "ALERT equipment and software",
+      "what": "ERT-A2, Campbell and HSE units, encoders and base-station software — where the sibling repositories are cited.",
+      "paths": [
+        "site/data/alert.js"
+      ],
+      "status": "live"
+    },
+    {
+      "id": "presets",
+      "name": "Presets and example networks",
+      "what": "22 preset sites and 5 example networks as starting points; buyable ones must meet every must.",
+      "paths": [
+        "site/js/presets.js"
+      ],
+      "status": "live"
+    },
+    {
+      "id": "page",
+      "name": "Configurator page",
+      "what": "Configure, Network, Hardware catalogue and How it works tabs; state in localStorage and share links.",
+      "paths": [
+        "site/index.html",
+        "site/js/ui.js",
+        "site/style.css"
+      ],
+      "status": "live"
+    },
+    {
+      "id": "network",
+      "name": "Network check",
+      "what": "Adds sites up by quantity and checks field stations, repeaters and bases meet on protocol and path.",
+      "paths": [
+        "site/js/engine.js",
+        "site/js/ui.js"
+      ],
+      "status": "live"
+    },
+    {
+      "id": "tests",
+      "name": "Tests",
+      "what": "node --test: every record and reference, every preset, and the sizing, pricing and network rules.",
+      "paths": [
+        "test/engine.test.js",
+        ".github/workflows/test.yml"
+      ],
+      "status": "live"
+    },
+    {
+      "id": "publish",
+      "name": "Publishing",
+      "what": "Deploys site/ to GitHub Pages on every push to main, only if the tests pass.",
+      "paths": [
+        ".github/workflows/pages.yml",
+        "index.html"
+      ],
+      "status": "live"
+    },
+    {
+      "id": "oa-firmware",
+      "name": "open-ALERT encoder and repeater",
+      "what": "An open ALERT1 encoder for a $10 board and a Pi store-and-forward repeater — catalogued, not written.",
+      "status": "planned"
+    }
+  ],
+  "provides": [
+    {
+      "id": "hardware-catalogue",
+      "name": "ALERT hardware catalogue",
+      "what": "Plain-JavaScript records of 248 parts with prices and their sources, power, grades and links, for costing ALERT sites.",
+      "component": "catalogue",
+      "paths": [
+        "site/data/"
+      ],
+      "contract": "README.md"
+    },
+    {
+      "id": "configurator",
+      "name": "open-ALERT configurator",
+      "what": "The page itself, and share links to a configured site or network.",
+      "component": "page",
+      "paths": [
+        "site/js/ui.js"
+      ],
+      "url": "https://cdomotor-g.github.io/open-ALERT/"
+    }
+  ],
+  "consumes": [
+    {
+      "id": "rpi-alert-entry",
+      "from": "rpi-alert",
+      "provider": "release",
+      "into": "alert-catalogue",
+      "what": "RPi ALERT's catalogue entry and notes: version, receivers it reads, protocols, platforms, hardware and clock notes.",
+      "how": "reference",
+      "url": "https://github.com/cdomotor-g/RPi_ALERT",
+      "watch": [
+        "agent/package.json",
+        "README.md",
+        "docs/hardware.md",
+        "docs/how-it-works.md"
+      ],
+      "since": {
+        "version": {
+          "file": "site/data/alert.js",
+          "pattern": "RPi ALERT (\\d+\\.\\d+(?:\\.\\d+)?)"
+        }
+      },
+      "on_change": "Update the rpi-alert record in site/data/alert.js (fw.name version, reads, decodes, grade, cons) and the RPi ALERT notes in compute.js, radio.js and site.js; run npm test.",
+      "drift_issue": true
+    },
+    {
+      "id": "quansheng-v3-entry",
+      "from": "quansheng-v3",
+      "provider": "firmware",
+      "into": "catalogue",
+      "what": "The UV-K5 V3 / UV-K1 receiver entry: how to flash it, its serial interface, its on-air status.",
+      "how": "reference",
+      "url": "https://github.com/cdomotor-g/quansheng_alert_v3",
+      "watch": [
+        "README.md",
+        "docs/ALERT_SERIAL.md"
+      ],
+      "since": {
+        "date": "2026-10-17"
+      },
+      "on_change": "Update quansheng-uv-k5-v3 in site/data/radio.js (fw.note, status, cons); run npm test."
+    },
+    {
+      "id": "quansheng-v1-entry",
+      "from": "quansheng-v1",
+      "provider": "published-builds",
+      "into": "catalogue",
+      "what": "The DP32G030 UV-K5 entry: archived but flashable, read through a K-plug cable at 38,400 baud.",
+      "how": "reference",
+      "url": "https://github.com/cdomotor-g/quansheng_alert",
+      "watch": [
+        "README.md"
+      ],
+      "since": {
+        "date": "2026-10-17"
+      },
+      "on_change": "Update quansheng-uv-k5-dp32 in site/data/radio.js; run npm test."
+    },
+    {
+      "id": "fw-lab-entry",
+      "from": "fw-lab",
+      "provider": "receiver-docs",
+      "into": "alert-catalogue",
+      "what": "The FW-LAB Receiver entry and the GNU Radio lab base preset: SDRs, platforms, MQTT output.",
+      "how": "reference",
+      "url": "https://github.com/cdomotor-g/ALERT1v3",
+      "watch": [
+        "README.md",
+        "docs/PLATFORMS.md",
+        "docs/MQTT.md"
+      ],
+      "since": {
+        "date": "2026-10-17"
+      },
+      "on_change": "Update fwlab-receiver in site/data/alert.js and base-fwlab-x86 in site/js/presets.js (status eol if the repository is archived); run npm test."
+    },
+    {
+      "id": "alert-packets-frames",
+      "from": "alert-packets",
+      "provider": "frame-codec",
+      "into": "alert-catalogue",
+      "what": "ALERT frame formats (ABF, EIF, framing, CRC) cited for the planned open encoder.",
+      "how": "reference",
+      "url": "https://github.com/cdomotor-g/ALERT_PACKETS",
+      "watch": [
+        "index.html",
+        "README.md"
+      ],
+      "since": {
+        "date": "2026-10-17"
+      },
+      "on_change": "Re-check the oa-encoder and diy-minimodem-encoder records in site/data/alert.js."
+    },
+    {
+      "id": "flood-net-refs",
+      "from": "flood-net",
+      "into": "alert-catalogue",
+      "what": "ALERT2 transition plan planning prices, ALERT1 tones and timing, the Serial Monitor entry, and Flood-Net as the destination (HTTPS, MQTT, HFEM, 115E-2-A2 bridge).",
+      "how": "reference",
+      "url": "https://github.com/cdomotor-g/MegaNet",
+      "watch": [
+        "alert2-plan.js",
+        "alert-dsp.js",
+        "docs/ingest-serial-monitor.md",
+        "serial*.js",
+        "docs/elpro115e_mqtt.md",
+        "docs/ingest-http.md",
+        "docs/ingest-mqtt.md",
+        "docs/ingest-hfem.md"
+      ],
+      "since": {
+        "date": "2026-10-17"
+      },
+      "on_change": "Update the PLAN-priced records in site/data/alert.js and site/data/site.js (and usdPerAud in site/js/engine.js), the floodnet-serial-monitor record, and the Flood-Net outputs in engine.js; run npm test."
+    }
+  ]
+}
