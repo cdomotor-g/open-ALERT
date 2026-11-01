@@ -7,6 +7,9 @@ choices cost and what they commit you to.
 
 **→ Open the configurator: <https://cdomotor-g.github.io/open-ALERT/>**
 
+**→ Build a base station: <https://cdomotor-g.github.io/open-ALERT/build.html>** — the base
+station builder (below).
+
 It is a static page with no build step and no server: everything runs in the browser, and
 what you build is kept in your browser and in share links.
 
@@ -44,9 +47,35 @@ ERT-A2 can't also repeat ALERT2 with one receiver. The **How it works** tab in t
 sets out every assumption behind the numbers (power, battery, solar, heat, labour, grades)
 and what Australian law asks of a transmitter.
 
+## The base station builder
+
+`site/build.html` goes deeper on one kind of site: a receiving base station running
+[RPi ALERT](https://github.com/cdomotor-g/RPi_ALERT) and forwarding to Flood-Net.
+
+- **How it works** — a diagram from field station to Flood-Net (tap a part for what it does
+  and which code does it), and how a single board, a module on a carrier and a boxed computer
+  fit together physically, with the SDR on USB or in an M.2 slot.
+- **Build one** — pick the computer (Pi 4 / 5, Compute Module 5, Revolution Pi Connect 5,
+  Toradex Verdin AM62 on Mallow, N150 mini PC, fanless industrial x86), the channels, the SDR
+  and how it's held (straight in, a clamped extension, a sealed Bulgin locking USB, or an M.2
+  card to design), the antenna and RF chain, power, backhaul and the box. It plans the sticks
+  (the narrowest window that holds each stick's channels, as RPi ALERT tunes them), works out
+  the CPU each computer would need from RPi ALERT's own measurements — today and with the
+  planned faster decoder — draws the box from what's in it, and gives the bill with **price
+  ranges, lead times and where to buy**, a lead-time chart and the **build steps**, from
+  flashing to checking the readings arrive in Flood-Net.
+- **The custom path** — away from the Raspberry Pi: an off-the-shelf module and carrier, a
+  faster decoder, an M.2 SDR card, then a carrier of your own and its EMC testing, with rough
+  costs and timescales.
+
+Its data is `site/data/builder.js` (ranges, lead times, suppliers and sources for every part,
+referring to catalogue records for the rest) and its logic `site/js/builder.js`; the tests in
+`test/builder.test.js` hold the stick planner and the CPU model to RPi ALERT's documented
+cases.
+
 ## The catalogue
 
-248 parts, each with where it fits, what it can do, its price and where the price came
+250 parts, each with where it fits, what it can do, its price and where the price came
 from, its power, operating temperature, a 1–5 grade for field use, status (current, young,
 end of life, planned, DIY), firmware and openness, pros and cons, and sources.
 
@@ -54,7 +83,7 @@ end of life, planned, DIY), firmware and openness, pros and cons, and sources.
 |---|---|---|
 | ALERT equipment | 14 | ELPRO ERT-A2 and 115E-2-A2 gateway, Campbell ALERT200X / ALERT205X / ALERT121A / AL200X / AL205B, HSE 3306 / 333X / 1012, Hydrolynx |
 | Software & firmware | 10 | RPi ALERT, FW-LAB Receiver, the Flood-Net Serial Monitor, Campbell ALERT2ADM, OneRain Contrail, the Bureau's Enviromon; a minimodem encoder; open-ALERT's encoder firmware and repeater (planned) |
-| Loggers & computers | 42 | Raspberry Pi 5 / 4 / Zero 2 W / CM4; industrial Pis (Revolution Pi, Strato Pi, reComputer, OnLogic, CompuLab, EDATEC); BeagleBone, Moxa, Siemens IOT2050; N150 mini PCs and fanless x86; ESP32, Pico 2, STM32, Arduino Opta; Campbell CR310 / CR350 / CR1000X, OTT, HyQuest, Unidata, EnviroDIY Mayfly |
+| Loggers & computers | 44 | Raspberry Pi 5 / 4 / Zero 2 W / CM4 / CM5; Toradex Verdin AM62 on Mallow; industrial Pis (Revolution Pi, Strato Pi, reComputer, OnLogic, CompuLab, EDATEC); BeagleBone, Moxa, Siemens IOT2050; N150 mini PCs and fanless x86; ESP32, Pico 2, STM32, Arduino Opta; Campbell CR310 / CR350 / CR1000X, OTT, HyQuest, Unidata, EnviroDIY Mayfly |
 | Radios | 23 | RTL-SDR Blog V3/V4, Airspy, SDRplay, Ettus; Quansheng UV-K5; Tait TM9300 / TM8100, Maxon, Kenwood, Icom, Motorola, Ritron |
 | RF parts | 31 | Yagis and collinears, LMR-400 and Heliax, PolyPhaser arrestors, cavity filters, duplexers, GPS antennas and HATs, a dummy load |
 | Sensors | 32 | KISTERS / HyQuest TB3 and TB4, Rimco, OTT Pluvio²; pressure, radar, ultrasonic, encoder and bubbler level sensors; SDI-12, 4–20 mA and RS-485 interfaces |
@@ -119,7 +148,8 @@ you buy. The catalogue is a starting point, not an endorsement.
 ## Layout
 
 ```
-site/index.html      the page (and the How it works text)
+site/index.html      the configurator (and the How it works text)
+site/build.html      the base station builder (site/build.css, site/js/builder.js, site/data/builder.js)
 site/style.css       light and dark themes, phone to desktop, print
 site/data/*.js       the catalogue: ALERT equipment, computers, radios and RF, sensors, power, site
 site/js/engine.js    needs → requirements → fit → supporting parts → power → cost → consequences

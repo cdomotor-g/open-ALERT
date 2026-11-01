@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Base station builder</title>
+<meta name="description" content="Build an ALERT receiving base station: which computer, which SDR sticks and how they're held, the antenna and RF chain, power, backhaul and the box — how it fits together, how the code and Flood-Net use it, what it costs, where to get it and how long it takes.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="build.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the builder</a>
+<header class="hero">
+  <div class="wrap hero-in">
+    <img src="icon.svg" width="52" height="52" alt="">
+    <div class="hero-text">
+      <h1>open-ALERT <span>base station builder</span></h1>
+      <p>Put together a receiving base station that hears ALERT and ALERT2 field stations and forwards every reading to <a href="https://floodwarning.net/" target="_blank" rel="noopener">Flood-Net</a>. Pick the parts; see how they fit together in the box and in the code, whether the computer can keep up, what it costs, where to buy it, how long each part takes to arrive — and how to build it.</p>
+    </div>
+    <button type="button" class="ghost theme-btn" data-act="theme" aria-label="Colour theme" title="Colour theme"><span id="theme-label">Auto</span></button>
+  </div>
+  <nav class="wrap tabs" aria-label="Pages">
+    <a class="tab" href="./">Configurator</a>
+    <a class="tab" href="build.html" aria-current="page">Base station builder</a>
+    <a class="tab" href="#how">How it fits together</a>
+    <a class="tab" href="#custom">The custom path</a>
+  </nav>
+</header>
+
+<main id="main" class="wrap">
+  <noscript><p class="note bad">The builder needs JavaScript; the explanations below still read without it.</p></noscript>
+
+  <!-- ── the system ─────────────────────────────────────────────────────── -->
+  <section id="how" class="sect">
+    <h2>How a base station works — from the air to Flood-Net</h2>
+    <p class="lead">A base station is an antenna, one or more cheap SDR sticks and a small computer running <a href="https://github.com/cdomotor-g/RPi_ALERT" target="_blank" rel="noopener">RPi ALERT</a> (open source, MIT). The sticks don't decode anything: they hand the computer a slice of the band, and software decodes every channel in it. <b>Tap any part</b> to see what it does and which code does it.</p>
+    <div class="sys-wrap">
+      <figure class="diagram sys" aria-label="The signal path from field station to Flood-Net">
+        <svg viewBox="0 0 900 330" role="img" aria-hidden="true">
+          <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+          <text x="80" y="18" class="d-col">On the air</text>
+          <text x="290" y="18" class="d-col">At the site</text>
+          <text x="560" y="18" class="d-col">In the computer — RPi ALERT</text>
+          <text x="820" y="18" class="d-col">Flood-Net</text>
+          <rect x="190" y="28" width="210" height="290" rx="12" class="zone"/>
+          <rect x="420" y="28" width="300" height="290" rx="12" class="zone"/>
+          <rect x="740" y="28" width="150" height="290" rx="12" class="zone z-cloud"/>
+
+          <g class="nd" data-node="field" tabindex="0" role="button"><rect x="10" y="60" width="140" height="56" rx="9"/><text x="80" y="84">Field stations</text><text x="80" y="102" class="d-sub">rain · river · repeaters</text></g>
+          <path d="M150 88 C 170 88, 175 88, 205 88" class="lnk dash" marker-end="url(#ar)"/><text x="172" y="80" class="lt">VHF</text>
+
+          <g class="nd" data-node="antenna" tabindex="0" role="button"><rect x="205" y="60" width="180" height="56" rx="9"/><text x="295" y="84">Antenna · coax · arrestor</text><text x="295" y="102" class="d-sub">splitter for several sticks</text></g>
+          <path d="M295 116 V150" class="lnk" marker-end="url(#ar)"/><text x="305" y="138" class="lt" text-anchor="start">RF</text>
+          <g class="nd" data-node="sdr" tabindex="0" role="button"><rect x="205" y="152" width="180" height="56" rx="9"/><text x="295" y="176">RTL-SDR sticks</text><text x="295" y="194" class="d-sub">a 0.24–2.4 MHz slice each</text></g>
+          <path d="M385 180 H433" class="lnk" marker-end="url(#ar)"/><text x="409" y="172" class="lt">USB</text>
+          <g class="nd" data-node="net" tabindex="0" role="button"><rect x="205" y="246" width="180" height="56" rx="9"/><text x="295" y="270">Backhaul</text><text x="295" y="288" class="d-sub">Ethernet · 4G · Starlink · Wi-Fi</text></g>
+
+          <g class="nd" data-node="rtl" tabindex="0" role="button"><rect x="435" y="152" width="100" height="56" rx="9"/><text x="485" y="176">rtl_sdr</text><text x="485" y="194" class="d-sub">one per stick</text></g>
+          <path d="M535 180 H578" class="lnk" marker-end="url(#ar)"/>
+          <g class="nd hot" data-node="worker" tabindex="0" role="button"><rect x="580" y="140" width="128" height="80" rx="9"/><text x="644" y="166">Decoders</text><text x="644" y="184" class="d-sub">a thread per channel</text><text x="644" y="200" class="d-sub">alert-dsp · alert2-air</text><text x="644" y="214" class="d-sub hot-t">← where the CPU goes</text></g>
+          <path d="M644 140 V118" class="lnk" marker-end="url(#ar)"/>
+          <g class="nd" data-node="agent" tabindex="0" role="button"><rect x="580" y="60" width="128" height="56" rx="9"/><text x="644" y="84">Agent</text><text x="644" y="102" class="d-sub">dashboard · chirps</text></g>
+          <path d="M580 88 H557" class="lnk" marker-end="url(#ar)"/>
+          <g class="nd" data-node="queue" tabindex="0" role="button"><rect x="435" y="60" width="120" height="56" rx="9"/><text x="495" y="84">Disk queue</text><text x="495" y="102" class="d-sub">survives days offline</text></g>
+          <path d="M548 116 V252" class="lnk" marker-end="url(#ar)"/>
+          <g class="nd" data-node="uplink" tabindex="0" role="button"><rect x="435" y="254" width="120" height="48" rx="9"/><text x="495" y="275">Uplink</text><text x="495" y="291" class="d-sub">HTTPS out only</text></g>
+          <path d="M435 278 H387" class="lnk" marker-end="url(#ar)"/>
+          <path d="M295 302 C 295 324, 760 324, 778 210" class="lnk" marker-end="url(#ar)"/><text x="600" y="320" class="lt">ingest_http · report_receptions</text>
+
+          <g class="nd cloud" data-node="floodnet" tabindex="0" role="button"><rect x="752" y="140" width="126" height="68" rx="30"/><text x="815" y="168">Flood-Net</text><text x="815" y="186" class="d-sub">map · Message Log</text></g>
+          <g class="nd cloud" data-node="manage" tabindex="0" role="button"><rect x="752" y="60" width="126" height="56" rx="9"/><text x="815" y="84">Base Stations tab</text><text x="815" y="102" class="d-sub">health · settings</text></g>
+          <path d="M710 75 C 730 60, 735 70, 750 76" class="lnk dash" marker-end="url(#ar)"/><text x="728" y="56" class="lt">check-in</text>
+        </svg>
+      </figure>
+      <div id="sys-detail" class="sys-detail" aria-live="polite"></div>
+    </div>
+
+    <h3>How the parts fit together physically</h3>
+    <p>Three ways to get a computer: a <b>single board</b> (a Raspberry Pi — everything on one board), a <b>module on a carrier</b> (the processor, memory and eMMC on a small module that plugs into a carrier board with the connectors — the carrier is the part you can design yourself), or a <b>boxed computer</b> (an industrial PC or mini PC, finished and certified). The SDR either hangs off USB or sits in an M.2 slot.</p>
+    <figure class="diagram stack" aria-label="Single board, module on carrier, boxed computer, side by side">
+      <svg viewBox="0 0 900 250" role="img" aria-hidden="true">
+        <text x="140" y="18" class="d-col">Single board</text>
+        <text x="450" y="18" class="d-col">Module on a carrier</text>
+        <text x="760" y="18" class="d-col">Boxed computer</text>
+        <!-- single board -->
+        <rect x="40" y="120" width="200" height="12" rx="3" class="pcb"/><rect x="70" y="104" width="44" height="16" rx="2" class="chip-r"/><text x="92" y="98" class="cap2">SoC + RAM</text>
+        <rect x="180" y="100" width="40" height="20" rx="2" class="port"/><text x="200" y="94" class="cap2">USB</text>
+        <rect x="40" y="132" width="26" height="6" class="sdcard"/><text x="52" y="152" class="cap2">SD card</text>
+        <rect x="220" y="104" width="70" height="12" rx="4" class="dongle"/><text x="262" y="96" class="cap2">SDR stick</text>
+        <path d="M290 110 h18" class="cx"/>
+        <rect x="40" y="185" width="200" height="8" class="din"/><path d="M80 132 V185 M200 132 V185" class="standoff"/><text x="140" y="212" class="cap2">DIN case on the rail</text>
+        <text x="140" y="236" class="cap3">Raspberry Pi 4 / 5</text>
+        <!-- module on carrier -->
+        <rect x="350" y="150" width="210" height="12" rx="3" class="pcb"/><text x="455" y="182" class="cap2">carrier: power, USB, Ethernet, M.2 — yours to design</text>
+        <rect x="380" y="120" width="110" height="10" rx="2" class="pcb mod"/><rect x="400" y="108" width="34" height="12" rx="2" class="chip-r"/><rect x="440" y="110" width="22" height="10" rx="2" class="chip-r"/>
+        <path d="M385 130 V150 M485 130 V150" class="conn"/><text x="435" y="100" class="cap2">module: SoC, RAM, eMMC</text>
+        <rect x="500" y="140" width="50" height="8" rx="2" class="m2"/><text x="590" y="137" class="cap2">M.2 SDR card</text><path d="M550 144 h18" class="cx"/>
+        <rect x="350" y="200" width="210" height="8" class="din"/><path d="M370 162 V200 M540 162 V200" class="standoff"/>
+        <text x="455" y="236" class="cap3">CM5 + IO board · Verdin AM62 + Mallow · your own carrier</text>
+        <!-- boxed -->
+        <rect x="670" y="80" width="180" height="110" rx="10" class="case"/><text x="760" y="130" class="cap2">sealed case</text><text x="760" y="146" class="cap2">wide DC input</text>
+        <rect x="690" y="190" width="30" height="10" class="port"/><rect x="730" y="190" width="30" height="10" class="port"/><path d="M705 200 V218 H640" class="cx usbc"/><rect x="600" y="212" width="40" height="12" rx="4" class="dongle"/>
+        <text x="760" y="236" class="cap3">N150 mini PC · OnLogic, Advantech · RevPi</text>
+      </svg>
+    </figure>
+  </section>
+
+  <!-- ── the builder ────────────────────────────────────────────────────── -->
+  <section id="builder" class="sect">
+    <h2>Build one</h2>
+    <p class="lead">Pick each part. Everything below — the CPU it will use, the sticks' windows, the box, the bill, the lead times and the build steps — follows your choices. Prices are in Australian dollars including GST, as ranges across suppliers; anything marked <span class="chip st-warn">est.</span> is an estimate.</p>
+    <div class="bld">
+      <form id="controls" class="ctl" onsubmit="return false"></form>
+      <div class="outs">
+        <div class="card-o"><h3>Can the computer keep up?</h3><div id="out-cpu"></div></div>
+        <div class="card-o"><h3>The sticks and their windows</h3><p class="small dim">Each stick takes the narrowest window that holds its channels; every channel's decoder works through the whole window, so keep each stick's channels close together.</p><div id="out-sticks"></div></div>
+        <div class="card-o"><h3>In the box</h3><div id="out-box"></div></div>
+        <div id="out-warn"></div>
+      </div>
+    </div>
+
+    <h3>Every computer, for this plan</h3>
+    <p class="small dim">The same channels and traffic on each computer, today and with the decoder improvements planned for RPi ALERT and Flood-Net. A planned bar under 70% is a computer that becomes usable once that work is done.</p>
+    <div id="out-compare"></div>
+
+    <h3>Bill of materials</h3>
+    <div id="out-bom"></div>
+
+    <h3>How long until it's all in hand</h3>
+    <div id="out-lead"></div>
+
+    <h3>Build it</h3>
+    <div id="out-steps" class="build-steps"></div>
+  </section>
+
+  <!-- ── the custom path ────────────────────────────────────────────────── -->
+  <section id="custom" class="sect">
+    <h2>The custom path — away from the Raspberry Pi</h2>
+    <p>Most of a Pi's bad name comes from SD cards, plug-pack supplies and sticks hanging off USB ports — not from the processor. A Compute Module or a Verdin module on a carrier fixes the first two today; a carrier of your own fixes the rest and carries no Raspberry Pi name. The order that keeps risk low:</p>
+    <ol class="path">
+      <li><b>Trial on an off-the-shelf carrier.</b> A CM5 on its IO board (nothing to port) or a Verdin AM62 on Mallow (the open carrier design), with sticks held as above.</li>
+      <li><b>Make the decoder faster.</b> Flood-Net's decoder runs in JavaScript, and profiling it shows two thirds of a burst's decode in one routine (the channel mixer and filter, re-run for each of 45 guesses) and most of the work between bursts in converting and filtering the whole window per channel. Sharing that front end per stick, then compiling the hot loops to WebAssembly that Flood-Net and the box both run, keeps the box decoding exactly as the website does — and lets a cooler, cheaper processor carry a busy site.</li>
+      <li><b>Put the SDR on an M.2 card.</b> No one sells an RTL-SDR on M.2; a small card is a contained design job, testable in Mallow's B-key slot, and becomes the receiver block of the final carrier. Keep it swappable and write the software against a general SDR interface, so the RTL2832U — which mainstream distributors don't stock — can be replaced without a rewrite. Lifetime-buy the chips you'll need.</li>
+      <li><b>Design the carrier.</b> From a published design: 9–36 V input with surge and reverse protection, a watchdog, a battery clock, the SDR on board or in M.2, a DIN-rail footprint. Then EMC testing and the RCM.</li>
+    </ol>
+    <div id="custom-chart"></div>
+    <ul id="custom-list" class="small"></ul>
+
+    <h3>Sources</h3>
+    <p class="small dim">Every price and specification comes from these, or is marked as an estimate. Confirm before you buy: stock and lead times change weekly.</p>
+    <ul id="sources" class="small src-list"></ul>
+  </section>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<footer class="wrap small dim">
+  <p>open-ALERT · MIT licence · <a href="https://github.com/cdomotor-g/open-ALERT" target="_blank" rel="noopener">source on GitHub</a> · prices indicative, November 2026 · a plan to start from, not an endorsement.</p>
+</footer>
+
+<script src="data/alert.js"></script>
+<script src="data/compute.js"></script>
+<script src="data/radio.js"></script>
+<script src="data/sensors.js"></script>
+<script src="data/power.js"></script>
+<script src="data/site.js"></script>
+<script src="data/builder.js"></script>
+<script src="js/builder.js"></script>
+</body>
+</html>
