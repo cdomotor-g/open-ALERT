@@ -237,6 +237,8 @@
 
   const API = { B, setCatalog, windowFor, splitInto, planSticks, load, capacity, verdict, build, TRAFFIC };
   if (isNode) { module.exports = API; return; }
+  globalThis.OA_BUILD_API = API;
+  if (!document.getElementById('controls')) return;   // another page using the model only
 
   // ══ the page ══════════════════════════════════════════════════════════════
   const $ = (s, el) => (el || document).querySelector(s);

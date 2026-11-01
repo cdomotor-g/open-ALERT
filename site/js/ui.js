@@ -141,8 +141,7 @@
       for (const v of ['configure', 'network', 'catalogue', 'about']) {
         const sec = $(`#view-${v}`), tab = $(`#tab-${v}`);
         sec.hidden = S.view !== v;
-        tab.setAttribute('aria-selected', String(S.view === v));
-        tab.tabIndex = S.view === v ? 0 : -1;
+        if (S.view === v) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
       }
       if (S.view === 'configure') renderConfigure();
       if (S.view === 'network') renderNetwork();
@@ -872,7 +871,7 @@
   if (pendingToast) toast(pendingToast);
   window.addEventListener('hashchange', () => {
     const h = (location.hash || '').replace('#', '');
-    if (['configure', 'network', 'catalogue', 'about'].includes(h) && h !== S.view) { S.view = h; render(); }
+    if (['configure', 'network', 'catalogue', 'about'].includes(h) && h !== S.view) { S.view = h; render(); window.scrollTo(0, 0); }
   });
   window.OAUI = { get state() { return S; }, render };
 })();

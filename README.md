@@ -9,6 +9,11 @@ choices cost and what they commit you to.
 
 **→ Build a base station: <https://cdomotor-g.github.io/open-ALERT/build.html>** — the base
 station builder (below).
+**→ Trial a Mallow beside a Pi: <https://cdomotor-g.github.io/open-ALERT/trial.html>** — the
+Mallow trial (below).
+
+Every page has the same menu: **Plan** (Sites, Network, Parts), **Build** (Base station,
+Mallow trial) and **Learn** (How it works).
 
 It is a static page with no build step and no server: everything runs in the browser, and
 what you build is kept in your browser and in share links.
@@ -72,6 +77,17 @@ Its data is `site/data/builder.js` (ranges, lead times, suppliers and sources fo
 referring to catalogue records for the rest) and its logic `site/js/builder.js`; the tests in
 `test/builder.test.js` hold the stick planner and the CPU model to RPi ALERT's documented
 cases.
+
+## The Mallow trial
+
+`site/trial.html` is the plan for trying a Toradex Verdin AM62 on a Mallow carrier beside
+the Raspberry Pi 4 already running RPi ALERT, on one antenna split two ways, for two weeks
+with the sticks swapped halfway: the set-up drawn, the builder's CPU estimate for your
+channels, a shopping list with prices, lead times and where to buy (ticked off as parts
+arrive), the steps — the Pi's baseline, Torizon OS, RPi ALERT in a Debian container (not
+done before: part of what the trial finds out), the splitter on site — a results sheet that
+works out the verdicts, and what to do when it won't. Its list and verdicts are
+`site/js/trial.js`, tested in `test/trial.test.js`.
 
 ## The catalogue
 
@@ -150,6 +166,7 @@ you buy. The catalogue is a starting point, not an endorsement.
 ```
 site/index.html      the configurator (and the How it works text)
 site/build.html      the base station builder (site/build.css, site/js/builder.js, site/data/builder.js)
+site/trial.html      the Mallow trial (site/js/trial.js; styles in site/build.css)
 site/style.css       light and dark themes, phone to desktop, print
 site/data/*.js       the catalogue: ALERT equipment, computers, radios and RF, sensors, power, site
 site/js/engine.js    needs → requirements → fit → supporting parts → power → cost → consequences

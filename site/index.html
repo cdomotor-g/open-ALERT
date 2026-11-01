@@ -4,36 +4,44 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>open-ALERT configurator</title>
+<title>open-ALERT</title>
 <meta name="description" content="Plan ALERT and ALERT2 flood-warning field stations, repeaters and base stations: say what each site must do, see the hardware that fits, and what each choice costs and commits you to.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<a class="skip" href="#main">Skip to the configurator</a>
+<a class="skip" href="#main">Skip to the page</a>
 <header class="hero">
   <div class="wrap hero-in">
     <img src="icon.svg" width="52" height="52" alt="">
     <div class="hero-text">
-      <h1>open-ALERT <span>configurator</span></h1>
-      <p>Plan ALERT and ALERT2 flood-warning sites — field stations, repeaters and base stations. Say what each must do; see the hardware that fits, open and closed, budget to industrial; then what your choices cost and commit you to. Building a receiving base? The <a href="build.html">base station builder</a> shows how one fits together, what it costs, where to get it and how to build it.</p>
+      <h1>open-ALERT <span>plan and build ALERT networks</span></h1>
+      <p>Plan ALERT and ALERT2 flood-warning sites — field stations, repeaters and base stations. Say what each must do; see the hardware that fits, open and closed, budget to industrial; then what your choices cost and commit you to.</p>
     </div>
     <button type="button" class="ghost theme-btn" data-act="theme" aria-label="Colour theme" title="Colour theme"><span id="theme-label">Auto</span></button>
   </div>
-  <nav class="wrap tabs" role="tablist" aria-label="Views">
-    <button type="button" role="tab" id="tab-configure" data-act="view" data-view="configure" aria-controls="view-configure">Configure</button>
-    <button type="button" role="tab" id="tab-network" data-act="view" data-view="network" aria-controls="view-network">Network</button>
-    <button type="button" role="tab" id="tab-catalogue" data-act="view" data-view="catalogue" aria-controls="view-catalogue">Hardware catalogue</button>
-    <button type="button" role="tab" id="tab-about" data-act="view" data-view="about" aria-controls="view-about">How it works</button>
+  <nav class="wrap sitenav" aria-label="open-ALERT pages">
+    <div class="nav-group"><span class="nav-h">Plan</span>
+      <a class="nav-link" id="tab-configure" href="#configure" aria-current="page"><b>Sites</b><span>configure each site</span></a>
+      <a class="nav-link" id="tab-network" href="#network"><b>Network</b><span>add them up, check they meet</span></a>
+      <a class="nav-link" id="tab-catalogue" href="#catalogue"><b>Parts</b><span>the hardware catalogue</span></a>
+    </div>
+    <div class="nav-group"><span class="nav-h">Build</span>
+      <a class="nav-link" href="build.html"><b>Base station</b><span>builder, costs, steps</span></a>
+      <a class="nav-link" href="trial.html"><b>Mallow trial</b><span>beside the Pi</span></a>
+    </div>
+    <div class="nav-group"><span class="nav-h">Learn</span>
+      <a class="nav-link" id="tab-about" href="#about"><b>How it works</b><span>ALERT, the numbers, the law</span></a>
+    </div>
   </nav>
 </header>
 
 <main id="main" class="wrap">
   <noscript><p class="note bad">This configurator needs JavaScript.</p></noscript>
-  <section id="view-configure" role="tabpanel" aria-labelledby="tab-configure" class="view"></section>
-  <section id="view-network" role="tabpanel" aria-labelledby="tab-network" class="view" hidden></section>
-  <section id="view-catalogue" role="tabpanel" aria-labelledby="tab-catalogue" class="view" hidden></section>
-  <section id="view-about" role="tabpanel" aria-labelledby="tab-about" class="view" hidden>
+  <section id="view-configure" aria-labelledby="tab-configure" class="view"></section>
+  <section id="view-network" aria-labelledby="tab-network" class="view" hidden></section>
+  <section id="view-catalogue" aria-labelledby="tab-catalogue" class="view" hidden></section>
+  <section id="view-about" aria-labelledby="tab-about" class="view" hidden>
     <article class="prose">
       <h2>How it works</h2>
       <p>Every site in an ALERT network does one of three jobs. A <b>field station</b> measures rain or river level and sends each reading by VHF radio; a <b>repeater</b> on a hilltop hears field stations and sends their readings on; a <b>base station</b> receives the bursts and forwards them — to <a href="https://floodwarning.net/" target="_blank" rel="noopener">Flood-Net</a>, a council's SCADA, or the Bureau.</p>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Base station builder</title>
+<title>Base station builder · open-ALERT</title>
 <meta name="description" content="Build an ALERT receiving base station: which computer, which SDR sticks and how they're held, the antenna and RF chain, power, backhaul and the box — how it fits together, how the code and Flood-Net use it, what it costs, where to get it and how long it takes.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
@@ -21,16 +21,25 @@
     </div>
     <button type="button" class="ghost theme-btn" data-act="theme" aria-label="Colour theme" title="Colour theme"><span id="theme-label">Auto</span></button>
   </div>
-  <nav class="wrap tabs" aria-label="Pages">
-    <a class="tab" href="./">Configurator</a>
-    <a class="tab" href="build.html" aria-current="page">Base station builder</a>
-    <a class="tab" href="#how">How it fits together</a>
-    <a class="tab" href="#custom">The custom path</a>
+  <nav class="wrap sitenav" aria-label="open-ALERT pages">
+    <div class="nav-group"><span class="nav-h">Plan</span>
+      <a class="nav-link" href="./#configure"><b>Sites</b><span>configure each site</span></a>
+      <a class="nav-link" href="./#network"><b>Network</b><span>add them up, check they meet</span></a>
+      <a class="nav-link" href="./#catalogue"><b>Parts</b><span>the hardware catalogue</span></a>
+    </div>
+    <div class="nav-group"><span class="nav-h">Build</span>
+      <a class="nav-link" href="build.html" aria-current="page"><b>Base station</b><span>builder, costs, steps</span></a>
+      <a class="nav-link" href="trial.html"><b>Mallow trial</b><span>beside the Pi</span></a>
+    </div>
+    <div class="nav-group"><span class="nav-h">Learn</span>
+      <a class="nav-link" href="./#about"><b>How it works</b><span>ALERT, the numbers, the law</span></a>
+    </div>
   </nav>
 </header>
 
 <main id="main" class="wrap">
   <noscript><p class="note bad">The builder needs JavaScript; the explanations below still read without it.</p></noscript>
+  <nav class="onpage" aria-label="On this page"><span class="dim small">On this page</span> <a href="#how">How it works</a> <a href="#builder">Build one</a> <a href="#out-bom">Parts and prices</a> <a href="#out-steps">Steps</a> <a href="#custom">Away from the Pi</a></nav>
 
   <!-- ── the system ─────────────────────────────────────────────────────── -->
   <section id="how" class="sect">

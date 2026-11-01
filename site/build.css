@@ -1,11 +1,5 @@
 /* open-ALERT — the base-station builder's own styles, on top of style.css. */
 
-.tabs a.tab {
-  color: var(--hero-ink); opacity: .82; padding: 10px 16px; border-radius: 10px 10px 0 0;
-  white-space: nowrap; flex: none; font-weight: 600; text-decoration: none;
-}
-.tabs a.tab:hover { opacity: 1; background: rgba(255, 255, 255, .07); }
-.tabs a.tab[aria-current="page"] { background: var(--bg); color: var(--text); opacity: 1; }
 .sect { margin-top: 10px; }
 .sect > h2 { margin-top: 26px; }
 
@@ -164,5 +158,54 @@
 @media (max-width: 520px) {
   .pfs { grid-template-columns: minmax(0, 1fr); }
   .chks { grid-template-columns: minmax(0, 1fr); }
-  .tabs a.tab { padding: 10px 12px; }
 }
+
+/* ── the Mallow trial ── */
+.trialset svg { min-width: 620px; }
+.trialset .cap1 { fill: var(--text); font-size: 12px; font-weight: 600; text-anchor: middle; }
+.trialset .cap2 { fill: var(--dim); font-size: 10.5px; text-anchor: middle; }
+.trialset .swap-t { fill: var(--a1); text-anchor: start; font-weight: 600; }
+.trialset .mast { stroke: var(--dim); stroke-width: 4; }
+.trialset .ant { stroke: var(--text); stroke-width: 3; }
+.trialset .coax { stroke: var(--warn); stroke-width: 3; fill: none; }
+.trialset .usb { stroke: var(--a1); stroke-width: 3; fill: none; }
+.trialset .eth { stroke: var(--a2); stroke-width: 2.5; fill: none; }
+.trialset .wire { stroke: var(--bad); stroke-width: 2.5; fill: none; }
+.trialset .lnk { stroke: var(--dim); stroke-width: 1.6; fill: none; color: var(--dim); }
+.trialset .swap { stroke: var(--a1); stroke-width: 1.6; fill: none; stroke-dasharray: 4 3; color: var(--a1); }
+.trialset .arr { fill: color-mix(in srgb, var(--warn) 30%, var(--panel)); stroke: var(--warn); }
+.trialset .split { fill: var(--panel); stroke: var(--warn); stroke-width: 1.8; }
+.trialset .sdr { fill: var(--dim); }
+.trialset .sw { fill: var(--panel-2); stroke: var(--a2); }
+.trialset .bx rect { stroke-width: 1.8; }
+.trialset .b-pi rect { fill: color-mix(in srgb, var(--warn) 10%, var(--panel)); stroke: var(--warn); }
+.trialset .b-am rect { fill: color-mix(in srgb, var(--ok) 12%, var(--panel)); stroke: var(--ok); }
+.trialset .b-fn rect { fill: color-mix(in srgb, var(--accent) 10%, var(--panel)); stroke: var(--accent); }
+.cards3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.cards3 ul { padding-left: 1.1em; margin: 6px 0; }
+.cards3 li { margin: 3px 0; }
+#est .row { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 12px; }
+#est .row label { display: flex; flex-direction: column; gap: 3px; font-size: .85em; color: var(--dim); min-width: 0; flex: 1 1 220px; }
+#est .row input, #est .row select { font-size: .95rem; color: var(--text); width: 100%; }
+.shop { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.shop li { display: flex; gap: 12px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.shop li.got { opacity: .6; }
+.shop li.got .shop-main > b { text-decoration: line-through; }
+.shop-chk { padding-top: 3px; }
+.shop-chk input { width: 20px; height: 20px; }
+.shop-main { min-width: 0; flex: 1; }
+.shop-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; }
+.phases > li { margin: 10px 0 18px; max-width: 920px; }
+.phases > li > h3 { margin-top: 4px; }
+.phases ol, .phases ul { padding-left: 1.2em; }
+.phases li li { margin: 5px 0; }
+.code { position: relative; margin: 8px 0 12px; }
+.code pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; font: .82em/1.5 var(--mono); margin: 0; }
+.code button { position: absolute; top: 6px; right: 6px; background: var(--panel); }
+.res input { width: 6.5em; font-size: .92rem; padding: 4px 6px; }
+.res th[scope="row"] { min-width: 220px; }
+.res td { white-space: nowrap; }
+.trouble dt { font-weight: 600; margin-top: 12px; }
+.trouble dd { margin: 4px 0 0 0; max-width: 920px; }
+@media (max-width: 900px) { .cards3 { grid-template-columns: minmax(0, 1fr); } }
+#results .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }

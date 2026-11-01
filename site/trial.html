@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Mallow trial · open-ALERT</title>
+<meta name="description" content="Trial a Toradex Verdin AM62 on a Mallow carrier running RPi ALERT beside the Raspberry Pi already doing the job, on the same antenna: what to buy, what to do, what to compare and how it passes.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="build.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+<header class="hero">
+  <div class="wrap hero-in">
+    <img src="icon.svg" width="52" height="52" alt="">
+    <div class="hero-text">
+      <h1>open-ALERT <span>Mallow trial</span></h1>
+      <p>Does a Toradex Verdin AM62 on a Mallow carrier — industrial parts, no Raspberry Pi — do the job of the Pi 4 you already have? Run the two side by side on the same antenna for two weeks and find out. What to buy, what to do, what to compare, and how it passes.</p>
+    </div>
+    <button type="button" class="ghost theme-btn" data-act="theme" aria-label="Colour theme" title="Colour theme"><span id="theme-label">Auto</span></button>
+  </div>
+  <nav class="wrap sitenav" aria-label="open-ALERT pages">
+    <div class="nav-group"><span class="nav-h">Plan</span>
+      <a class="nav-link" href="./#configure"><b>Sites</b><span>configure each site</span></a>
+      <a class="nav-link" href="./#network"><b>Network</b><span>add them up, check they meet</span></a>
+      <a class="nav-link" href="./#catalogue"><b>Parts</b><span>the hardware catalogue</span></a>
+    </div>
+    <div class="nav-group"><span class="nav-h">Build</span>
+      <a class="nav-link" href="build.html"><b>Base station</b><span>builder, costs, steps</span></a>
+      <a class="nav-link" href="trial.html" aria-current="page"><b>Mallow trial</b><span>beside the Pi</span></a>
+    </div>
+    <div class="nav-group"><span class="nav-h">Learn</span>
+      <a class="nav-link" href="./#about"><b>How it works</b><span>ALERT, the numbers, the law</span></a>
+    </div>
+  </nav>
+</header>
+
+<main id="main" class="wrap">
+  <nav class="onpage" aria-label="On this page"><span class="dim small">On this page</span> <a href="#setup">The set-up</a> <a href="#keepup">Will it keep up?</a> <a href="#buy">What to buy</a> <a href="#do">What to do</a> <a href="#results-h">Results</a> <a href="#trouble">If it won't</a></nav>
+
+  <section class="sect" id="setup">
+    <h2>The set-up</h2>
+    <p class="lead">One antenna, split two ways, so both computers hear exactly the same bursts. Each has its own stick of the same model, its own Flood-Net ingest token and its own receivers in Flood-Net. Flood-Net keeps one copy of each reading — whichever arrives first — but records <b>every</b> copy on the Reception Map, so the two can be compared burst for burst. Halfway through, swap the sticks: no two sticks are equally good, and swapping cancels that out.</p>
+    <figure class="diagram trialset" aria-label="The antenna feeds a splitter; one side goes to the Pi's stick, the other to the Mallow's; both computers post to Flood-Net over Ethernet">
+      <svg viewBox="0 0 900 340" role="img" aria-hidden="true">
+        <defs><marker id="tar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <path d="M60 30 V120" class="mast"/><path d="M48 30 h24 M52 50 h16 M48 70 h24" class="ant"/><text x="60" y="20" class="cap2">the existing antenna</text>
+        <path d="M60 120 V170 H120" class="coax"/>
+        <rect x="120" y="158" width="30" height="24" rx="3" class="arr"/><text x="135" y="200" class="cap2">arrestor</text>
+        <path d="M150 170 H200" class="coax"/>
+        <rect x="200" y="155" width="56" height="30" rx="4" class="split"/><text x="228" y="174" class="cap1">2-way</text><text x="228" y="200" class="cap2">new: splitter</text>
+        <path d="M256 165 C 290 165, 290 90, 330 90" class="coax"/><path d="M256 175 C 290 175, 290 250, 330 250" class="coax"/>
+        <rect x="330" y="78" width="70" height="24" rx="5" class="sdr"/><text x="365" y="70" class="cap2">stick A</text>
+        <rect x="330" y="238" width="70" height="24" rx="5" class="sdr"/><text x="365" y="230" class="cap2">stick B (new)</text>
+        <path d="M400 90 H460" class="usb"/><path d="M400 250 H460" class="usb"/>
+        <path d="M420 118 C 440 140, 440 200, 420 222" class="swap" marker-end="url(#tar)" marker-start="url(#tar)"/><text x="470" y="173" class="cap2 swap-t">swap the sticks</text><text x="470" y="187" class="cap2 swap-t">after week 1</text>
+        <g class="bx b-pi"><rect x="460" y="60" width="160" height="62" rx="8"/><text x="540" y="86" class="cap1">Raspberry Pi 4</text><text x="540" y="104" class="cap2">RPi ALERT, as now</text></g>
+        <g class="bx b-am"><rect x="460" y="220" width="160" height="62" rx="8"/><text x="540" y="246" class="cap1">Verdin AM62 + Mallow</text><text x="540" y="264" class="cap2">RPi ALERT in a container</text></g>
+        <path d="M540 60 V40 H500" class="wire"/><text x="440" y="36" class="cap2">USB-C supply + meter</text>
+        <path d="M540 282 V306 H500" class="wire"/><text x="440" y="318" class="cap2">12 V + DC meter</text>
+        <path d="M620 91 H690 V160" class="eth"/><path d="M620 251 H690 V190" class="eth"/>
+        <rect x="660" y="160" width="60" height="30" rx="5" class="sw"/><text x="690" y="179" class="cap1">switch</text>
+        <path d="M720 175 H770" class="lnk" marker-end="url(#tar)"/><text x="745" y="166" class="cap2">HTTPS</text>
+        <g class="bx b-fn"><rect x="772" y="120" width="118" height="110" rx="26"/><text x="831" y="150" class="cap1">Flood-Net</text><text x="831" y="170" class="cap2">two sets of</text><text x="831" y="184" class="cap2">receivers; every</text><text x="831" y="198" class="cap2">copy on the</text><text x="831" y="212" class="cap2">Reception Map</text></g>
+      </svg>
+    </figure>
+    <div class="cards3">
+      <div class="card-o"><h3>Passes if</h3><ul class="small"><li>it decodes at least <b>98%</b> of the bursts the Pi does, over both weeks</li><li>no channel ever drops samples</li><li><i>Decoder busy</i> stays under <b>70%</b> in the worst hour</li><li>the processor stays under <b>70 °C</b></li><li>no restarts or check-in gaps of its own</li></ul></div>
+      <div class="card-o"><h3>Takes</h3><ul class="small"><li>a couple of hours on the bench to bring it up</li><li>an hour on site to fit the splitter</li><li>two weeks running — ideally with some rain in them</li><li>an hour to read off and compare the numbers</li></ul></div>
+      <div class="card-o"><h3>Costs</h3><p class="small" id="cost-line">About A$580–1,100 for what you need — the list below has each part, where to get it and how long it takes.</p></div>
+    </div>
+  </section>
+
+  <section class="sect" id="keepup">
+    <h2>Will it keep up?</h2>
+    <p>The AM62's four Cortex-A53 cores are about half a Pi 4 for decoding, and today's decoder is CPU-hungry. Put in the channels your Pi listens on to see what the builder's model expects — then let the trial say what really happens.</p>
+    <div class="card-o" id="est"></div>
+  </section>
+
+  <section class="sect" id="buy">
+    <h2>What to buy</h2>
+    <p class="small dim">Tick things off as they arrive — the ticks stay in this browser. Prices are Australian dollars including GST; <span class="chip st-warn">est.</span> marks an estimate.</p>
+    <div id="shop"></div>
+  </section>
+
+  <section class="sect" id="do">
+    <h2>What to do</h2>
+    <ol class="phases">
+      <li>
+        <h3>Before anything arrives: write down the Pi's week</h3>
+        <p>The splitter will cost the Pi about 3.5 dB. So for two or three days before you fit it, note what the Pi does on its own — that's your baseline:</p>
+        <ul>
+          <li>On the Pi's <b>Overview</b> (<code>http://&lt;the Pi&gt;/</code>): bursts decoded per channel, <i>Decoder busy</i>, any dropped samples, the processor temperature.</li>
+          <li>On its <b>Receivers</b> page: the SNR of two or three stations it hears well.</li>
+          <li>In <b>Flood-Net</b>: its receivers on the Reception Map, and its row on the Base Stations tab.</li>
+          <li>On the Pi, over SSH: <code>rpi-alert sdr 1</code> lists its channels, gain and ppm — you'll give the Mallow the same.</li>
+        </ul>
+      </li>
+      <li>
+        <h3>On the bench: put the module on the carrier</h3>
+        <ol>
+          <li>With the power off, slide the Verdin module into Mallow's edge connector at an angle, press it down flat and fit its screw. Fit the heatsink over it with its thermal pad.</li>
+          <li>Connect Ethernet to a network with internet, then 12 V to the power header (mind the polarity marked on the board).</li>
+          <li>Power on. A new module comes with <b>Toradex Easy Installer</b> on it: find its IP address (your router's list of devices, or a monitor on the HDMI port) and open it in a browser or a VNC viewer.</li>
+          <li>Install <b>Torizon OS</b> (the plain one, without the evaluation containers). Power off when it says <i>Image installed</i>, then on again.</li>
+          <li>Log in over SSH: <code>ssh torizon@&lt;its IP&gt;</code> — the first password is <code>torizon</code>, and it makes you choose a new one. Give the box a name you'll recognise in Flood-Net: <code>sudo hostnamectl set-hostname am62-trial</code>, then <code>sudo reboot</code>.</li>
+        </ol>
+        <p class="small dim">No Easy Installer? Load it again in recovery mode from a computer over USB-C — <a href="https://developer.toradex.com/knowledge-base/load-toradex-easy-installer" target="_blank" rel="noopener">Toradex: loading Toradex Easy Installer</a> — and see <i>If it won't</i> below.</p>
+      </li>
+      <li>
+        <h3>On the bench: run RPi ALERT in a container</h3>
+        <p>Torizon runs software in Docker containers, and RPi ALERT's installer is made for Raspberry Pi OS — so the agent runs in a Debian container instead. <b>This has not been done before</b>: it is the first time RPi ALERT runs off a Raspberry Pi, and part of what the trial finds out. Log in and make the image:</p>
+        <div class="code"><button type="button" class="ghost small" data-act="copycode" data-for="c1">Copy</button><pre id="c1">mkdir -p ~/rpi-alert && cd ~/rpi-alert
+cat > Dockerfile &lt;&lt;'EOF'
+FROM debian:trixie-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends nodejs rtl-sdr git ca-certificates procps \
+ && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 https://github.com/cdomotor-g/RPi_ALERT /opt/rpi-alert
+CMD ["node", "/opt/rpi-alert/agent/bin/rpi-alert", "daemon"]
+EOF
+docker build -t rpi-alert .</pre></div>
+        <p>Plug the new stick into a USB port, then start it — it restarts itself after a power cut, and keeps its settings and queue across updates:</p>
+        <div class="code"><button type="button" class="ghost small" data-act="copycode" data-for="c2">Copy</button><pre id="c2">docker run -d --name rpi-alert --restart unless-stopped \
+  --privileged --network host \
+  -v /dev/bus/usb:/dev/bus/usb \
+  -v rpi-alert-etc:/etc/rpi-alert -v rpi-alert-var:/var/lib/rpi-alert \
+  rpi-alert
+docker logs -f rpi-alert</pre></div>
+        <ol>
+          <li>The log should show the stick found and <code>rtl_sdr</code> started. Then open <code>http://&lt;its IP&gt;/</code> — the same dashboard as the Pi's.</li>
+          <li>Give it the Pi's channels, gain and ppm (Settings → RTL-SDR), or: <code>docker exec rpi-alert node /opt/rpi-alert/agent/bin/rpi-alert sdr 1 freq 151.5, 151.525, 151.95, 152.4</code> — with the Pi's own list. Leave the screen dashboard off: the Pi's comparison should be like for like, so turn the Pi's off too if it has one.</li>
+          <li>Press <b>Request a token</b>, check the code, and approve it on Flood-Net's <b>Admin</b> tab. Its receivers appear as <code>rpi-am62-trial-sdr1…</code> beside the Pi's.</li>
+          <li>Leave it on the bench a day with an antenna by a window. If <i>Decoder busy</i> is already near 100% here, it won't cope on site — see <i>Will it keep up?</i> and take some channels off before going on.</li>
+        </ol>
+        <p class="small dim">Things that need the Pi's own system — the Wi-Fi hotspot, updates from Flood-Net, the screen — won't work in the container. That's expected; the trial is about receiving and decoding.</p>
+      </li>
+      <li>
+        <h3>On site: share the antenna</h3>
+        <ol>
+          <li>Undo the coax at the Pi's stick. Between the arrestor and the sticks, fit the splitter: the antenna lead to its input (with the N–N jumper if needed), a pigtail from each output to each stick.</li>
+          <li>Both boxes on the same switch or router, by Ethernet. Each on its power meter.</li>
+          <li>Check both are hearing: each Overview counts bursts within minutes, and both sets of receivers turn up on Flood-Net's Reception Map.</li>
+          <li>Write down the date and time — week 1 starts now. Stick A is on the Pi, stick B on the Mallow.</li>
+        </ol>
+      </li>
+      <li>
+        <h3>After a week: swap the sticks</h3>
+        <p>Move stick A to the Mallow and stick B to the Pi (each keeps its own pigtail). Give each stick its own ppm on its new box — the tuning help on each stick's card suggests it within an hour. Write down the time: week 2 starts.</p>
+      </li>
+      <li>
+        <h3>After two weeks: read off the numbers</h3>
+        <p>Fill in the results sheet below from each box and from Flood-Net. The verdicts work themselves out. Then decide: keep the Mallow on site beside the Pi, take it off and keep the Pi, or — if it passes — let the Mallow take over.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="sect" id="results-h">
+    <h2>Results sheet</h2>
+    <p class="small dim">Week 1: stick A on the Pi, stick B on the Mallow. Week 2: swapped. Counts are for the whole week; the verdict adds the two weeks together.</p>
+    <div id="results"></div>
+  </section>
+
+  <section class="sect" id="trouble">
+    <h2>If it won't</h2>
+    <dl class="trouble">
+      <dt>No Easy Installer screen, or it won't load over USB</dt>
+      <dd>Others have had this with an AM62 on Mallow: use the newest Toradex Easy Installer and the recovery steps in Toradex's guide, and ask on the <a href="https://community.toradex.com/" target="_blank" rel="noopener">Toradex Community</a> — Toradex staff answer there. The console cable on Mallow's console header shows what it's doing.</dd>
+      <dt>The stick isn't found in the container</dt>
+      <dd>On the box, <code>lsusb</code> should list a Realtek RTL2838 device. If <code>dmesg</code> shows a DVB driver taking it, unload it (<code>sudo modprobe -r dvb_usb_rtl28xxu</code>) — RPi ALERT blacklists it on a Pi. Check the container was started with <code>-v /dev/bus/usb:/dev/bus/usb</code> and <code>--privileged</code>.</dd>
+      <dt><i>Decoder busy</i> near 100%, or channels dropping samples</dt>
+      <dd>It is doing more than the AM62 can with today's decoder. Take channels off until it settles, write down how many it managed — that is a result in itself — and see the builder's <a href="build.html#custom">custom path</a>: the faster decoder is what would make up the difference.</dd>
+      <dt>Hot: the processor over 70 °C</dt>
+      <dd>Check the heatsink is seated with its pad, and that the box isn't in the sun. Industrial-rated parts run hot without failing, but a throttled processor decodes less.</dd>
+      <dt>The Pi got worse after the splitter</dt>
+      <dd>Expected, by about 3.5 dB — compare with the baseline you wrote down. If a weak station drops out altogether, note it; take the splitter out when the trial ends.</dd>
+    </dl>
+
+    <h3>When the trial ends</h3>
+    <ul>
+      <li>Take the splitter out to give the Pi its full signal back — or keep both running.</li>
+      <li>If the Mallow comes off, revoke its ingest token on Flood-Net's Admin tab and remove its receivers.</li>
+      <li>Put the results in RPi ALERT's issues so the builder's CPU model can use real AM62 numbers.</li>
+    </ul>
+
+    <h3>Sources</h3>
+    <ul class="small src-list">
+      <li><a href="https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62" target="_blank" rel="noopener">Toradex: Verdin AM62</a></li>
+      <li><a href="https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf" target="_blank" rel="noopener">Mallow carrier board datasheet</a></li>
+      <li><a href="https://au.element14.com/toradex/01611102/carrier-board-mallow/dp/4759350" target="_blank" rel="noopener">element14: Mallow</a></li>
+      <li><a href="https://www.toradex.com/accessories/verdin-industrial-heatsink-type-1" target="_blank" rel="noopener">Toradex: Verdin Industrial Heatsink</a></li>
+      <li><a href="https://developer.toradex.com/quickstart/5/bringup/installing-torizon" target="_blank" rel="noopener">Toradex: installing Torizon OS</a></li>
+      <li><a href="https://developer.toradex.com/knowledge-base/load-toradex-easy-installer" target="_blank" rel="noopener">Toradex: loading Toradex Easy Installer</a></li>
+      <li><a href="https://community.toradex.com/t/struggling-to-load-easy-installer-on-am62-mallow/23841" target="_blank" rel="noopener">Toradex Community: Easy Installer on AM62 + Mallow</a></li>
+      <li><a href="https://github.com/cdomotor-g/RPi_ALERT/blob/main/docs/hardware.md" target="_blank" rel="noopener">RPi ALERT hardware notes</a></li>
+      <li><a href="https://github.com/cdomotor-g/RPi_ALERT/blob/main/docs/configuration.md" target="_blank" rel="noopener">RPi ALERT configuration (receiver ids)</a></li>
+      <li><a href="https://github.com/cdomotor-g/MegaNet/blob/main/docs/ingest-http.md" target="_blank" rel="noopener">Flood-Net ingest: the first copy is kept, every copy recorded</a></li>
+    </ul>
+  </section>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<footer class="wrap small dim">
+  <p>open-ALERT · MIT licence · <a href="https://github.com/cdomotor-g/open-ALERT" target="_blank" rel="noopener">source on GitHub</a> · prices indicative, November 2026 · a plan to start from, not an endorsement.</p>
+</footer>
+
+<script src="data/alert.js"></script>
+<script src="data/compute.js"></script>
+<script src="data/radio.js"></script>
+<script src="data/sensors.js"></script>
+<script src="data/power.js"></script>
+<script src="data/site.js"></script>
+<script src="data/builder.js"></script>
+<script src="js/builder.js"></script>
+<script src="js/trial.js"></script>
+</body>
+</html>

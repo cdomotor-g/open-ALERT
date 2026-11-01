@@ -117,6 +117,37 @@ label.inline { display: inline-flex; gap: 8px; align-items: center; flex-wrap: w
 .tabs [role="tab"]:hover { opacity: 1; background: rgba(255, 255, 255, .07); filter: none; }
 .tabs [role="tab"][aria-selected="true"] { background: var(--bg); color: var(--text); opacity: 1; }
 .tabs [role="tab"]:focus-visible { outline-color: #9fdcff; outline-offset: -3px; }
+/* One menu on every page: Plan (the configurator's views), Build (the base
+   station builder, the Mallow trial), Learn. Every destination is visible at
+   every width — nothing hides in a sideways scroll. */
+.sitenav { display: flex; gap: 6px 18px; margin-top: 14px; align-items: flex-end; }
+.nav-group { display: flex; gap: 4px; align-items: flex-end; position: relative; padding-top: 16px; }
+.nav-group + .nav-group::before { content: ""; position: absolute; left: -10px; top: 20px; bottom: 10px; border-left: 1px solid rgba(232, 241, 248, .22); }
+.nav-h { position: absolute; top: 0; left: 6px; font-size: .68em; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--hero-ink); opacity: .55; }
+.nav-link {
+  display: flex; flex-direction: column; gap: 1px; color: var(--hero-ink); text-decoration: none; opacity: .85;
+  padding: 8px 14px 9px; border-radius: 10px 10px 0 0; white-space: nowrap; line-height: 1.2;
+}
+.nav-link b { font-weight: 600; font-size: .98em; }
+.nav-link span { font-size: .72em; opacity: .75; }
+.nav-link:hover { opacity: 1; background: rgba(255, 255, 255, .08); }
+.nav-link[aria-current="page"] { background: var(--bg); color: var(--text); opacity: 1; }
+.nav-link[aria-current="page"] span { color: var(--dim); opacity: 1; }
+.nav-link:focus-visible { outline: 2px solid #9fdcff; outline-offset: -3px; }
+.onpage { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; margin: 14px 0 0; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; font-size: .92em; }
+.onpage a { font-weight: 600; text-decoration: none; }
+.onpage a:hover { text-decoration: underline; }
+@media (max-width: 900px) {
+  .sitenav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding-bottom: 10px; }
+  .nav-group { display: contents; }
+  .nav-group + .nav-group::before, .nav-h { display: none; }
+  .nav-link { border-radius: 9px; background: rgba(255, 255, 255, .07); padding: 7px 10px; white-space: normal; }
+  .nav-link span { display: none; }
+  .nav-link[aria-current="page"] { background: var(--bg); }
+}
+@media (max-width: 380px) {
+  .sitenav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 main { padding-top: 6px; padding-bottom: 30px; }
 .view > h2:first-child { margin-top: 18px; }
 footer { padding: 16px 16px 36px; text-align: center; border-top: 1px solid var(--line); }
@@ -477,7 +508,8 @@ dialog#dlg::backdrop { background: rgba(5, 15, 25, .55); }
   .tabs [role="tab"] { padding: 9px 12px; }
   .ed-title { flex-basis: 100%; }
   .ed-name { font-size: 1.12em; }
-  .ed-tools select { max-width: 100%; flex: 1 1 100%; }
+  .ed-tools { flex: 1 1 100%; min-width: 0; max-width: 100%; }
+  .ed-tools select { max-width: 100%; min-width: 0; width: 100%; flex: 1 1 100%; }
   .k-v { font-size: 1.12em; }
   .steps [role="tab"] { flex: 1 1 calc(50% - 6px); padding: 7px 6px; font-size: .92em; }
   .req { grid-template-columns: minmax(0, 1fr); }
@@ -521,7 +553,7 @@ dialog#dlg::backdrop { background: rgba(5, 15, 25, .55); }
   :root { color-scheme: light; --bg: #fff; --panel: #fff; --panel-2: #f6f6f6; --line: #ccc; --line-2: #999; --text: #000; --dim: #444; --shadow: none; }
   body { font-size: 11pt; }
   .hero { background: none; color: #000; padding: 0; }
-  .hero p, .tabs, .theme-btn, .skip, .designs, .ed-tools, .steps, .step-nav, .hw-tools, .actions, .welcome, footer, #toast,
+  .hero p, .tabs, .sitenav, .onpage, .theme-btn, .skip, .designs, .ed-tools, .steps, .step-nav, .hw-tools, .actions, .welcome, footer, #toast,
   .opts, button.more, .card-side .btns, .card-side button, .periph-tbl td:last-child, .periph-tbl th:last-child { display: none !important; }
   .hero-in > img { width: 28px; height: 28px; }
   .cfg { display: block; margin: 0; }
