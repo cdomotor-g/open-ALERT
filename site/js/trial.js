@@ -19,21 +19,21 @@
   const TRIAL = {
     asof: '2026-11',
     items: [
-      { id: 'verdin', need: 'must', name: 'Verdin AM62 Quad 2GB WB IT — Toradex 00761200', qty: 1,
-        aud: [aud(107.40), aud(309.63)], gst: false, lead: { d: [7, 91], text: 'Toradex ships samples by express courier within 4 working days (about 1–2 weeks to Australia, an estimate); distributors\' factory lead time is 12–13 weeks' },
-        where: [TDX, ['Future Electronics', 'https://www.futureelectronics.com/p/7205766'], E14], why: 'The computer under test, and the only AM62 with the CPU to run today\'s decoder on four channels (see Which module, above). The low price is Toradex\'s own sample price — Toradex sells to businesses only, so order through the Bureau; the high is a distributor\'s, about three times as much for the same part. The cheaper Dual 1GB IT is 00741201.',
-        src: [['Toradex: Verdin AM62 prices', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], ['Toradex: how to order', 'https://toradex.com/order-now/how-to-order'], ['Future Electronics: 00761200', 'https://www.futureelectronics.com/p/7205766']], conf: 'medium' },
-      { id: 'mallow', need: 'must', name: 'Mallow carrier board — Toradex 01611102 (element14 order code 4759350)', qty: 1,
-        aud: [aud(107.50), 165.74], gst: false, lead: { d: [5, 91], text: '3–5 business days from element14\'s UK stock, or with the module from Toradex; 13 weeks from the factory' },
-        where: [TDX, E14], why: 'Ethernet, two USB 3 ports for the sticks, 7–24 V in, an M.2 B-key slot with USB for a future SDR card. Its design files are published. The same price from Toradex or element14 — element14 is the way if Toradex won\'t sell to you.',
-        src: [['Toradex: Mallow (US$107.50 samples)', 'https://www.toradex.com/products/carrier-board/mallow-carrier-board'], ['element14: Mallow', 'https://au.element14.com/toradex/01611102/carrier-board-mallow/dp/4759350'], ['Mallow datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf']], conf: 'high' },
+      { id: 'verdin', need: 'must', name: 'Verdin AM62 Quad 2GB WB IT — Toradex 00761200 (element14 4852670)', qty: 1,
+        aud: [514.73, 514.73], gst: false, lead: { d: [5, 91], text: '5 in element14\'s UK stock, 3–5 business days; 13 weeks from the factory when that\'s gone' },
+        where: [E14, TDX], why: 'The computer under test, and the only AM62 with the CPU to run today\'s decoder on four channels (see Which module, above). element14\'s listing is titled "Aquila AM69" but describes this module — confirm with element14 before ordering. Toradex sells the same part direct, to businesses only, for US$107.40 (about A$171 inc GST plus courier): a third of element14\'s price, if the Bureau can order it.',
+        src: [['element14 Australia: 00761200', 'https://au.element14.com/toradex/761200/com-2ghz-32gb-arm-cortex-a72-r5f/dp/4852670'], ['Toradex: Verdin AM62 prices', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], ['Toradex: how to order', 'https://toradex.com/order-now/how-to-order']], conf: 'high' },
+      { id: 'mallow', need: 'must', name: 'Mallow carrier board — Toradex 01611102 (element14 4759350)', qty: 1,
+        aud: [165.74, 165.74], gst: false, lead: { d: [5, 91], text: '13 in element14\'s UK stock, 3–5 business days; 13 weeks from the factory' },
+        where: [E14, TDX], why: 'Ethernet, two USB 3 ports for the sticks, 7–24 V in, an M.2 B-key slot with USB for a future SDR card. Its design files are published. Toradex direct is about the same (US$107.50).',
+        src: [['element14 Australia: Mallow', 'https://au.element14.com/toradex/01611102/carrier-board-mallow/dp/4759350'], ['Mallow datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf']], conf: 'high' },
       { id: 'heatsink', need: 'must', name: 'Verdin Industrial Heatsink Type 1 — Toradex 23111001', qty: 1,
-        aud: [aud(15.60), 35], gst: false, lead: { d: [7, 21], text: 'with the module from Toradex, or Mouser / DigiKey' },
-        where: [TDX, ['Mouser Australia', 'https://au.mouser.com/']], why: 'Decoding keeps every core busy: without a heatsink the module throttles and the trial measures heat, not the processor.',
-        src: [['Toradex: Verdin Industrial Heatsink', 'https://www.toradex.com/accessories/verdin-industrial-heatsink-type-1']], conf: 'medium' },
+        aud: [aud(15.60), 40], gst: false, lead: { d: [7, 21], text: 'not stocked by element14 Australia: from Toradex with the module, or Mouser / DigiKey' },
+        where: [TDX, ['Mouser Australia', 'https://au.mouser.com/'], ['DigiKey Australia', 'https://www.digikey.com.au/']], why: 'Decoding keeps every core busy: without a heatsink the module throttles and the trial measures heat, not the processor. element14 Australia stocks only Toradex\'s Apalis heatsinks, which don\'t fit. The low price is Toradex\'s US$15.60; the high, a distributor\'s with shipping (an estimate).',
+        src: [['Toradex: Verdin Industrial Heatsink', 'https://www.toradex.com/accessories/verdin-industrial-heatsink-type-1'], ['DigiKey: 23111001', 'https://www.digikey.nl/en/products/detail/toradex-ag/23111001/28022861']], conf: 'medium' },
       { id: 'psu', need: 'must', name: '12 V 2 A supply with a screw-terminal lead (and Mallow\'s Phoenix power plug if it isn\'t in the box)', qty: 1,
-        aud: [25, 45], gst: true, lead: { d: [1, 7], text: 'any electronics shop; the Phoenix 1805410 plug from element14' },
-        where: [JAYCAR, E14], why: 'Mallow takes 7–24 V on a Phoenix Contact header (its mate is the 1805410). A 12 V plug-pack with a screw-terminal adapter, or the site\'s own 12 V.',
+        aud: [25, 45], gst: true, lead: { d: [1, 7], text: 'any electronics shop; the Phoenix 1805410 plug from RS or Mouser (element14 Australia doesn\'t list it)' },
+        where: [JAYCAR, ['RS Components Australia', 'https://au.rs-online.com/']], why: 'Mallow takes 7–24 V on a Phoenix Contact header (its mate is the 1805410). A 12 V plug-pack with a screw-terminal adapter, or the site\'s own 12 V.',
         src: [['Mallow datasheet (power input)', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf']], conf: 'low' },
       { id: 'stick', need: 'must', name: 'RTL-SDR Blog V4 — the same model as the Pi\'s', qty: 1,
         aud: [60, 165], gst: true, lead: { d: [2, 21], text: 'kits stocked in Australia; the dongle alone from the RTL-SDR Blog store in 1–3 weeks' },
@@ -61,21 +61,22 @@
         why: 'Watts matter on a solar site: the AM62 should draw well under the Pi 4\'s 4–7 W.', src: [], conf: 'low' },
     ],
     // Every Verdin AM62 Toradex lists (its datasheet and price list,
-    // 2026-11): what each could carry. `a53` is cores × GHz ÷ 1.4 — the CPU in
+    // 2026-11): what each could carry, and what element14 Australia charges
+    // for it (ex GST, 2026-11-02; `usd` is Toradex's own sample price). `a53` is cores × GHz ÷ 1.4 — the CPU in
     // A53-at-1.4-GHz cores; a Pi 4 core is about two of those (the Pi 3B+, the
     // same four A53s at 1.4 GHz, is "half a Pi 4" in RPi ALERT's notes).
     variants: [
-      { pid: '00761200', name: 'Quad 2GB WB IT', cores: 4, ghz: 1.4, ram: '2 GB', emmc: '16 GB', wifi: true, temp: '−40 to +85 °C', usd: 107.40, pick: 'buy',
+      { pid: '00761200', e14: { code: '4852670', ex: 514.73, note: '5 in element14\'s UK stock, 3–5 business days; 13 weeks from the factory. Its element14 listing is titled \'Aquila AM69\' but describes the Verdin AM62 Quad — confirm before ordering' }, name: 'Quad 2GB WB IT', cores: 4, ghz: 1.4, ram: '2 GB', emmc: '16 GB', wifi: true, temp: '−40 to +85 °C', usd: 107.40, pick: 'buy',
         why: 'The only AM62 with the CPU for today\'s decoder on four channels. The one to trial.' },
-      { pid: '00741201', name: 'Dual 1GB IT', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '8 GB', wifi: false, temp: '−40 to +85 °C', usd: 81.85, pick: 'later',
+      { pid: '00741201', e14: { code: '4759329', ex: 346.54, note: 'Listed as 00741200, the previous revision (V1.2A); 3 in UK stock plus 3 coming, 3–5 business days; 13 weeks from the factory' }, name: 'Dual 1GB IT', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '8 GB', wifi: false, temp: '−40 to +85 °C', usd: 81.85, pick: 'later',
         why: 'The cheaper production choice once the decoder is lighter: half the Quad, US$25.55 less.' },
-      { pid: '00751201', name: 'Dual 1GB WB IT', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '8 GB', wifi: true, temp: '−40 to +85 °C', usd: 94.10, pick: 'later',
+      { pid: '00751201', e14: { code: '4759330', ex: 368.41, note: 'Listed as 00751200, the previous revision (V1.2A); stock not shown' }, name: 'Dual 1GB WB IT', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '8 GB', wifi: true, temp: '−40 to +85 °C', usd: 94.10, pick: 'later',
         why: 'As 00741201 with Wi-Fi — only if a site has no Ethernet.' },
-      { pid: '00731200', name: 'Dual 1GB ET', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '4 GB', wifi: false, temp: '−20 to +85 °C', usd: 67.20, pick: 'maybe',
+      { pid: '00731200', e14: { code: '4759328', ex: 272.61, note: 'Out of stock: deliveries from 12/01/2027; 13 weeks from the factory' }, name: 'Dual 1GB ET', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '4 GB', wifi: false, temp: '−20 to +85 °C', usd: 67.20, pick: 'maybe',
         why: 'Cheapest two-core; −20 °C is fine for Queensland. 4 GB of eMMC is tight for Torizon, the container and a 1 GB reading queue: shrink the queue.' },
-      { pid: '00721201', name: 'Solo 512MB WB IT', cores: 1, ghz: 1.0, ram: '512 MB', emmc: '4 GB', wifi: true, temp: '−40 to +85 °C', usd: 75.00, pick: 'out',
+      { pid: '00721201', e14: { code: null, ex: null, note: 'Not listed by element14 Australia' }, name: 'Solo 512MB WB IT', cores: 1, ghz: 1.0, ram: '512 MB', emmc: '4 GB', wifi: true, temp: '−40 to +85 °C', usd: 75.00, pick: 'out',
         why: 'One core at 1.0 GHz: under even the lightest decoder\'s needs for four channels, and 512 MB.' },
-      { pid: '00711200', name: 'Solo 512MB', cores: 1, ghz: 1.0, ram: '512 MB', emmc: '4 GB', wifi: false, temp: '0 to +70 °C', usd: 54.95, pick: 'out',
+      { pid: '00711200', e14: { code: '4759327', ex: 216.76, note: 'Stock not shown' }, name: 'Solo 512MB', cores: 1, ghz: 1.0, ram: '512 MB', emmc: '4 GB', wifi: false, temp: '0 to +70 °C', usd: 54.95, pick: 'out',
         why: 'As above, and only 0–70 °C.' },
     ],
 
@@ -154,7 +155,7 @@
           <div class="small dim">${esc(it.why)}</div>
           <div class="shop-meta small"><span><b>${range(inc(it.aud[0], it.gst), inc(it.aud[1], it.gst))}</b> inc GST</span><span title="${esc(it.lead.text)}">⏱ ${esc(days(it.lead.d))}</span><span>${it.where.map(([n, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(n)}</a>`).join(' · ')}</span></div>
         </div></li>`).join('')}</ul>`).join('') +
-      `<p class="note"><b>Total for what you need:</b> ${range(lo, hi)} inc GST (${range(loAll, hiAll)} with everything). The longest wait is the <b>${esc(longest.name.split(' — ')[0])}</b>. <b>Order the module from Toradex direct, through the Bureau:</b> Toradex sells only to businesses, and a distributor charges about three times its price for the same part.</p>`;
+      `<p class="note"><b>Total for what you need:</b> ${range(lo, hi)} inc GST (${range(loAll, hiAll)} with everything). Prices are element14 Australia's where it stocks the part (2 November 2026). <b>The module is most of it:</b> Toradex sells the same 00761200 direct, to businesses only, for about A$171 inc GST — a third of element14's — so if the Bureau can order from Toradex, the whole list comes to about ${range(lo - 514.73 * 1.1 + 171, hi - 514.73 * 1.1 + 171)}.</p>`;
   }
 
   function estimate() {
@@ -190,12 +191,12 @@
     const yours = K.planSticks(freqs, 'auto');
     const pct = (plan, traffic, dec, cap) => { const u = K.load(plan, { traffic, decoder: dec }).total / cap; const v = K.verdict(u); return `<span class="${v.cls}">${Math.round(u * 100)}%</span>`; };
     const PICK = { buy: ['ok', 'Trial this'], later: ['info', 'Later, lighter decoder'], maybe: ['warn', 'Possible, tight'], out: ['bad', 'Ruled out'] };
-    el.innerHTML = `<div class="table-wrap"><table class="tbl var"><thead><tr><th>Toradex part</th><th>CPU</th><th>RAM · eMMC</th><th>Wi-Fi</th><th>Rated</th><th class="num">US$ (Toradex)</th><th class="num">4 ch, busy: today → lighter</th><th class="num">Your ${freqs.length} ch, ${esc(T.traffic)}: today → lighter</th><th>Verdict</th></tr></thead><tbody>${TRIAL.variants.map(v => {
+    el.innerHTML = `<div class="table-wrap"><table class="tbl var"><thead><tr><th>Toradex part</th><th>CPU</th><th>RAM · eMMC</th><th>Wi-Fi</th><th>Rated</th><th class="num">A$ inc GST<br><span class="dim">element14</span></th><th class="num">4 ch, busy: today → lighter</th><th class="num">Your ${freqs.length} ch, ${esc(T.traffic)}: today → lighter</th><th>Verdict</th></tr></thead><tbody>${TRIAL.variants.map(v => {
       const cap = v.cores * (v.ghz / 1.4) / 2;      // in Pi 4 cores
       const p = PICK[v.pick];
-      return `<tr class="pick-${v.pick}"><th scope="row"><b>${esc(v.pid)}</b><div class="small dim">${esc(v.name)}</div></th><td>${v.cores} × A53 ${v.ghz} GHz</td><td>${esc(v.ram)} · ${esc(v.emmc)}</td><td>${v.wifi ? 'yes' : '—'}</td><td>${esc(v.temp)}</td><td class="num">${v.usd.toFixed(2)}</td>
+      return `<tr class="pick-${v.pick}"><th scope="row"><b>${esc(v.pid)}</b><div class="small dim">${esc(v.name)}</div></th><td>${v.cores} × A53 ${v.ghz} GHz</td><td>${esc(v.ram)} · ${esc(v.emmc)}</td><td>${v.wifi ? 'yes' : '—'}</td><td>${esc(v.temp)}</td><td class="num">${v.e14.ex ? `<b>${money(v.e14.ex * 1.1)}</b><div class="small dim">${esc(v.e14.code)}</div>` : '<span class="dim">not listed</span>'}<div class="small dim" title="Toradex's own sample price, to businesses, converted">Toradex direct ≈ ${money(aud(v.usd) * 1.1)}</div></td>
         <td class="num">${pct(four, 'busy', 'today', cap)} → ${pct(four, 'busy', 'lean', cap)}</td><td class="num">${yours.sticks && yours.sticks.length ? `${pct(yours, T.traffic, 'today', cap)} → ${pct(yours, T.traffic, 'lean', cap)}` : '—'}</td>
-        <td><span class="chip st-${p[0] === 'ok' ? 'info' : p[0] === 'bad' ? 'bad' : p[0] === 'warn' ? 'warn' : 'info'}">${p[1]}</span><div class="small dim">${esc(v.why)}</div></td></tr>`;
+        <td><span class="chip st-${p[0] === 'ok' ? 'info' : p[0] === 'bad' ? 'bad' : p[0] === 'warn' ? 'warn' : 'info'}">${p[1]}</span><div class="small dim">${esc(v.why)}</div><div class="small dim">element14: ${esc(v.e14.note)}.</div></td></tr>`;
     }).join('')}</tbody></table></div>`;
   }
 
