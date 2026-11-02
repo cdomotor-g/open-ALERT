@@ -22,7 +22,7 @@
   "status": {
     "phase": "beta",
     "updated": "2026-11-02",
-    "summary": "The Mallow trial now names exact Toradex parts (module 00761200, Mallow 01611102, heatsink 23111001), rates all six Verdin AM62s against the decoder today and once lighter (the Solos ruled out, the Dual 00741201 for later), and prices everything in Australian dollars at element14 (module A$566, Mallow A$182 inc GST; the trial's parts about A$970–1,260), with Toradex's direct price beside it (the module about A$171, to businesses only). The lighter decoder is measured and asked of Flood-Net and RPi ALERT.",
+    "summary": "The Mallow trial now names exact Toradex parts (module 00761200, Mallow 01611102, heatsink 23111001), rates all six Verdin AM62s against the decoder today and once lighter (the Solos ruled out, the Dual 00741201 for later), and prices everything in Australian dollars at element14 (module A$566, Mallow A$182 inc GST; the trial's parts about A$970–1,260), with Toradex's direct price beside it (the module about A$171, to businesses only). The lighter decoder is measured and asked of Flood-Net and RPi ALERT. RPi ALERT 0.16 has the lean decoder as a setting (and Compare to prove it); the trial runs the Mallow on Lean and the Pi on Compare.",
     "next": [
       "Feed the trial's AM62 numbers back into the builder's CPU model",
       "Check the builder's estimated prices and lead times (marked est.) with suppliers: antennas, coax, arrestors, the mating Bulgin lead",
@@ -349,7 +349,7 @@
         "os/install.sh"
       ],
       "since": {
-        "date": "2026-11-01"
+        "date": "2026-11-02"
       },
       "on_change": "Re-check model.windows, chCore240, burstCoreS and kioskCore in site/data/builder.js and the steps() text in site/js/builder.js; run npm test."
     }
@@ -357,7 +357,7 @@
   "asks": [
     {
       "to": "flood-net",
-      "what": "A lighter decoder: filter once per carrier guess (measured: a burst in 45% of the time, same readings), then filter channels only around bursts — so an AM62 module, or a busy Pi 4, can keep up.",
+      "what": "A lighter decoder: part 1 (filter once per carrier guess) is in, opt-in as lean, and RPi ALERT 0.16 can compare it in the field; left: make it the default, then filter channels only around bursts — so an AM62 module, or a busy Pi 4, keeps up.",
       "issue": "cdomotor-g/MegaNet#259",
       "since": "2026-11-02"
     },

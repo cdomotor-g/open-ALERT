@@ -75,7 +75,7 @@
 
   <section class="sect" id="which">
     <h2>Which module</h2>
-    <p>Toradex makes six Verdin AM62s. They all use the same Cortex-A53 cores — the very cores of a Raspberry Pi 3B+ — so what differs is how many and how fast. Each is rated below against what RPi ALERT's decoder asks of it today, and once it is lighter (measured, not yet in the code: <a href="#lighter">below</a>). Part numbers are Toradex's current ones. Prices are element14 Australia's, including GST, with Toradex's own direct price (to businesses only) under each — element14 charges two to three times as much for the modules.</p>
+    <p>Toradex makes six Verdin AM62s. They all use the same Cortex-A53 cores — the very cores of a Raspberry Pi 3B+ — so what differs is how many and how fast. Each is rated below against what RPi ALERT's decoder asks of it today, and once it is lighter (<a href="#lighter">below</a>: the first half is in RPi ALERT 0.16 as <i>Lean</i>; the second is still to build). Part numbers are Toradex's current ones. Prices are element14 Australia's, including GST, with Toradex's own direct price (to businesses only) under each — element14 charges two to three times as much for the modules.</p>
     <div id="variants"></div>
     <p class="small dim">Percent of each module's CPU from the builder's model: green comfortable, amber the edge, red dropping bursts. The trial is what turns these into measurements. Change the channels and traffic under <a href="#keepup">Will it keep up?</a> and the last column follows.</p>
   </section>
@@ -148,6 +148,7 @@ docker build -t rpi-alert .</pre></div>
 docker logs -f rpi-alert</pre></div>
         <ol>
           <li>The log should show the stick found and <code>rtl_sdr</code> started. Then open <code>http://&lt;its IP&gt;/</code> — the same dashboard as the Pi's.</li>
+          <li><b>Decoder</b> (Settings → RTL-SDR, RPi ALERT 0.16): set the Mallow to <b>Lean</b> — the same readings in under half the time, which is what makes four channels comfortable on the AM62 — and the Pi to <b>Compare</b>, so the Pi checks lean against the full decoder on every live burst while it goes on sending the full decoder's readings. Until 0.16 is a release, update the Pi to it over SSH with <code>sudo rpi-alert-update --ref main</code> (the latest release, 0.15.2, doesn't have the setting; <code>sudo rpi-alert-update</code> goes back to it).</li>
           <li>Give it the Pi's channels, gain and ppm (Settings → RTL-SDR), or: <code>docker exec rpi-alert node /opt/rpi-alert/agent/bin/rpi-alert sdr 1 freq 151.5, 151.525, 151.95, 152.4</code> — with the Pi's own list. Leave the screen dashboard off: the Pi's comparison should be like for like, so turn the Pi's off too if it has one.</li>
           <li>Press <b>Request a token</b>, check the code, and approve it on Flood-Net's <b>Admin</b> tab. Its receivers appear as <code>rpi-am62-trial-sdr1…</code> beside the Pi's.</li>
           <li>Leave it on the bench a day with an antenna by a window. If <i>Decoder busy</i> is already near 100% here, it won't cope on site — see <i>Will it keep up?</i> and take some channels off before going on.</li>

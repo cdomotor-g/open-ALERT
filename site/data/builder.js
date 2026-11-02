@@ -73,8 +73,8 @@
     decoders: [
       { id: 'today', short: 'Today\'s decoder', name: 'Today\'s decoder (RPi ALERT 0.15)', cont: 1, burst: 1, status: 'current',
         note: 'Every channel converts and filters the stick\'s whole window, all the time; a burst\'s decode re-filters the window for each of its 45 guesses.' },
-      { id: 'filter-once', short: 'Filter once per guess', name: 'Filter once per carrier guess (measured, not yet in the code)', cont: 1, burst: 0.45, status: 'planned',
-        note: 'A burst\'s decode filters the window once for each of its 9 carrier guesses and makes the ±75 and ±150 Hz nudges after, at 12 kHz, where they cost almost nothing. Tried on 140 synthetic bursts from −4 to +30 dB: the same readings as today in every case but one ghost at −2 dB that today\'s decoder reported and this didn\'t, in 45% of the time.' },
+      { id: 'filter-once', short: 'Lean decoder', name: 'Lean decoder (RPi ALERT 0.16, Settings → Decoder: Lean)', cont: 1, burst: 0.45, status: 'beta',
+        note: 'A burst\'s decode filters the window once for each of its 9 carrier guesses and makes the ±75 and ±150 Hz nudges after, at 12 kHz, where they cost almost nothing. Tried on 140 synthetic bursts from −4 to +30 dB: the same readings as today in every case but one ghost at −2 dB that today\'s decoder reported and this didn\'t, in 45% of the time. In RPi ALERT 0.16 as Settings → RTL-SDR → Decoder: Lean, or Compare to check it against the full decoder on live bursts; it becomes the default once Compare agrees.' },
       { id: 'lean', short: 'Lean front end', name: 'Lean: bursts-only front end + filter once (planned)', cont: 0.03, burst: 0.45, burstFilterS: 1.6, status: 'planned',
         note: 'Between bursts a stick keeps its samples as bytes and looks at 50 FFTs a second to see which channels have a burst; only then is that channel filtered, from the ring, and decoded. A prototype of the watching part cost 6 ms per second of a 960 kHz stick on the test machine, against 248 ms for four channels today. Live audio and per-channel scopes run only while someone is watching.' },
     ],
