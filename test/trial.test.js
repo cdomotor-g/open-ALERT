@@ -54,7 +54,7 @@ test('the module table names every Verdin AM62 by its Toradex part number, and r
   assert.equal(v.length, 6);
   for (const x of v) {
     assert.match(x.pid, /^007[1-6]12\d\d$/, `${x.name}: ${x.pid}`);
-    assert.ok(['buy', 'later', 'maybe', 'out'].includes(x.pick));
+    assert.ok(['buy', 'now', 'later', 'maybe', 'out'].includes(x.pick));
     if (x.cores === 1) assert.equal(x.pick, 'out', `${x.pid} is a Solo and can't carry four channels`);
   }
   assert.equal(v.filter(x => x.pick === 'buy').length, 1);

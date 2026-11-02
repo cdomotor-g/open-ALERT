@@ -21,7 +21,7 @@
     items: [
       { id: 'verdin', need: 'must', name: 'Verdin AM62 Quad 2GB WB IT — Toradex 00761200 (element14 4852670)', qty: 1,
         aud: [514.73, 514.73], gst: false, lead: { d: [5, 91], text: '5 in element14\'s UK stock, 3–5 business days; 13 weeks from the factory when that\'s gone' },
-        where: [E14, TDX], why: 'The computer under test, and the only AM62 with the CPU to run today\'s decoder on four channels (see Which module, above). element14\'s listing is titled "Aquila AM69" but describes this module — confirm with element14 before ordering. Toradex sells the same part direct, to businesses only, for US$107.40 (about A$171 inc GST plus courier): a third of element14\'s price, if the Bureau can order it.',
+        where: [E14, TDX], why: 'The computer under test, with the headroom for a busy site: Flood-Net\'s four channels at about a third of its CPU on RPi ALERT 0.17 (see Which module, above). element14\'s listing is titled "Aquila AM69" but describes this module — confirm with element14 before ordering. Toradex sells the same part direct, to businesses only, for US$107.40 (about A$171 inc GST plus courier): a third of element14\'s price, if the Bureau can order it.',
         src: [['element14 Australia: 00761200', 'https://au.element14.com/toradex/761200/com-2ghz-32gb-arm-cortex-a72-r5f/dp/4852670'], ['Toradex: Verdin AM62 prices', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], ['Toradex: how to order', 'https://toradex.com/order-now/how-to-order']], conf: 'high' },
       { id: 'mallow', need: 'must', name: 'Mallow carrier board — Toradex 01611102 (element14 4759350)', qty: 1,
         aud: [165.74, 165.74], gst: false, lead: { d: [5, 91], text: '13 in element14\'s UK stock, 3–5 business days; 13 weeks from the factory' },
@@ -67,10 +67,10 @@
     // same four A53s at 1.4 GHz, is "half a Pi 4" in RPi ALERT's notes).
     variants: [
       { pid: '00761200', e14: { code: '4852670', ex: 514.73, note: '5 in element14\'s UK stock, 3–5 business days; 13 weeks from the factory. Its element14 listing is titled \'Aquila AM69\' but describes the Verdin AM62 Quad — confirm before ordering' }, name: 'Quad 2GB WB IT', cores: 4, ghz: 1.4, ram: '2 GB', emmc: '16 GB', wifi: true, temp: '−40 to +85 °C', usd: 107.40, pick: 'buy',
-        why: 'The only AM62 with the CPU for today\'s decoder on four channels. The one to trial.' },
-      { pid: '00741201', e14: { code: '4759329', ex: 346.54, note: 'Listed as 00741200, the previous revision (V1.2A); 3 in UK stock plus 3 coming, 3–5 business days; 13 weeks from the factory' }, name: 'Dual 1GB IT', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '8 GB', wifi: false, temp: '−40 to +85 °C', usd: 81.85, pick: 'later',
-        why: 'The cheaper production choice once the decoder is lighter: half the Quad, US$25.55 less.' },
-      { pid: '00751201', e14: { code: '4759330', ex: 368.41, note: 'Listed as 00751200, the previous revision (V1.2A); stock not shown' }, name: 'Dual 1GB WB IT', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '8 GB', wifi: true, temp: '−40 to +85 °C', usd: 94.10, pick: 'later',
+        why: 'Headroom for a site that hears a whole region: four channels in heavy traffic at about half its CPU on 0.17. The one to trial.' },
+      { pid: '00741201', e14: { code: '4759329', ex: 346.54, note: 'Listed as 00741200, the previous revision (V1.2A); 3 in UK stock plus 3 coming, 3–5 business days; 13 weeks from the factory' }, name: 'Dual 1GB IT', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '8 GB', wifi: false, temp: '−40 to +85 °C', usd: 81.85, pick: 'now',
+        why: 'Carries four channels on a busy day on 0.17, at about two thirds of its CPU; not a heavy site. The cheaper production choice, US$25.55 less direct (A$185 less at element14).' },
+      { pid: '00751201', e14: { code: '4759330', ex: 368.41, note: 'Listed as 00751200, the previous revision (V1.2A); stock not shown' }, name: 'Dual 1GB WB IT', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '8 GB', wifi: true, temp: '−40 to +85 °C', usd: 94.10, pick: 'now',
         why: 'As 00741201 with Wi-Fi — only if a site has no Ethernet.' },
       { pid: '00731200', e14: { code: '4759328', ex: 272.61, note: 'Out of stock: deliveries from 12/01/2027; 13 weeks from the factory' }, name: 'Dual 1GB ET', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '4 GB', wifi: false, temp: '−20 to +85 °C', usd: 67.20, pick: 'maybe',
         why: 'Cheapest two-core; −20 °C is fine for Queensland. 4 GB of eMMC is tight for Torizon, the container and a 1 GB reading queue: shrink the queue.' },
@@ -182,7 +182,7 @@
   }
 
   // Every AM62 variant: what Flood-Net's four channels on a busy day, and the
-  // Pi's channels on a heavy one, would ask of it — today and once lighter.
+  // Pi's channels on a heavy one, would ask of it — on RPi ALERT 0.17, and with the bursts-only front end still to build.
   function variants() {
     const K = globalThis.OA_BUILD_API, el = $('#variants');
     if (!K || !el) return;
@@ -190,12 +190,12 @@
     const freqs = String(T.channels).split(/[ ,;]+/).map(Number).filter(f => f >= 136 && f <= 174);
     const yours = K.planSticks(freqs, 'auto');
     const pct = (plan, traffic, dec, cap) => { const u = K.load(plan, { traffic, decoder: dec }).total / cap; const v = K.verdict(u); return `<span class="${v.cls}">${Math.round(u * 100)}%</span>`; };
-    const PICK = { buy: ['ok', 'Trial this'], later: ['info', 'Later, lighter decoder'], maybe: ['warn', 'Possible, tight'], out: ['bad', 'Ruled out'] };
-    el.innerHTML = `<div class="table-wrap"><table class="tbl var"><thead><tr><th>Toradex part</th><th>CPU</th><th>RAM · eMMC</th><th>Wi-Fi</th><th>Rated</th><th class="num">A$ inc GST<br><span class="dim">element14</span></th><th class="num">4 ch, busy: today → lighter</th><th class="num">Your ${freqs.length} ch, ${esc(T.traffic)}: today → lighter</th><th>Verdict</th></tr></thead><tbody>${TRIAL.variants.map(v => {
+    const PICK = { buy: ['ok', 'Trial this'], now: ['ok', 'Works on 0.17'], later: ['info', 'Later, lighter decoder'], maybe: ['warn', 'Possible, tight'], out: ['bad', 'Ruled out'] };
+    el.innerHTML = `<div class="table-wrap"><table class="tbl var"><thead><tr><th>Toradex part</th><th>CPU</th><th>RAM · eMMC</th><th>Wi-Fi</th><th>Rated</th><th class="num">A$ inc GST<br><span class="dim">element14</span></th><th class="num">4 ch, busy: 0.17 → planned</th><th class="num">Your ${freqs.length} ch, ${esc(T.traffic)}: 0.17 → planned</th><th>Verdict</th></tr></thead><tbody>${TRIAL.variants.map(v => {
       const cap = v.cores * (v.ghz / 1.4) / 2;      // in Pi 4 cores
       const p = PICK[v.pick];
       return `<tr class="pick-${v.pick}"><th scope="row"><b>${esc(v.pid)}</b><div class="small dim">${esc(v.name)}</div></th><td>${v.cores} × A53 ${v.ghz} GHz</td><td>${esc(v.ram)} · ${esc(v.emmc)}</td><td>${v.wifi ? 'yes' : '—'}</td><td>${esc(v.temp)}</td><td class="num">${v.e14.ex ? `<b>${money(v.e14.ex * 1.1)}</b><div class="small dim">${esc(v.e14.code)}</div>` : '<span class="dim">not listed</span>'}<div class="small dim" title="Toradex's own sample price, to businesses, converted">Toradex direct ≈ ${money(aud(v.usd) * 1.1)}</div></td>
-        <td class="num">${pct(four, 'busy', 'today', cap)} → ${pct(four, 'busy', 'lean', cap)}</td><td class="num">${yours.sticks && yours.sticks.length ? `${pct(yours, T.traffic, 'today', cap)} → ${pct(yours, T.traffic, 'lean', cap)}` : '—'}</td>
+        <td class="num">${pct(four, 'busy', 'filter-once', cap)} → ${pct(four, 'busy', 'lean', cap)}</td><td class="num">${yours.sticks && yours.sticks.length ? `${pct(yours, T.traffic, 'filter-once', cap)} → ${pct(yours, T.traffic, 'lean', cap)}` : '—'}</td>
         <td><span class="chip st-${p[0] === 'ok' ? 'info' : p[0] === 'bad' ? 'bad' : p[0] === 'warn' ? 'warn' : 'info'}">${p[1]}</span><div class="small dim">${esc(v.why)}</div><div class="small dim">element14: ${esc(v.e14.note)}.</div></td></tr>`;
     }).join('')}</tbody></table></div>`;
   }

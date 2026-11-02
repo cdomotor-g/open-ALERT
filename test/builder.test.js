@@ -78,11 +78,12 @@ test('the CPU model agrees with what happened at the Brisbane base', () => {
   // the default four channels are comfortable on a Pi 4 on a rainy day
   const four = K.planSticks([151.5, 151.525, 151.95, 152.4], 'auto');
   assert.ok(K.load(four, { traffic: 'busy' }).total / cap <= B.model.safe);
-  // an AM62 can't carry eight today, and the planned decoder brings it closer
+  // an AM62 couldn't carry eight on the full decoder, and the lighter ones bring it closer
   const am62 = B.platforms.find(p => p.id === 'toradex-verdin-am62-mallow');
-  const today = K.load(narrow, { traffic: 'heavy' }).total / K.capacity(am62);
+  const now = K.load(narrow, { traffic: 'heavy', decoder: 'filter-once' }).total / K.capacity(am62);
+  const today = K.load(narrow, { traffic: 'heavy', decoder: 'today' }).total / K.capacity(am62);
   const later = K.load(narrow, { traffic: 'heavy', decoder: 'lean' }).total / K.capacity(am62);
-  assert.ok(today > 1 && later < today / 2);
+  assert.ok(today > 1 && now < today && later < today / 2);
 });
 
 test('every combination of choices builds a complete bill', () => {

@@ -76,7 +76,7 @@
   // Pi 4 cores the plan needs on today's (or a planned) decoder.
   function load(plan, o) {
     const M = B.model;
-    const dec = B.decoders.find(d => d.id === (o.decoder || 'today')) || B.decoders[0];
+    const dec = B.decoders.find(d => d.id === (o.decoder || 'filter-once')) || B.decoders[1];
     const bpm = TRAFFIC[o.traffic] || TRAFFIC.busy;
     let cont = 0, burst = 0, ch = 0;
     for (const s of plan.sticks || []) {
@@ -138,7 +138,7 @@
       if (!P.m2 || P.m2 === 'hat' || P.m2 === 'nvme') warn.push(['bad', `${P.short} has no M.2 slot carrying USB: a card SDR needs Mallow's B-key slot or a carrier of your own.`]);
       if (nSticks > 1) warn.push(['warn', `One M.2 slot holds one card: the other ${nSticks - 1} stick${nSticks > 2 ? 's' : ''} go on USB.`]);
     } else if (nSticks > P.usb) warn.push(['warn', `${nSticks} sticks and ${P.usb} USB ports: add a powered USB hub.`]);
-    if (S.decoder && S.decoder !== 'today') warn.push(['info', `The CPU figures assume the ${(B.decoders.find(d => d.id === S.decoder) || {}).short || 'planned decoder'} — measured on a test machine, not in RPi ALERT yet. Today's decoder: ${Math.round(load(plan, Object.assign({}, S, { decoder: 'today' })).total / (capacity(P) || 1) * 100)}% of this computer's CPU.`]);
+    if (S.decoder === 'lean') warn.push(['info', `The CPU figures assume the bursts-only front end — planned, not in RPi ALERT yet. With 0.17's lean decoder: ${Math.round(load(plan, Object.assign({}, S, { decoder: 'filter-once' })).total / (capacity(P) || 1) * 100)}% of this computer's CPU.`]);
     if (sdr.planned) warn.push(['info', 'The M.2 card is a design to commission, not a part to buy: plan on USB sticks until it exists (see the custom path below).']);
 
     // RF
@@ -255,7 +255,7 @@
   const KEY = 'open-alert:builder';
   const DEFAULT = {
     platform: 'rpi-4-4gb', channels: B.channels.filter(c => c.def).map(c => c.mhz), sticks: 'auto',
-    decoder: 'today', traffic: 'busy', kiosk: false, sdr: 'rtl-sdr-blog-v4', mount: 'ext-clamp',
+    decoder: 'filter-once', traffic: 'busy', kiosk: false, sdr: 'rtl-sdr-blog-v4', mount: 'ext-clamp',
     antenna: 'rfi-col54', coaxM: 15, arrestor: true, power: 'mains-plug', backhaul: 'lan', enclosure: 'fibox', gps: false,
   };
   let S = load0();
@@ -455,7 +455,7 @@
         g += `<rect x="${x0}" y="${y + 3 + j * 8}" width="${Math.max(1, x(u) - x0)}" height="7" class="cmp d${j} ${verdict(u).cls}"><title>${esc(p.short)}, ${esc(d.name)}: ${Math.round(u * 100)}%</title></rect>`;
       });
     });
-    return `<div class="diagram cmpd"><svg viewBox="0 0 ${W} ${24 + B.platforms.length * rh}" role="img" aria-label="CPU each computer would use for this plan">${g}</svg></div><div class="legend small"><span><i class="lg-d0"></i>today's decoder</span><span><i class="lg-d1"></i>filter once per guess (measured)</span><span><i class="lg-d2"></i>lean front end (planned)</span><span class="dim">bars past 150% are cut off</span></div>`;
+    return `<div class="diagram cmpd"><svg viewBox="0 0 ${W} ${24 + B.platforms.length * rh}" role="img" aria-label="CPU each computer would use for this plan">${g}</svg></div><div class="legend small"><span><i class="lg-d0"></i>full decoder (0.16 and before)</span><span><i class="lg-d1"></i>lean (RPi ALERT 0.17)</span><span><i class="lg-d2"></i>bursts-only (planned)</span><span class="dim">bars past 150% are cut off</span></div>`;
   }
 
   // ── the system diagram's explanations ──
