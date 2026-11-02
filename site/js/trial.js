@@ -19,15 +19,15 @@
   const TRIAL = {
     asof: '2026-11',
     items: [
-      { id: 'verdin', need: 'must', name: 'Toradex Verdin AM62 Quad 2 GB Wi-Fi/BT, −40 to +85 °C (part 0076)', qty: 1,
-        aud: [aud(107.40), 380], gst: false, lead: { d: [7, 91], text: 'Toradex\'s webshop ships from Switzerland (about 1–2 weeks, an estimate); element14 holds some AM62 variants in its UK stock; the factory lead time is 12–13 weeks' },
-        where: [TDX, E14], why: 'The computer under test. The quad-core gives it the best chance against the Pi 4; the Dual 1 GB (part 0074, US$81.85) is the cheaper fall-back. The low price is Toradex\'s 1–99 price, converted; the high, element14 Australia\'s.',
-        src: [['Toradex: Verdin AM62 prices and availability', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62']], conf: 'medium' },
-      { id: 'mallow', need: 'must', name: 'Toradex Mallow carrier board (01611102)', qty: 1,
-        aud: [165.74, 165.74], gst: false, lead: { d: [5, 91], text: '3–5 business days from element14\'s UK stock; 13 weeks from the factory' },
-        where: [E14, TDX], why: 'Ethernet, two USB 3 ports for the sticks, 7–24 V in, an M.2 B-key slot with USB for a future SDR card. Its design files are published.',
-        src: [['element14: Mallow', 'https://au.element14.com/toradex/01611102/carrier-board-mallow/dp/4759350'], ['Mallow datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf']], conf: 'high' },
-      { id: 'heatsink', need: 'must', name: 'Verdin Industrial Heatsink Type 1 (23111001)', qty: 1,
+      { id: 'verdin', need: 'must', name: 'Verdin AM62 Quad 2GB WB IT — Toradex 00761200', qty: 1,
+        aud: [aud(107.40), aud(309.63)], gst: false, lead: { d: [7, 91], text: 'Toradex ships samples by express courier within 4 working days (about 1–2 weeks to Australia, an estimate); distributors\' factory lead time is 12–13 weeks' },
+        where: [TDX, ['Future Electronics', 'https://www.futureelectronics.com/p/7205766'], E14], why: 'The computer under test, and the only AM62 with the CPU to run today\'s decoder on four channels (see Which module, above). The low price is Toradex\'s own sample price — Toradex sells to businesses only, so order through the Bureau; the high is a distributor\'s, about three times as much for the same part. The cheaper Dual 1GB IT is 00741201.',
+        src: [['Toradex: Verdin AM62 prices', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], ['Toradex: how to order', 'https://toradex.com/order-now/how-to-order'], ['Future Electronics: 00761200', 'https://www.futureelectronics.com/p/7205766']], conf: 'medium' },
+      { id: 'mallow', need: 'must', name: 'Mallow carrier board — Toradex 01611102 (element14 order code 4759350)', qty: 1,
+        aud: [aud(107.50), 165.74], gst: false, lead: { d: [5, 91], text: '3–5 business days from element14\'s UK stock, or with the module from Toradex; 13 weeks from the factory' },
+        where: [TDX, E14], why: 'Ethernet, two USB 3 ports for the sticks, 7–24 V in, an M.2 B-key slot with USB for a future SDR card. Its design files are published. The same price from Toradex or element14 — element14 is the way if Toradex won\'t sell to you.',
+        src: [['Toradex: Mallow (US$107.50 samples)', 'https://www.toradex.com/products/carrier-board/mallow-carrier-board'], ['element14: Mallow', 'https://au.element14.com/toradex/01611102/carrier-board-mallow/dp/4759350'], ['Mallow datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf']], conf: 'high' },
+      { id: 'heatsink', need: 'must', name: 'Verdin Industrial Heatsink Type 1 — Toradex 23111001', qty: 1,
         aud: [aud(15.60), 35], gst: false, lead: { d: [7, 21], text: 'with the module from Toradex, or Mouser / DigiKey' },
         where: [TDX, ['Mouser Australia', 'https://au.mouser.com/']], why: 'Decoding keeps every core busy: without a heatsink the module throttles and the trial measures heat, not the processor.',
         src: [['Toradex: Verdin Industrial Heatsink', 'https://www.toradex.com/accessories/verdin-industrial-heatsink-type-1']], conf: 'medium' },
@@ -60,6 +60,25 @@
         aud: [30, 70], gst: true, lead: { d: [1, 7], text: 'Jaycar, Core Electronics' }, where: [JAYCAR, CORE],
         why: 'Watts matter on a solar site: the AM62 should draw well under the Pi 4\'s 4–7 W.', src: [], conf: 'low' },
     ],
+    // Every Verdin AM62 Toradex lists (its datasheet and price list,
+    // 2026-11): what each could carry. `a53` is cores × GHz ÷ 1.4 — the CPU in
+    // A53-at-1.4-GHz cores; a Pi 4 core is about two of those (the Pi 3B+, the
+    // same four A53s at 1.4 GHz, is "half a Pi 4" in RPi ALERT's notes).
+    variants: [
+      { pid: '00761200', name: 'Quad 2GB WB IT', cores: 4, ghz: 1.4, ram: '2 GB', emmc: '16 GB', wifi: true, temp: '−40 to +85 °C', usd: 107.40, pick: 'buy',
+        why: 'The only AM62 with the CPU for today\'s decoder on four channels. The one to trial.' },
+      { pid: '00741201', name: 'Dual 1GB IT', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '8 GB', wifi: false, temp: '−40 to +85 °C', usd: 81.85, pick: 'later',
+        why: 'The cheaper production choice once the decoder is lighter: half the Quad, US$25.55 less.' },
+      { pid: '00751201', name: 'Dual 1GB WB IT', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '8 GB', wifi: true, temp: '−40 to +85 °C', usd: 94.10, pick: 'later',
+        why: 'As 00741201 with Wi-Fi — only if a site has no Ethernet.' },
+      { pid: '00731200', name: 'Dual 1GB ET', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '4 GB', wifi: false, temp: '−20 to +85 °C', usd: 67.20, pick: 'maybe',
+        why: 'Cheapest two-core; −20 °C is fine for Queensland. 4 GB of eMMC is tight for Torizon, the container and a 1 GB reading queue: shrink the queue.' },
+      { pid: '00721201', name: 'Solo 512MB WB IT', cores: 1, ghz: 1.0, ram: '512 MB', emmc: '4 GB', wifi: true, temp: '−40 to +85 °C', usd: 75.00, pick: 'out',
+        why: 'One core at 1.0 GHz: under even the lightest decoder\'s needs for four channels, and 512 MB.' },
+      { pid: '00711200', name: 'Solo 512MB', cores: 1, ghz: 1.0, ram: '512 MB', emmc: '4 GB', wifi: false, temp: '0 to +70 °C', usd: 54.95, pick: 'out',
+        why: 'As above, and only 0–70 °C.' },
+    ],
+
     // What to compare, where to read it, and how it passes.
     measures: [
       { id: 'decoded', name: 'Bursts decoded (a week)', where: 'Each box\'s Overview (each channel\'s count), or Flood-Net\'s Reception Map filtered to the receiver', rule: 'ratio', min: 0.98, unit: '' },
@@ -135,7 +154,7 @@
           <div class="small dim">${esc(it.why)}</div>
           <div class="shop-meta small"><span><b>${range(inc(it.aud[0], it.gst), inc(it.aud[1], it.gst))}</b> inc GST</span><span title="${esc(it.lead.text)}">⏱ ${esc(days(it.lead.d))}</span><span>${it.where.map(([n, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(n)}</a>`).join(' · ')}</span></div>
         </div></li>`).join('')}</ul>`).join('') +
-      `<p class="note"><b>Total for what you need:</b> ${range(lo, hi)} inc GST (${range(loAll, hiAll)} with everything). The longest wait is the <b>${esc(longest.name.split(' (')[0])}</b> — ${esc(longest.lead.text)}. Order the Toradex parts first, through the Bureau's account if Toradex sells only to businesses.</p>`;
+      `<p class="note"><b>Total for what you need:</b> ${range(lo, hi)} inc GST (${range(loAll, hiAll)} with everything). The longest wait is the <b>${esc(longest.name.split(' — ')[0])}</b>. <b>Order the module from Toradex direct, through the Bureau:</b> Toradex sells only to businesses, and a distributor charges about three times its price for the same part.</p>`;
   }
 
   function estimate() {
@@ -157,8 +176,27 @@
         <label>Channels (MHz, as on the Pi) <input id="t-ch" value="${esc(T.channels)}" inputmode="decimal"></label>
         <label>Traffic <select id="t-tr"><option value="quiet"${T.traffic === 'quiet' ? ' selected' : ''}>Quiet</option><option value="busy"${T.traffic === 'busy' ? ' selected' : ''}>Busy</option><option value="heavy"${T.traffic === 'heavy' ? ' selected' : ''}>Heavy — hears a whole region</option></select></label></div>
       <p class="small dim">${esc(plan.error || sticks || 'Type the Pi\'s channels.')}</p>
-      <div class="table-wrap"><table class="tbl"><thead><tr><th></th>${K.B.decoders.map(d => `<th class="num">${esc(d.id === 'today' ? 'Today\'s decoder' : d.id === 'shared' ? 'Shared front end' : '+ WebAssembly')}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="table-wrap"><table class="tbl"><thead><tr><th></th>${K.B.decoders.map(d => `<th class="num">${esc(d.short)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
       <p class="small dim">Share of each computer's CPU, from the builder's model (RPi ALERT's measurements on a Pi 4; the AM62 at about half a Pi 4). Green is comfortable; amber is the edge; red drops bursts. The last two columns are planned work, not built. The trial is what replaces these guesses with numbers.</p>`;
+  }
+
+  // Every AM62 variant: what Flood-Net's four channels on a busy day, and the
+  // Pi's channels on a heavy one, would ask of it — today and once lighter.
+  function variants() {
+    const K = globalThis.OA_BUILD_API, el = $('#variants');
+    if (!K || !el) return;
+    const four = K.planSticks([151.5, 151.525, 151.95, 152.4], 'auto');
+    const freqs = String(T.channels).split(/[ ,;]+/).map(Number).filter(f => f >= 136 && f <= 174);
+    const yours = K.planSticks(freqs, 'auto');
+    const pct = (plan, traffic, dec, cap) => { const u = K.load(plan, { traffic, decoder: dec }).total / cap; const v = K.verdict(u); return `<span class="${v.cls}">${Math.round(u * 100)}%</span>`; };
+    const PICK = { buy: ['ok', 'Trial this'], later: ['info', 'Later, lighter decoder'], maybe: ['warn', 'Possible, tight'], out: ['bad', 'Ruled out'] };
+    el.innerHTML = `<div class="table-wrap"><table class="tbl var"><thead><tr><th>Toradex part</th><th>CPU</th><th>RAM · eMMC</th><th>Wi-Fi</th><th>Rated</th><th class="num">US$ (Toradex)</th><th class="num">4 ch, busy: today → lighter</th><th class="num">Your ${freqs.length} ch, ${esc(T.traffic)}: today → lighter</th><th>Verdict</th></tr></thead><tbody>${TRIAL.variants.map(v => {
+      const cap = v.cores * (v.ghz / 1.4) / 2;      // in Pi 4 cores
+      const p = PICK[v.pick];
+      return `<tr class="pick-${v.pick}"><th scope="row"><b>${esc(v.pid)}</b><div class="small dim">${esc(v.name)}</div></th><td>${v.cores} × A53 ${v.ghz} GHz</td><td>${esc(v.ram)} · ${esc(v.emmc)}</td><td>${v.wifi ? 'yes' : '—'}</td><td>${esc(v.temp)}</td><td class="num">${v.usd.toFixed(2)}</td>
+        <td class="num">${pct(four, 'busy', 'today', cap)} → ${pct(four, 'busy', 'lean', cap)}</td><td class="num">${yours.sticks && yours.sticks.length ? `${pct(yours, T.traffic, 'today', cap)} → ${pct(yours, T.traffic, 'lean', cap)}` : '—'}</td>
+        <td><span class="chip st-${p[0] === 'ok' ? 'info' : p[0] === 'bad' ? 'bad' : p[0] === 'warn' ? 'warn' : 'info'}">${p[1]}</span><div class="small dim">${esc(v.why)}</div></td></tr>`;
+    }).join('')}</tbody></table></div>`;
   }
 
   function results() {
@@ -184,8 +222,8 @@
   document.addEventListener('change', e => {
     const el = e.target;
     if (el.dataset.got) { T.got[el.dataset.got] = el.checked; el.closest('li').classList.toggle('got', el.checked); save(); }
-    if (el.id === 't-ch') { T.channels = el.value; save(); estimate(); }
-    if (el.id === 't-tr') { T.traffic = el.value; save(); estimate(); }
+    if (el.id === 't-ch') { T.channels = el.value; save(); estimate(); variants(); }
+    if (el.id === 't-tr') { T.traffic = el.value; save(); estimate(); variants(); }
   });
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-act]');
@@ -216,5 +254,5 @@
     applyTheme(t);
   }
   try { applyTheme(localStorage.getItem(THEME_KEY) || 'auto'); } catch (e) { applyTheme('auto'); }
-  shopping(); estimate(); results();
+  shopping(); estimate(); variants(); results();
 })();

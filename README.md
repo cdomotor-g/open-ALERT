@@ -91,7 +91,7 @@ works out the verdicts, and what to do when it won't. Its list and verdicts are
 
 ## The catalogue
 
-250 parts, each with where it fits, what it can do, its price and where the price came
+251 parts, each with where it fits, what it can do, its price and where the price came
 from, its power, operating temperature, a 1–5 grade for field use, status (current, young,
 end of life, planned, DIY), firmware and openness, pros and cons, and sources.
 
@@ -99,7 +99,7 @@ end of life, planned, DIY), firmware and openness, pros and cons, and sources.
 |---|---|---|
 | ALERT equipment | 14 | ELPRO ERT-A2 and 115E-2-A2 gateway, Campbell ALERT200X / ALERT205X / ALERT121A / AL200X / AL205B, HSE 3306 / 333X / 1012, Hydrolynx |
 | Software & firmware | 10 | RPi ALERT, FW-LAB Receiver, the Flood-Net Serial Monitor, Campbell ALERT2ADM, OneRain Contrail, the Bureau's Enviromon; a minimodem encoder; open-ALERT's encoder firmware and repeater (planned) |
-| Loggers & computers | 44 | Raspberry Pi 5 / 4 / Zero 2 W / CM4 / CM5; Toradex Verdin AM62 on Mallow; industrial Pis (Revolution Pi, Strato Pi, reComputer, OnLogic, CompuLab, EDATEC); BeagleBone, Moxa, Siemens IOT2050; N150 mini PCs and fanless x86; ESP32, Pico 2, STM32, Arduino Opta; Campbell CR310 / CR350 / CR1000X, OTT, HyQuest, Unidata, EnviroDIY Mayfly |
+| Loggers & computers | 45 | Raspberry Pi 5 / 4 / Zero 2 W / CM4 / CM5; Toradex Verdin AM62 Quad and Dual on Mallow; industrial Pis (Revolution Pi, Strato Pi, reComputer, OnLogic, CompuLab, EDATEC); BeagleBone, Moxa, Siemens IOT2050; N150 mini PCs and fanless x86; ESP32, Pico 2, STM32, Arduino Opta; Campbell CR310 / CR350 / CR1000X, OTT, HyQuest, Unidata, EnviroDIY Mayfly |
 | Radios | 23 | RTL-SDR Blog V3/V4, Airspy, SDRplay, Ettus; Quansheng UV-K5; Tait TM9300 / TM8100, Maxon, Kenwood, Icom, Motorola, Ritron |
 | RF parts | 31 | Yagis and collinears, LMR-400 and Heliax, PolyPhaser arrestors, cavity filters, duplexers, GPS antennas and HATs, a dummy load |
 | Sensors | 32 | KISTERS / HyQuest TB3 and TB4, Rimco, OTT Pluvio²; pressure, radar, ultrasonic, encoder and bubbler level sensors; SDI-12, 4–20 mA and RS-485 interfaces |

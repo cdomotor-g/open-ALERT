@@ -209,3 +209,9 @@
 .trouble dd { margin: 4px 0 0 0; max-width: 920px; }
 @media (max-width: 900px) { .cards3 { grid-template-columns: minmax(0, 1fr); } }
 #results .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.var td, .var th { white-space: normal; }
+.var .num, .var th[scope="row"] b { white-space: nowrap; }
+.var thead th { white-space: normal; }
+.var td:last-child { min-width: 210px; }
+.var tr.pick-buy th[scope="row"] b { color: var(--ok); }
+.var tr.pick-out { opacity: .7; }

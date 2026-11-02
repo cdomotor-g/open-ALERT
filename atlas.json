@@ -5,7 +5,7 @@
   "repo": "cdomotor-g/open-ALERT",
   "name": "open-ALERT",
   "tagline": "A configurator for ALERT and ALERT2 flood-warning sites: say what a site must do, see the hardware that fits, its costs and consequences.",
-  "about": "For anyone planning ALERT or ALERT2 field stations, repeaters or base stations. Each site goes from needs to requirements to hardware picked from a 250-part catalogue (open and closed, Raspberry Pi to industrial), then to a bill of materials, a power budget with battery and panel sized, labour and running costs, and the consequences of the choices. The Network tab adds sites up and checks that what field stations send, repeaters relay and bases receive actually meet. A static page with no server: state lives in the browser and in share links. The base station builder (build.html) goes deeper on a receiving base running RPi ALERT: how it fits together physically and in the code, which computer keeps up with how many channels, the SDR mounting, a bill with price ranges, lead times and suppliers, and the build steps.",
+  "about": "For anyone planning ALERT or ALERT2 field stations, repeaters or base stations. Each site goes from needs to requirements to hardware picked from a 251-part catalogue (open and closed, Raspberry Pi to industrial), then to a bill of materials, a power budget with battery and panel sized, labour and running costs, and the consequences of the choices. The Network tab adds sites up and checks that what field stations send, repeaters relay and bases receive actually meet. A static page with no server: state lives in the browser and in share links. The base station builder (build.html) goes deeper on a receiving base running RPi ALERT: how it fits together physically and in the code, which computer keeps up with how many channels, the SDR mounting, a bill with price ranges, lead times and suppliers, and the build steps.",
   "kind": "static web app (configurator)",
   "logo": "site/icon.svg",
   "site": "https://cdomotor-g.github.io/open-ALERT/",
@@ -21,8 +21,8 @@
   },
   "status": {
     "phase": "beta",
-    "updated": "2026-11-01",
-    "summary": "One menu on every page now (Plan: Sites, Network, Parts · Build: Base station, Mallow trial · Learn: How it works), and a new Mallow trial page: a Verdin AM62 on Mallow beside the Pi 4 running RPi ALERT, on one antenna — what to buy, the steps, and a results sheet with the pass rules. Before that today: the base station builder.",
+    "updated": "2026-11-02",
+    "summary": "The Mallow trial now names exact Toradex parts (module 00761200, Mallow 01611102, heatsink 23111001), rates all six Verdin AM62s against the decoder today and once lighter (the Solos ruled out, the Dual 00741201 for later), and says to buy direct from Toradex through the Bureau — distributors charge about three times as much. The lighter decoder is measured and asked of Flood-Net and RPi ALERT.",
     "next": [
       "Feed the trial's AM62 numbers back into the builder's CPU model",
       "Check the builder's estimated prices and lead times (marked est.) with suppliers: antennas, coax, arrestors, the mating Bulgin lead",
@@ -37,6 +37,30 @@
     ],
     "now": [
       "The Mallow trial: buy the parts, bring the AM62 up on Torizon OS, run RPi ALERT in a container beside the Pi"
+    ],
+    "blocked": [
+      {
+        "what": "Ordering the trial's module from Toradex direct",
+        "on": "human",
+        "kind": "money",
+        "since": "2026-11-02",
+        "holds": [
+          "The Mallow trial"
+        ],
+        "options": [
+          {
+            "by": "human",
+            "effort": "an hour",
+            "recommended": true,
+            "what": "Order 00761200, 01611102 and 23111001 from Toradex's webshop on the Bureau's business account"
+          },
+          {
+            "by": "human",
+            "effort": "an hour",
+            "what": "Buy the Mallow from element14 (4759350) now and the module from a distributor at about three times the price"
+          }
+        ]
+      }
     ]
   },
   "components": [
@@ -52,7 +76,7 @@
     {
       "id": "catalogue",
       "name": "Hardware catalogue",
-      "what": "250 parts in six family files, each with price and its source, power, temperature, grade, openness and sources.",
+      "what": "251 parts in six family files, each with price and its source, power, temperature, grade, openness and sources.",
       "paths": [
         "site/data/"
       ],
@@ -152,7 +176,7 @@
     {
       "id": "hardware-catalogue",
       "name": "ALERT hardware catalogue",
-      "what": "Plain-JavaScript records of 250 parts with prices and their sources, power, grades and links, for costing ALERT sites.",
+      "what": "Plain-JavaScript records of 251 parts with prices and their sources, power, grades and links, for costing ALERT sites.",
       "component": "catalogue",
       "paths": [
         "site/data/"
@@ -328,6 +352,20 @@
         "date": "2026-11-01"
       },
       "on_change": "Re-check model.windows, chCore240, burstCoreS and kioskCore in site/data/builder.js and the steps() text in site/js/builder.js; run npm test."
+    }
+  ],
+  "asks": [
+    {
+      "to": "flood-net",
+      "what": "A lighter decoder: filter once per carrier guess (measured: a burst in 45% of the time, same readings), then filter channels only around bursts — so an AM62 module, or a busy Pi 4, can keep up.",
+      "issue": "cdomotor-g/MegaNet#259",
+      "since": "2026-11-02"
+    },
+    {
+      "to": "rpi-alert",
+      "what": "One worker per stick taking Flood-Net's lighter decoder, filtering each channel only around bursts.",
+      "issue": "cdomotor-g/RPi_ALERT#3",
+      "since": "2026-11-02"
     }
   ]
 }

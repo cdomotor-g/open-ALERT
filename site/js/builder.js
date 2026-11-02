@@ -82,7 +82,7 @@
     for (const s of plan.sticks || []) {
       for (let i = 0; i < s.chans.length; i++) {
         cont += M.chCore240 * s.window.rel * dec.cont;
-        burst += bpm / 60 * M.burstCoreS * dec.burst;
+        burst += bpm / 60 * (M.burstCoreS * dec.burst + (dec.burstFilterS || 0) * M.chCore240 * s.window.rel);
         ch++;
       }
     }
@@ -125,7 +125,7 @@
     const rows = [];
 
     // the computer
-    rows.push(row('Computer', P, 1));
+    rows.push(row('Computer', P.parts ? Object.assign({}, P, { note: `Order: ${P.parts}.` }) : P, 1));
     if (P.install === 'pi') rows.push(row('Computer', { id: 'sd-endurance', name: 'High-endurance or industrial microSD card (32 GB)', aud: [20, 60], gst: true, lead: B.platforms[0].lead, where: P.where, note: 'RPi ALERT writes little, but a remote site deserves an endurance card. A CM5 or Verdin boots from eMMC instead.', conf: 'low' }, 1));
     if ((P.kind === 'board' || P.kind === 'module') && !enc.indoor) rows.push(row('Computer', { id: 'din-mount', ref: 'din-pi-case', name: 'DIN-rail mount or case for the board', aud: [20, 45], gst: true, lead: { d: [2, 7], text: 'Australian retailers' }, where: [['Core Electronics', 'https://core-electronics.com.au/']], conf: 'low' }, 1));
 
@@ -138,7 +138,7 @@
       if (!P.m2 || P.m2 === 'hat' || P.m2 === 'nvme') warn.push(['bad', `${P.short} has no M.2 slot carrying USB: a card SDR needs Mallow's B-key slot or a carrier of your own.`]);
       if (nSticks > 1) warn.push(['warn', `One M.2 slot holds one card: the other ${nSticks - 1} stick${nSticks > 2 ? 's' : ''} go on USB.`]);
     } else if (nSticks > P.usb) warn.push(['warn', `${nSticks} sticks and ${P.usb} USB ports: add a powered USB hub.`]);
-    if (S.decoder && S.decoder !== 'today') warn.push(['info', `The CPU figures assume the ${S.decoder === 'wasm' ? 'shared front end and WebAssembly decoder' : 'shared front end'} — planned, not built yet. Today's decoder: ${Math.round(load(plan, Object.assign({}, S, { decoder: 'today' })).total / (capacity(P) || 1) * 100)}% of this computer's CPU.`]);
+    if (S.decoder && S.decoder !== 'today') warn.push(['info', `The CPU figures assume the ${(B.decoders.find(d => d.id === S.decoder) || {}).short || 'planned decoder'} — measured on a test machine, not in RPi ALERT yet. Today's decoder: ${Math.round(load(plan, Object.assign({}, S, { decoder: 'today' })).total / (capacity(P) || 1) * 100)}% of this computer's CPU.`]);
     if (sdr.planned) warn.push(['info', 'The M.2 card is a design to commission, not a part to buy: plan on USB sticks until it exists (see the custom path below).']);
 
     // RF
@@ -455,7 +455,7 @@
         g += `<rect x="${x0}" y="${y + 3 + j * 8}" width="${Math.max(1, x(u) - x0)}" height="7" class="cmp d${j} ${verdict(u).cls}"><title>${esc(p.short)}, ${esc(d.name)}: ${Math.round(u * 100)}%</title></rect>`;
       });
     });
-    return `<div class="diagram cmpd"><svg viewBox="0 0 ${W} ${24 + B.platforms.length * rh}" role="img" aria-label="CPU each computer would use for this plan">${g}</svg></div><div class="legend small"><span><i class="lg-d0"></i>today's decoder</span><span><i class="lg-d1"></i>shared front end (planned)</span><span><i class="lg-d2"></i>+ WebAssembly (planned)</span><span class="dim">bars past 150% are cut off</span></div>`;
+    return `<div class="diagram cmpd"><svg viewBox="0 0 ${W} ${24 + B.platforms.length * rh}" role="img" aria-label="CPU each computer would use for this plan">${g}</svg></div><div class="legend small"><span><i class="lg-d0"></i>today's decoder</span><span><i class="lg-d1"></i>filter once per guess (measured)</span><span><i class="lg-d2"></i>lean front end (planned)</span><span class="dim">bars past 150% are cut off</span></div>`;
   }
 
   // ── the system diagram's explanations ──
@@ -464,7 +464,7 @@
     antenna: ['Antenna, coax and arrestor', 'A vertical VHF antenna as high and clear as the mast allows, low-loss coax (LMR-400) to the box, and a gas-tube arrestor where the coax comes in, bonded to the earth stake. With more than one stick a splitter shares the antenna.'],
     sdr: ['RTL-SDR sticks', 'Each stick hands the computer a slice of the band — its window, 240 kHz to 2.4 MHz wide — as a stream of 8-bit samples over USB. It does no decoding itself: every channel in the window is decoded in software, which is why the window\'s width matters so much to the CPU.'],
     rtl: ['rtl_sdr', 'The standard librtlsdr program, one per stick, run by the agent (<code>agent/lib/devices/sdr.js</code>). The agent tells sticks apart by USB port, tunes each so no channel sits on the DC spike or a mirror image, and restarts <code>rtl_sdr</code> if it stalls.'],
-    worker: ['A decoder thread per channel', '<code>agent/lib/devices/sdr-worker.js</code> runs Flood-Net\'s own decoder, <code>alert-dsp.js</code> — vendored verbatim, so a burst decodes on the box exactly as it does on floodwarning.net. It mixes the channel down, filters, gates on the burst, then tries 45 carrier and timing combinations. A burst nothing legacy reads is tried as ALERT2 AirLink (<code>alert2-air.js</code>). This is where the CPU goes: the planned shared front end and WebAssembly target exactly these loops.'],
+    worker: ['A decoder thread per channel', '<code>agent/lib/devices/sdr-worker.js</code> runs Flood-Net\'s own decoder, <code>alert-dsp.js</code> — vendored verbatim, so a burst decodes on the box exactly as it does on floodwarning.net. It mixes the channel down, filters, gates on the burst, then tries 45 carrier and timing combinations. A burst nothing legacy reads is tried as ALERT2 AirLink (<code>alert2-air.js</code>). This is where the CPU goes — and where the measured savings are: filtering once per carrier guess (a burst in 45% of the time), and filtering a channel only when a burst arrives (about a fortieth of the work between bursts).'],
     agent: ['The agent', '<code>agent/lib/agent.js</code>: gathers readings and receptions from every receiver (sticks, Quansheng radios, an ELPRO ERT-A2, GPS), serves the dashboard on <code>http://rpi-alert.local/</code>, and plays chirps.'],
     queue: ['The disk queue', '<code>agent/lib/spool.js</code>: every reading goes to disk first, and is sent and deleted later. No internet for days? It waits, bounded by the card (1 GB by default). No clock yet? Held until NTP, a GPS or a battery clock gives the time.'],
     uplink: ['Uplink', '<code>agent/lib/uplink.js</code> posts batches over HTTPS to Flood-Net\'s <code>ingest_http</code>, with the box\'s own ingest token; describes each receiver with <code>report_ingest_point</code> and every frame with <code>report_receptions</code>. Out only: no port is ever opened to the box.'],

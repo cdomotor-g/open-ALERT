@@ -65,15 +65,18 @@
       src: [RPI_HW],
     },
 
-    // Decoder improvements discussed for RPi ALERT and Flood-Net (none built
-    // yet): `cont` scales the continuous work, `burst` a burst's decode.
+    // Lighter decoders for RPi ALERT and Flood-Net, measured on a test machine
+    // against today's (none in the code yet): `cont` scales the work between
+    // bursts, `burst` a burst's decode; `burstFilterS` is the seconds of a
+    // channel filtered per burst when filtering happens only around bursts (a
+    // 2 s burst window cost the prototype what 1.6 s of today's streaming does).
     decoders: [
-      { id: 'today', name: 'Today\'s decoder (JavaScript, a front end per channel)', cont: 1, burst: 1, status: 'current',
-        note: 'What RPi ALERT 0.15 runs: every channel converts and filters the whole window for itself.' },
-      { id: 'shared', name: 'Shared front end per stick (planned)', cont: 0.5, burst: 1, status: 'planned',
-        note: 'One pass per stick converts the samples, draws the spectrum and splits out every channel; each decoder gets its own 240 kHz stream. Estimate: about half the continuous work at four channels a stick.' },
-      { id: 'wasm', name: 'Shared front end + WebAssembly hot loops (planned)', cont: 0.2, burst: 0.3, status: 'planned',
-        note: 'The filter, mixer, FFT and tone correlator compiled once to WebAssembly, run by Flood-Net in the browser and by the agent alike — so both still decode the same way. Estimate: two to five times on those loops; to be measured on a Pi.' },
+      { id: 'today', short: 'Today\'s decoder', name: 'Today\'s decoder (RPi ALERT 0.15)', cont: 1, burst: 1, status: 'current',
+        note: 'Every channel converts and filters the stick\'s whole window, all the time; a burst\'s decode re-filters the window for each of its 45 guesses.' },
+      { id: 'filter-once', short: 'Filter once per guess', name: 'Filter once per carrier guess (measured, not yet in the code)', cont: 1, burst: 0.45, status: 'planned',
+        note: 'A burst\'s decode filters the window once for each of its 9 carrier guesses and makes the ±75 and ±150 Hz nudges after, at 12 kHz, where they cost almost nothing. Tried on 140 synthetic bursts from −4 to +30 dB: the same readings as today in every case but one ghost at −2 dB that today\'s decoder reported and this didn\'t, in 45% of the time.' },
+      { id: 'lean', short: 'Lean front end', name: 'Lean: bursts-only front end + filter once (planned)', cont: 0.03, burst: 0.45, burstFilterS: 1.6, status: 'planned',
+        note: 'Between bursts a stick keeps its samples as bytes and looks at 50 FFTs a second to see which channels have a burst; only then is that channel filtered, from the ring, and decoded. A prototype of the watching part cost 6 ms per second of a 960 kHz stick on the test machine, against 248 ms for four channels today. Live audio and per-channel scopes run only while someone is watching.' },
     ],
 
     // Channels to offer. The first four are the ones Flood-Net's stations use
@@ -122,12 +125,21 @@
         src: [['Revolution Pi Connect 5', 'https://revolutionpi.com/en/revpi-connect-5']], conf: 'low',
       },
       {
-        id: 'toradex-verdin-am62-mallow', ref: 'toradex-verdin-am62-mallow', short: 'Verdin AM62 + Mallow', kind: 'module',
-        aud: [320, 560], gst: false,
+        id: 'toradex-verdin-am62-mallow', ref: 'toradex-verdin-am62-mallow', short: 'AM62 Quad + Mallow', kind: 'module',
+        aud: [310, 615], gst: false,
         lead: { d: [5, 91], text: '3–5 business days when element14 holds UK stock; the manufacturers\' lead time is 12–13 weeks when it doesn\'t' },
-        where: [['Toradex webshop', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], E14, ['Mouser', 'https://au.mouser.com/']],
-        supply: 'wide', usb: 2, m2: 'b-key', eth: 1, wifi: true, board: [100, 72], install: 'verdin',
+        where: [['Toradex webshop (businesses)', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], E14, ['Mouser', 'https://au.mouser.com/']],
+        supply: 'wide', usb: 2, m2: 'b-key', eth: 1, wifi: true, board: [100, 72], install: 'verdin', parts: 'Module 00761200 · Mallow 01611102 · heatsink 23111001',
         fit: 'TI silicon on a Swiss module with availability to 2033+, on a carrier whose Altium files are published — the best base for an open custom carrier. But four Cortex-A53 cores are about half a Pi 4: it needs the faster decoder for more than a couple of channels.',
+        src: [['Toradex Verdin AM62 (prices, availability)', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], ['element14: Mallow carrier', 'https://au.element14.com/toradex/01611102/carrier-board-mallow/dp/4759350'], ['Mallow carrier board datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf']], conf: 'medium',
+      },
+      {
+        id: 'toradex-verdin-am62-dual-mallow', ref: 'toradex-verdin-am62-dual-mallow', short: 'AM62 Dual + Mallow', kind: 'module',
+        aud: [275, 515], gst: false,
+        lead: { d: [5, 91], text: '3–5 business days when element14 holds UK stock; the manufacturers\' lead time is 12–13 weeks when it doesn\'t' },
+        where: [['Toradex webshop (businesses)', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], E14, ['Mouser', 'https://au.mouser.com/']],
+        supply: 'wide', usb: 2, m2: 'b-key', eth: 1, wifi: false, board: [100, 72], install: 'verdin', parts: 'Module 00741201 · Mallow 01611102 · heatsink 23111001',
+        fit: 'The cheaper AM62: half the Quad\'s CPU, no Wi-Fi. With today\'s decoder it runs out at two or three channels; with the lighter decoder it carries Flood-Net\'s four channels on a busy day.',
         src: [['Toradex Verdin AM62 (prices, availability)', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], ['element14: Mallow carrier', 'https://au.element14.com/toradex/01611102/carrier-board-mallow/dp/4759350'], ['Mallow carrier board datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf']], conf: 'medium',
       },
       {
@@ -263,8 +275,8 @@
 
     // ── the custom path ─────────────────────────────────────────────────────
     custom: [
-      { id: 'decoder', name: 'Faster decoder (shared front end, WebAssembly)', aud: [0, 0], gst: true, where: [['RPi ALERT', 'https://github.com/cdomotor-g/RPi_ALERT'], ['Flood-Net', 'https://github.com/cdomotor-g/MegaNet']], lead: { d: [14, 56], text: 'open-source work in Flood-Net and RPi ALERT; an estimate' },
-        note: 'No hardware cost. The step that lets cheaper, cooler silicon (an AM62) do the job, and lets a Pi 4 carry the busiest site.', src: [], conf: 'low' },
+      { id: 'decoder', name: 'Lighter decoder (filter once per guess, bursts-only front end)', aud: [0, 0], gst: true, where: [['RPi ALERT', 'https://github.com/cdomotor-g/RPi_ALERT'], ['Flood-Net', 'https://github.com/cdomotor-g/MegaNet']], lead: { d: [14, 56], text: 'open-source work in Flood-Net and RPi ALERT; an estimate' },
+        note: 'No hardware cost. Measured savings: a burst in 45% of the time, the work between bursts cut about 40-fold. The step that lets a dual-core AM62 do the job, and a Pi 4 carry the busiest site.', src: [], conf: 'low' },
       { id: 'm2card', name: 'M.2 RTL-SDR card: design and first boards', aud: [3000, 8000], gst: false, where: [['A PCB designer with RF experience', 'https://www.engineersaustralia.org.au/'], ['JLCPCB (prototype boards)', 'https://jlcpcb.com/']], lead: { d: [42, 84], text: 'a designer, prototypes, bring-up; an estimate' },
         note: 'Small, self-contained, testable on today\'s CM5 IO board or Mallow. Lifetime-buy the RTL2832U chips: mainstream distributors don\'t stock them.', src: [['DigiKey forum: no RTL2832U on DigiKey', 'https://forum.digikey.com/t/alternative-for-rtl-sdr-rtl2832u/29884']], conf: 'low' },
       { id: 'carrier', name: 'Custom carrier board (CM5 or Verdin)', aud: [15000, 40000], gst: false, where: [['Toradex design partners', 'https://www.toradex.com/support/partner-network/hardware/carrier-boards'], ['Raspberry Pi Approved Design Partners', 'https://www.raspberrypi.com/for-industry/design-partners/']], lead: { d: [90, 180], text: 'specification, layout, two board spins; an estimate' },

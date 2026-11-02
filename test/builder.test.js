@@ -81,7 +81,7 @@ test('the CPU model agrees with what happened at the Brisbane base', () => {
   // an AM62 can't carry eight today, and the planned decoder brings it closer
   const am62 = B.platforms.find(p => p.id === 'toradex-verdin-am62-mallow');
   const today = K.load(narrow, { traffic: 'heavy' }).total / K.capacity(am62);
-  const later = K.load(narrow, { traffic: 'heavy', decoder: 'wasm' }).total / K.capacity(am62);
+  const later = K.load(narrow, { traffic: 'heavy', decoder: 'lean' }).total / K.capacity(am62);
   assert.ok(today > 1 && later < today / 2);
 });
 

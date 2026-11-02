@@ -48,3 +48,16 @@ test('every page has the same menu, reaching every page', () => {
     assert.ok(!/MegaNet/.test(s.replace(/github\.com\/cdomotor-g\/MegaNet/g, '')), `${p} says MegaNet`);
   }
 });
+
+test('the module table names every Verdin AM62 by its Toradex part number, and rules out the Solos', () => {
+  const v = T.TRIAL.variants;
+  assert.equal(v.length, 6);
+  for (const x of v) {
+    assert.match(x.pid, /^007[1-6]12\d\d$/, `${x.name}: ${x.pid}`);
+    assert.ok(['buy', 'later', 'maybe', 'out'].includes(x.pick));
+    if (x.cores === 1) assert.equal(x.pick, 'out', `${x.pid} is a Solo and can't carry four channels`);
+  }
+  assert.equal(v.filter(x => x.pick === 'buy').length, 1);
+  const verdin = T.TRIAL.items.find(i => i.id === 'verdin');
+  assert.ok(verdin.name.includes(v.find(x => x.pick === 'buy').pid), 'the shopping list buys the module the table picks');
+});
