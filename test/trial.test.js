@@ -49,13 +49,14 @@ test('every page has the same menu, reaching every page', () => {
   }
 });
 
-test('the module table names every Verdin AM62 by its Toradex part number, and rules out the Solos', () => {
+test('the module table names every Verdin AM62 by its Toradex part number, and keeps the Solos to small sites', () => {
   const v = T.TRIAL.variants;
   assert.equal(v.length, 6);
   for (const x of v) {
     assert.match(x.pid, /^007[1-6]12\d\d$/, `${x.name}: ${x.pid}`);
-    assert.ok(['buy', 'now', 'later', 'maybe', 'out'].includes(x.pick));
-    if (x.cores === 1) assert.equal(x.pick, 'out', `${x.pid} is a Solo and can't carry four channels`);
+    assert.ok(['buy', 'now', 'later', 'small', 'maybe', 'out'].includes(x.pick));
+    // A Solo can't carry four channels: a small site at most (0.19's Light, around bursts), or out.
+    if (x.cores === 1) assert.ok(['small', 'out'].includes(x.pick), `${x.pid} is a Solo`);
   }
   assert.equal(v.filter(x => x.pick === 'buy').length, 1);
   const verdin = T.TRIAL.items.find(i => i.id === 'verdin');

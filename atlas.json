@@ -22,7 +22,7 @@
   "status": {
     "phase": "beta",
     "updated": "2026-11-03",
-    "summary": "The builder and the Mallow trial rate every computer on RPi ALERT 0.17's lean decoder and on 0.18 filtering each channel only around its bursts (built, being checked at the first base station): Flood-Net's four channels on a busy day take about a fifth of the Verdin AM62 Quad (00761200) and two fifths of the Dual (00741201). Exact Toradex parts, element14 Australia prices with Toradex direct beside them.",
+    "summary": "The builder and the Mallow trial rate every computer on RPi ALERT 0.17's lean decoder and on 0.19's Light decoder filtering only around bursts (built, being checked at the first base station): Flood-Net's four channels on a busy day take about an eighth of the Verdin AM62 Quad (00761200) and a quarter of the Dual (00741201); a Pi 3B+ is now one of its computers, and the one-core Solo a site of one or two channels. Exact Toradex parts, element14 Australia prices with Toradex direct beside them.",
     "next": [
       "Feed the trial's AM62 numbers back into the builder's CPU model",
       "Check the builder's estimated prices and lead times (marked est.) with suppliers: antennas, coax, arrestors, the mating Bulgin lead",

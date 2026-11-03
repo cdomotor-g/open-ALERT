@@ -445,7 +445,7 @@
 
   // Every platform with this plan, on each decoder.
   function compareView(R) {
-    const W = 760, rh = 30, x0 = 190, scale = 1.5, x = u => x0 + Math.min(u, scale) / scale * (W - x0 - 20);
+    const W = 760, rh = 6 + B.decoders.length * 8, x0 = 190, scale = 1.5, x = u => x0 + Math.min(u, scale) / scale * (W - x0 - 20);
     let g = `<line x1="${x(1)}" x2="${x(1)}" y1="10" y2="${16 + B.platforms.length * rh}" class="full"/><text x="${x(1)}" y="8" class="tick">100%</text><line x1="${x(B.model.safe)}" x2="${x(B.model.safe)}" y1="10" y2="${16 + B.platforms.length * rh}" class="safe"/><text x="${x(B.model.safe)}" y="8" class="tick">70%</text>`;
     B.platforms.forEach((p, i) => {
       const y = 16 + i * rh, cap = capacity(p);
@@ -455,7 +455,7 @@
         g += `<rect x="${x0}" y="${y + 3 + j * 8}" width="${Math.max(1, x(u) - x0)}" height="7" class="cmp d${j} ${verdict(u).cls}"><title>${esc(p.short)}, ${esc(d.name)}: ${Math.round(u * 100)}%</title></rect>`;
       });
     });
-    return `<div class="diagram cmpd"><svg viewBox="0 0 ${W} ${24 + B.platforms.length * rh}" role="img" aria-label="CPU each computer would use for this plan">${g}</svg></div><div class="legend small"><span><i class="lg-d0"></i>full decoder (0.16 and before)</span><span><i class="lg-d1"></i>lean (RPi ALERT 0.17)</span><span><i class="lg-d2"></i>around bursts (0.18, being checked)</span><span class="dim">bars past 150% are cut off</span></div>`;
+    return `<div class="diagram cmpd"><svg viewBox="0 0 ${W} ${24 + B.platforms.length * rh}" role="img" aria-label="CPU each computer would use for this plan">${g}</svg></div><div class="legend small">${B.decoders.map((d, j) => `<span title="${esc(d.name)}"><i class="lg-d${j}"></i>${esc(d.short)}${d.status === 'checking' ? ' <span class="dim">(being checked)</span>' : ''}</span>`).join('')}<span class="dim">bars past 150% are cut off</span></div>`;
   }
 
   // ── the system diagram's explanations ──

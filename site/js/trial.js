@@ -74,10 +74,10 @@
         why: 'As 00741201 with Wi-Fi — only if a site has no Ethernet.' },
       { pid: '00731200', e14: { code: '4759328', ex: 272.61, note: 'Out of stock: deliveries from 12/01/2027; 13 weeks from the factory' }, name: 'Dual 1GB ET', cores: 2, ghz: 1.4, ram: '1 GB', emmc: '4 GB', wifi: false, temp: '−20 to +85 °C', usd: 67.20, pick: 'maybe',
         why: 'Cheapest two-core; −20 °C is fine for Queensland. 4 GB of eMMC is tight for Torizon, the container and a 1 GB reading queue: shrink the queue.' },
-      { pid: '00721201', e14: { code: null, ex: null, note: 'Not listed by element14 Australia' }, name: 'Solo 512MB WB IT', cores: 1, ghz: 1.0, ram: '512 MB', emmc: '4 GB', wifi: true, temp: '−40 to +85 °C', usd: 75.00, pick: 'out',
-        why: 'One core at 1.0 GHz: under even the lightest decoder\'s needs for four channels, and 512 MB.' },
+      { pid: '00721201', e14: { code: null, ex: null, note: 'Not listed by element14 Australia' }, name: 'Solo 512MB WB IT', cores: 1, ghz: 1.0, ram: '512 MB', emmc: '4 GB', wifi: true, temp: '−40 to +85 °C', usd: 75.00, pick: 'small',
+        why: 'One core at 1.0 GHz and 512 MB: on RPi ALERT 0.19\'s Light decoder filtering only around bursts, one stick of one or two channels (about a fifth of it on a busy day, half on a heavy one). Not four channels, and not with the screen dashboard.' },
       { pid: '00711200', e14: { code: '4759327', ex: 216.76, note: 'Stock not shown' }, name: 'Solo 512MB', cores: 1, ghz: 1.0, ram: '512 MB', emmc: '4 GB', wifi: false, temp: '0 to +70 °C', usd: 54.95, pick: 'out',
-        why: 'As above, and only 0–70 °C.' },
+        why: 'As the Solo above, but only 0–70 °C: too narrow for a box in the sun.' },
     ],
 
     // What to compare, where to read it, and how it passes.
@@ -178,11 +178,11 @@
         <label>Traffic <select id="t-tr"><option value="quiet"${T.traffic === 'quiet' ? ' selected' : ''}>Quiet</option><option value="busy"${T.traffic === 'busy' ? ' selected' : ''}>Busy</option><option value="heavy"${T.traffic === 'heavy' ? ' selected' : ''}>Heavy — hears a whole region</option></select></label></div>
       <p class="small dim">${esc(plan.error || sticks || 'Type the Pi\'s channels.')}</p>
       <div class="table-wrap"><table class="tbl"><thead><tr><th></th>${K.B.decoders.map(d => `<th class="num">${esc(d.short)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
-      <p class="small dim">Share of each computer's CPU, from the builder's model (RPi ALERT's measurements on a Pi 4; the AM62 at about half a Pi 4). Green is comfortable; amber is the edge; red drops bursts. In the last two columns the second figure is RPi ALERT 0.18 filtering only around bursts: built, and being checked at the first base station. The trial is what replaces these estimates with numbers.</p>`;
+      <p class="small dim">Share of each computer's CPU, from the builder's model (RPi ALERT's measurements on a Pi 4; the AM62 at about half a Pi 4). Green is comfortable; amber is the edge; red drops bursts. In the last two columns the second figure is RPi ALERT 0.19's Light decoder filtering only around bursts: built, and being checked at the first base station. The trial is what replaces these estimates with numbers.</p>`;
   }
 
   // Every AM62 variant: what Flood-Net's four channels on a busy day, and the
-  // Pi's channels on a heavy one, would ask of it — on RPi ALERT 0.17, and on 0.18 filtering only around bursts.
+  // Pi's channels on a heavy one, would ask of it — on RPi ALERT 0.17, and on 0.19's Light decoder filtering only around bursts.
   function variants() {
     const K = globalThis.OA_BUILD_API, el = $('#variants');
     if (!K || !el) return;
@@ -190,12 +190,12 @@
     const freqs = String(T.channels).split(/[ ,;]+/).map(Number).filter(f => f >= 136 && f <= 174);
     const yours = K.planSticks(freqs, 'auto');
     const pct = (plan, traffic, dec, cap) => { const u = K.load(plan, { traffic, decoder: dec }).total / cap; const v = K.verdict(u); return `<span class="${v.cls}">${Math.round(u * 100)}%</span>`; };
-    const PICK = { buy: ['ok', 'Trial this'], now: ['ok', 'Works on 0.17'], later: ['info', 'Later, lighter decoder'], maybe: ['warn', 'Possible, tight'], out: ['bad', 'Ruled out'] };
-    el.innerHTML = `<div class="table-wrap"><table class="tbl var"><thead><tr><th>Toradex part</th><th>CPU</th><th>RAM · eMMC</th><th>Wi-Fi</th><th>Rated</th><th class="num">A$ inc GST<br><span class="dim">element14</span></th><th class="num" title="RPi ALERT 0.17 filtering always → 0.18 filtering only around bursts">4 ch, busy: 0.17 → 0.18</th><th class="num" title="RPi ALERT 0.17 filtering always → 0.18 filtering only around bursts">Your ${freqs.length} ch, ${esc(T.traffic)}: 0.17 → 0.18</th><th>Verdict</th></tr></thead><tbody>${TRIAL.variants.map(v => {
+    const PICK = { buy: ['ok', 'Trial this'], now: ['ok', 'Works on 0.17'], later: ['info', 'Later, lighter decoder'], small: ['info', '1–2 channels, on 0.19'], maybe: ['warn', 'Possible, tight'], out: ['bad', 'Ruled out'] };
+    el.innerHTML = `<div class="table-wrap"><table class="tbl var"><thead><tr><th>Toradex part</th><th>CPU</th><th>RAM · eMMC</th><th>Wi-Fi</th><th>Rated</th><th class="num">A$ inc GST<br><span class="dim">element14</span></th><th class="num" title="RPi ALERT 0.17 filtering always → 0.19 Light, filtering only around bursts">4 ch, busy: 0.17 → 0.19</th><th class="num" title="RPi ALERT 0.17 filtering always → 0.19 Light, filtering only around bursts">Your ${freqs.length} ch, ${esc(T.traffic)}: 0.17 → 0.19</th><th>Verdict</th></tr></thead><tbody>${TRIAL.variants.map(v => {
       const cap = v.cores * (v.ghz / 1.4) / 2;      // in Pi 4 cores
       const p = PICK[v.pick];
       return `<tr class="pick-${v.pick}"><th scope="row"><b>${esc(v.pid)}</b><div class="small dim">${esc(v.name)}</div></th><td>${v.cores} × A53 ${v.ghz} GHz</td><td>${esc(v.ram)} · ${esc(v.emmc)}</td><td>${v.wifi ? 'yes' : '—'}</td><td>${esc(v.temp)}</td><td class="num">${v.e14.ex ? `<b>${money(v.e14.ex * 1.1)}</b><div class="small dim">${esc(v.e14.code)}</div>` : '<span class="dim">not listed</span>'}<div class="small dim" title="Toradex's own sample price, to businesses, converted">Toradex direct ≈ ${money(aud(v.usd) * 1.1)}</div></td>
-        <td class="num">${pct(four, 'busy', 'filter-once', cap)} → ${pct(four, 'busy', 'lean', cap)}</td><td class="num">${yours.sticks && yours.sticks.length ? `${pct(yours, T.traffic, 'filter-once', cap)} → ${pct(yours, T.traffic, 'lean', cap)}` : '—'}</td>
+        <td class="num">${pct(four, 'busy', 'filter-once', cap)} → ${pct(four, 'busy', 'light', cap)}</td><td class="num">${yours.sticks && yours.sticks.length ? `${pct(yours, T.traffic, 'filter-once', cap)} → ${pct(yours, T.traffic, 'light', cap)}` : '—'}</td>
         <td><span class="chip st-${p[0] === 'ok' ? 'info' : p[0] === 'bad' ? 'bad' : p[0] === 'warn' ? 'warn' : 'info'}">${p[1]}</span><div class="small dim">${esc(v.why)}</div><div class="small dim">element14: ${esc(v.e14.note)}.</div></td></tr>`;
     }).join('')}</tbody></table></div>`;
   }

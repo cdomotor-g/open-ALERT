@@ -69,8 +69,9 @@
     // work between bursts with the window, `contBase` adds a part that does
     // not grow with it, `burst` a burst's decode; `burstFilterS` is the seconds
     // of a channel filtered per burst when filtering happens only around bursts
-    // — RPi ALERT 0.18's watch filters from 1 s before a burst to 1 s after it,
-    // at lean's rate (0.75 of the full decoder's): 2.4 s × 0.75. Asleep, a
+    // — RPi ALERT 0.19's watch filters from 0.8 s before a burst to half a
+    // second after it, about 1.7 s with the burst, at lean's rate (0.75 of the
+    // full decoder's): 1.3. Asleep, a
     // channel costs 0.003 of a core at 240 kHz and 960 kHz and 0.005 at
     // 2.4 MHz on the bench where filtering always costs 0.011, 0.036 and
     // 0.074 (RPi ALERT's own measurement, lib/devices/sdr-bench.js): about
@@ -80,8 +81,10 @@
         note: 'Every channel converts and copies the stick\'s whole window sample by sample, and a burst\'s decode re-filters it for each of 45 guesses.' },
       { id: 'filter-once', short: 'Lean (0.17)', name: 'Lean — RPi ALERT 0.17\'s default', cont: 0.75, burst: 0.34, status: 'current',
         note: 'A burst is filtered once per carrier guess and nudged after: at the first base station to compare, 14 of 11,628 live bursts read differently from the full decoder (0.12%), in 33–34% of its time. Between bursts the rings are filled a block at a time and only a stick\'s first channel works out the spectrum: a quarter to two fifths less, measured.' },
-      { id: 'lean', short: 'Around bursts (0.18)', name: 'Lean, filtering only around bursts — RPi ALERT 0.18, Between bursts', cont: 0.02, contBase: 0.18, burst: 0.34, burstFilterS: 1.8, status: 'checking',
-        note: 'Between bursts each channel keeps the stick\'s last 1.6 s as bytes and looks at its channel 25 times a second; it filters only from a second before something shows, so the squelch and the decoder see the samples they always did. In Flood-Net\'s tests: the same readings and the same bursts, every time. Asleep, a channel costs a quarter of filtering always at 240 kHz and a fifteenth at 2.4 MHz. In RPi ALERT 0.18 behind a setting (default off) with a Check mode, to be proven at the first base station before it is the default.' },
+      { id: 'lean', short: 'Around bursts (0.18)', name: 'Lean, filtering only around bursts — RPi ALERT 0.18, Between bursts', cont: 0.02, contBase: 0.18, burst: 0.34, burstFilterS: 1.3, status: 'checking',
+        note: 'Between bursts each channel keeps the stick\'s last 1.4 s as bytes and looks at its channel 25 times a second; it filters only from 0.8 s before something shows to half a second after, so the squelch and the decoder see the samples they always did. In Flood-Net\'s tests: the same readings and the same bursts, every time. Asleep, a channel costs a quarter of filtering always at 240 kHz and a fifteenth at 2.4 MHz. In RPi ALERT 0.18 behind a setting (default off) with a Check mode, to be proven at the first base station before it is the default; 0.19 shortens its time awake a third.' },
+      { id: 'light', short: 'Light, around bursts (0.19)', name: 'Light decoder, filtering only around bursts — RPi ALERT 0.19', cont: 0.02, contBase: 0.18, burst: 0.18, burstFilterS: 1.3, status: 'checking',
+        note: 'As Around bursts, and each burst filtered down to 48 kHz once before its nine carrier guesses: a burst\'s decode in about half of lean\'s time (65 ms against 122 on the bench), as many true readings in 600 synthesised bursts and the same on every real one. In RPi ALERT 0.19 as Decoder: Light, with Compare light to prove it at the first base station.' },
     ],
 
     // Channels to offer. The first four are the ones Flood-Net's stations use
@@ -105,6 +108,13 @@
         supply: '5v', usb: 4, m2: false, eth: 1, wifi: true, board: [85, 56], install: 'pi',
         fit: 'The reference: what RPi ALERT is tested on and what runs at the Brisbane base today. Fine indoors or in a shaded, vented box.',
         src: [RPI_HW], conf: 'high',
+      },
+      {
+        id: 'rpi-3b-plus', ref: 'rpi-3b-plus', short: 'Pi 3B+', kind: 'board',
+        aud: [80, 90], gst: true, lead: AU_STOCK, where: [LB, CORE],
+        supply: '5v', usb: 4, m2: false, eth: 1, wifi: true, board: [85, 56], install: 'pi',
+        fit: 'Half a Pi 4, and since RPi ALERT 0.18–0.19 enough for a whole site: four or five channels on a busy day at under a fifth of its CPU, filtering only around bursts. 1 GB holds the decoders and the screen dashboard; leave the screen off on a heavy site. Micro-USB power: a good 2.5 A supply.',
+        src: [RPI_HW], conf: 'medium',
       },
       {
         id: 'rpi-5-4gb', ref: 'rpi-5-4gb', short: 'Pi 5', kind: 'board',
