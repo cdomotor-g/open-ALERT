@@ -178,11 +178,11 @@
         <label>Traffic <select id="t-tr"><option value="quiet"${T.traffic === 'quiet' ? ' selected' : ''}>Quiet</option><option value="busy"${T.traffic === 'busy' ? ' selected' : ''}>Busy</option><option value="heavy"${T.traffic === 'heavy' ? ' selected' : ''}>Heavy — hears a whole region</option></select></label></div>
       <p class="small dim">${esc(plan.error || sticks || 'Type the Pi\'s channels.')}</p>
       <div class="table-wrap"><table class="tbl"><thead><tr><th></th>${K.B.decoders.map(d => `<th class="num">${esc(d.short)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
-      <p class="small dim">Share of each computer's CPU, from the builder's model (RPi ALERT's measurements on a Pi 4; the AM62 at about half a Pi 4). Green is comfortable; amber is the edge; red drops bursts. The last two columns are planned work, not built. The trial is what replaces these guesses with numbers.</p>`;
+      <p class="small dim">Share of each computer's CPU, from the builder's model (RPi ALERT's measurements on a Pi 4; the AM62 at about half a Pi 4). Green is comfortable; amber is the edge; red drops bursts. In the last two columns the second figure is RPi ALERT 0.18 filtering only around bursts: built, and being checked at the first base station. The trial is what replaces these estimates with numbers.</p>`;
   }
 
   // Every AM62 variant: what Flood-Net's four channels on a busy day, and the
-  // Pi's channels on a heavy one, would ask of it — on RPi ALERT 0.17, and with the bursts-only front end still to build.
+  // Pi's channels on a heavy one, would ask of it — on RPi ALERT 0.17, and on 0.18 filtering only around bursts.
   function variants() {
     const K = globalThis.OA_BUILD_API, el = $('#variants');
     if (!K || !el) return;
@@ -191,7 +191,7 @@
     const yours = K.planSticks(freqs, 'auto');
     const pct = (plan, traffic, dec, cap) => { const u = K.load(plan, { traffic, decoder: dec }).total / cap; const v = K.verdict(u); return `<span class="${v.cls}">${Math.round(u * 100)}%</span>`; };
     const PICK = { buy: ['ok', 'Trial this'], now: ['ok', 'Works on 0.17'], later: ['info', 'Later, lighter decoder'], maybe: ['warn', 'Possible, tight'], out: ['bad', 'Ruled out'] };
-    el.innerHTML = `<div class="table-wrap"><table class="tbl var"><thead><tr><th>Toradex part</th><th>CPU</th><th>RAM · eMMC</th><th>Wi-Fi</th><th>Rated</th><th class="num">A$ inc GST<br><span class="dim">element14</span></th><th class="num">4 ch, busy: 0.17 → planned</th><th class="num">Your ${freqs.length} ch, ${esc(T.traffic)}: 0.17 → planned</th><th>Verdict</th></tr></thead><tbody>${TRIAL.variants.map(v => {
+    el.innerHTML = `<div class="table-wrap"><table class="tbl var"><thead><tr><th>Toradex part</th><th>CPU</th><th>RAM · eMMC</th><th>Wi-Fi</th><th>Rated</th><th class="num">A$ inc GST<br><span class="dim">element14</span></th><th class="num" title="RPi ALERT 0.17 filtering always → 0.18 filtering only around bursts">4 ch, busy: 0.17 → 0.18</th><th class="num" title="RPi ALERT 0.17 filtering always → 0.18 filtering only around bursts">Your ${freqs.length} ch, ${esc(T.traffic)}: 0.17 → 0.18</th><th>Verdict</th></tr></thead><tbody>${TRIAL.variants.map(v => {
       const cap = v.cores * (v.ghz / 1.4) / 2;      // in Pi 4 cores
       const p = PICK[v.pick];
       return `<tr class="pick-${v.pick}"><th scope="row"><b>${esc(v.pid)}</b><div class="small dim">${esc(v.name)}</div></th><td>${v.cores} × A53 ${v.ghz} GHz</td><td>${esc(v.ram)} · ${esc(v.emmc)}</td><td>${v.wifi ? 'yes' : '—'}</td><td>${esc(v.temp)}</td><td class="num">${v.e14.ex ? `<b>${money(v.e14.ex * 1.1)}</b><div class="small dim">${esc(v.e14.code)}</div>` : '<span class="dim">not listed</span>'}<div class="small dim" title="Toradex's own sample price, to businesses, converted">Toradex direct ≈ ${money(aud(v.usd) * 1.1)}</div></td>

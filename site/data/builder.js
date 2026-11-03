@@ -66,16 +66,22 @@
     },
 
     // RPi ALERT's decoders (Flood-Net's alert-dsp.js, #259): `cont` scales the
-    // work between bursts, `burst` a burst's decode; `burstFilterS` is the
-    // seconds of a channel filtered per burst when filtering happens only
-    // around bursts (a 2 s window cost a prototype what 1.6 s of streaming does).
+    // work between bursts with the window, `contBase` adds a part that does
+    // not grow with it, `burst` a burst's decode; `burstFilterS` is the seconds
+    // of a channel filtered per burst when filtering happens only around bursts
+    // — RPi ALERT 0.18's watch filters from 1 s before a burst to 1 s after it,
+    // at lean's rate (0.75 of the full decoder's): 2.4 s × 0.75. Asleep, a
+    // channel costs 0.003 of a core at 240 kHz and 960 kHz and 0.005 at
+    // 2.4 MHz on the bench where filtering always costs 0.011, 0.036 and
+    // 0.074 (RPi ALERT's own measurement, lib/devices/sdr-bench.js): about
+    // 0.18 + 0.02 × the window's cost, in the full decoder's 240 kHz units.
     decoders: [
       { id: 'today', short: 'Full decoder', name: 'Full decoder (RPi ALERT 0.15–0.16, or Decoder: Full)', cont: 1, burst: 1, status: 'current',
         note: 'Every channel converts and copies the stick\'s whole window sample by sample, and a burst\'s decode re-filters it for each of 45 guesses.' },
       { id: 'filter-once', short: 'Lean (0.17)', name: 'Lean — RPi ALERT 0.17\'s default', cont: 0.75, burst: 0.34, status: 'current',
         note: 'A burst is filtered once per carrier guess and nudged after: at the first base station to compare, 14 of 11,628 live bursts read differently from the full decoder (0.12%), in 33–34% of its time. Between bursts the rings are filled a block at a time and only a stick\'s first channel works out the spectrum: a quarter to two fifths less, measured.' },
-      { id: 'lean', short: 'Bursts-only (planned)', name: 'Lean + bursts-only front end (planned)', cont: 0.03, burst: 0.34, burstFilterS: 1.6, status: 'planned',
-        note: 'Between bursts a stick keeps its samples as bytes and looks at 50 FFTs a second to see which channels have a burst; only then is that channel filtered, from the ring, and decoded. A prototype of the watching part cost 6 ms per second of a 960 kHz stick on the test machine, against 248 ms for four channels filtering it all the time.' },
+      { id: 'lean', short: 'Around bursts (0.18)', name: 'Lean, filtering only around bursts — RPi ALERT 0.18, Between bursts', cont: 0.02, contBase: 0.18, burst: 0.34, burstFilterS: 1.8, status: 'checking',
+        note: 'Between bursts each channel keeps the stick\'s last 1.6 s as bytes and looks at its channel 25 times a second; it filters only from a second before something shows, so the squelch and the decoder see the samples they always did. In Flood-Net\'s tests: the same readings and the same bursts, every time. Asleep, a channel costs a quarter of filtering always at 240 kHz and a fifteenth at 2.4 MHz. In RPi ALERT 0.18 behind a setting (default off) with a Check mode, to be proven at the first base station before it is the default.' },
     ],
 
     // Channels to offer. The first four are the ones Flood-Net's stations use

@@ -81,7 +81,7 @@
     let cont = 0, burst = 0, ch = 0;
     for (const s of plan.sticks || []) {
       for (let i = 0; i < s.chans.length; i++) {
-        cont += M.chCore240 * s.window.rel * dec.cont;
+        cont += M.chCore240 * (s.window.rel * dec.cont + (dec.contBase || 0));
         burst += bpm / 60 * (M.burstCoreS * dec.burst + (dec.burstFilterS || 0) * M.chCore240 * s.window.rel);
         ch++;
       }
@@ -138,7 +138,7 @@
       if (!P.m2 || P.m2 === 'hat' || P.m2 === 'nvme') warn.push(['bad', `${P.short} has no M.2 slot carrying USB: a card SDR needs Mallow's B-key slot or a carrier of your own.`]);
       if (nSticks > 1) warn.push(['warn', `One M.2 slot holds one card: the other ${nSticks - 1} stick${nSticks > 2 ? 's' : ''} go on USB.`]);
     } else if (nSticks > P.usb) warn.push(['warn', `${nSticks} sticks and ${P.usb} USB ports: add a powered USB hub.`]);
-    if (S.decoder === 'lean') warn.push(['info', `The CPU figures assume the bursts-only front end — planned, not in RPi ALERT yet. With 0.17's lean decoder: ${Math.round(load(plan, Object.assign({}, S, { decoder: 'filter-once' })).total / (capacity(P) || 1) * 100)}% of this computer's CPU.`]);
+    if (S.decoder === 'lean') warn.push(['info', `The CPU figures assume RPi ALERT 0.18 filtering only around bursts — built, off by default until its check at the first base station is done. Filtering always (0.17's way): ${Math.round(load(plan, Object.assign({}, S, { decoder: 'filter-once' })).total / (capacity(P) || 1) * 100)}% of this computer's CPU.`]);
     if (sdr.planned) warn.push(['info', 'The M.2 card is a design to commission, not a part to buy: plan on USB sticks until it exists (see the custom path below).']);
 
     // RF
@@ -443,7 +443,7 @@
     return `<div class="diagram lead"><svg viewBox="0 0 ${W} ${30 + rows.length * rh}" role="img" aria-label="Lead time of each part">${g}</svg></div><div class="legend small"><span><i class="lg-min"></i>if it's in stock</span><span><i class="lg-max"></i>if it has to be made or shipped</span></div>`;
   }
 
-  // Every platform with this plan, today and with the planned decoders.
+  // Every platform with this plan, on each decoder.
   function compareView(R) {
     const W = 760, rh = 30, x0 = 190, scale = 1.5, x = u => x0 + Math.min(u, scale) / scale * (W - x0 - 20);
     let g = `<line x1="${x(1)}" x2="${x(1)}" y1="10" y2="${16 + B.platforms.length * rh}" class="full"/><text x="${x(1)}" y="8" class="tick">100%</text><line x1="${x(B.model.safe)}" x2="${x(B.model.safe)}" y1="10" y2="${16 + B.platforms.length * rh}" class="safe"/><text x="${x(B.model.safe)}" y="8" class="tick">70%</text>`;
@@ -455,7 +455,7 @@
         g += `<rect x="${x0}" y="${y + 3 + j * 8}" width="${Math.max(1, x(u) - x0)}" height="7" class="cmp d${j} ${verdict(u).cls}"><title>${esc(p.short)}, ${esc(d.name)}: ${Math.round(u * 100)}%</title></rect>`;
       });
     });
-    return `<div class="diagram cmpd"><svg viewBox="0 0 ${W} ${24 + B.platforms.length * rh}" role="img" aria-label="CPU each computer would use for this plan">${g}</svg></div><div class="legend small"><span><i class="lg-d0"></i>full decoder (0.16 and before)</span><span><i class="lg-d1"></i>lean (RPi ALERT 0.17)</span><span><i class="lg-d2"></i>bursts-only (planned)</span><span class="dim">bars past 150% are cut off</span></div>`;
+    return `<div class="diagram cmpd"><svg viewBox="0 0 ${W} ${24 + B.platforms.length * rh}" role="img" aria-label="CPU each computer would use for this plan">${g}</svg></div><div class="legend small"><span><i class="lg-d0"></i>full decoder (0.16 and before)</span><span><i class="lg-d1"></i>lean (RPi ALERT 0.17)</span><span><i class="lg-d2"></i>around bursts (0.18, being checked)</span><span class="dim">bars past 150% are cut off</span></div>`;
   }
 
   // ── the system diagram's explanations ──
