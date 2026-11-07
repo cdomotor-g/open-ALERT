@@ -378,6 +378,7 @@ test('network totals add up the sites', () => {
   a.qty = 3;
   const net = E.network([a, b], SETTINGS);
   const ra = E.evaluate(a, SETTINGS), rb = E.evaluate(b, SETTINGS);
-  near(net.totals.hw, ra.cost.hw * 3 + rb.cost.hw, 1e-9);
+  // three of a site share one delivery: the parts are ordered together
+  near(net.totals.hw, (ra.cost.hw - ra.cost.delivery.total) * 3 + ra.cost.delivery.total + rb.cost.hw, 1e-9);
   assert.equal(net.totals.tx, 3);
 });
