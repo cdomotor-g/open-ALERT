@@ -21,7 +21,7 @@
   },
   "status": {
     "phase": "beta",
-    "updated": "2026-11-07",
+    "updated": "2026-11-08",
     "summary": "Prices re-checked in November 2026: each part is what one costs from an Australian shop with it in stock (else the cheapest way to get one, and when), and every bill — configurator, builder, trial — adds each shop's delivery once and clearance on an overseas order over A$1,000. The Pi 5 4 GB is A$249 in stock (A$178 was a back-order price); the RFI COL54 collinear is A$3,218 at Techwave, not the A$650 guessed; the RTL-SDR Blog V4 is end of life, so the V3 is the builder's stick. The builder and the Mallow trial rate every computer on RPi ALERT 0.17 and 0.19, with the Luna SL1680 and the Raspberry Pi range beside the Verdin AM62s.",
     "next": [
       "Feed the trial's AM62 numbers back into the builder's CPU model",
@@ -351,7 +351,7 @@
         "os/install.sh"
       ],
       "since": {
-        "date": "2026-11-07"
+        "date": "2026-11-08"
       },
       "on_change": "Re-check model.windows, chCore240, burstCoreS and kioskCore in site/data/builder.js and the steps() text in site/js/builder.js; run npm test."
     }
