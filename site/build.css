@@ -215,3 +215,9 @@
 .var td:last-child { min-width: 210px; }
 .var tr.pick-buy th[scope="row"] b { color: var(--ok); }
 .var tr.pick-out { opacity: .7; }
+.var td.num .small { white-space: normal; max-width: 11em; margin-left: auto; }
+.var td:nth-child(5) { white-space: nowrap; }
+.var tr.sub .grp-sub { text-transform: none; letter-spacing: 0; font-weight: normal; }
+.var tr.pick-ref th[scope="row"] b { color: var(--accent); }
+.luna-check { margin-top: 14px; }
+.luna-check ul { margin: 6px 0; padding-left: 1.2em; }

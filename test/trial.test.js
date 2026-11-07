@@ -62,3 +62,23 @@ test('the module table names every Verdin AM62 by its Toradex part number, and k
   const verdin = T.TRIAL.items.find(i => i.id === 'verdin');
   assert.ok(verdin.name.includes(v.find(x => x.pick === 'buy').pid), 'the shopping list buys the module the table picks');
 });
+
+test('the comparison rows below the Verdins are catalogued computers: the Luna SL1680 and the Raspberry Pi range', () => {
+  const FILES = ['alert', 'compute', 'radio', 'sensors', 'power', 'site'];
+  const CATALOG = [].concat(...FILES.map(f => require(path.join(SITE, 'data', `${f}.js`))));
+  const o = T.TRIAL.others;
+  for (const x of o) {
+    const it = CATALOG.find(c => c.id === x.ref);
+    assert.ok(it, `${x.ref}: not in the catalogue`);
+    assert.ok(it.hw && it.hw.sdrCh > 0 && it.hw.cpu && it.hw.ram, `${x.ref}: no CPU, memory or SDR capacity`);
+    assert.ok(Array.isArray(it.temp) && typeof it.price.aud === 'number', `${x.ref}: no rating or price`);
+    assert.ok(['luna', 'pi'].includes(x.group) && x.short && x.store && x.why, `${x.ref}: incomplete row`);
+    assert.ok(['buy', 'now', 'later', 'small', 'maybe', 'out', 'ref', 'paper'].includes(x.pick), `${x.ref}.pick`);
+  }
+  for (const id of ['toradex-luna-sl1680', 'rpi-zero-2w', 'rpi-3b-plus', 'rpi-4-4gb', 'rpi-5-4gb', 'rpi-cm4-io', 'rpi-cm5-io']) assert.ok(o.some(x => x.ref === id), `the table misses ${id}`);
+  // the Luna's CPU is an estimate, and sits between a Pi 4 and a Pi 5
+  const cap = id => CATALOG.find(c => c.id === id).hw.sdrCh;
+  assert.ok(cap('toradex-luna-sl1680') > cap('rpi-4-4gb') && cap('toradex-luna-sl1680') < cap('rpi-5-4gb'));
+  assert.equal(CATALOG.find(c => c.id === 'toradex-luna-sl1680').conf, 'low');
+  assert.ok(o.find(x => x.ref === 'toradex-luna-sl1680').est, 'the Luna\'s CPU figure is marked an estimate');
+});

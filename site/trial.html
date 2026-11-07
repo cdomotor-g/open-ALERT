@@ -38,7 +38,7 @@
 </header>
 
 <main id="main" class="wrap">
-  <nav class="onpage" aria-label="On this page"><span class="dim small">On this page</span> <a href="#setup">The set-up</a> <a href="#which">Which module</a> <a href="#keepup">Will it keep up?</a> <a href="#lighter">A lighter decoder</a> <a href="#buy">What to buy</a> <a href="#do">What to do</a> <a href="#results-h">Results</a> <a href="#trouble">If it won't</a></nav>
+  <nav class="onpage" aria-label="On this page"><span class="dim small">On this page</span> <a href="#setup">The set-up</a> <a href="#which">Which computer</a> <a href="#keepup">Will it keep up?</a> <a href="#lighter">A lighter decoder</a> <a href="#buy">What to buy</a> <a href="#do">What to do</a> <a href="#results-h">Results</a> <a href="#trouble">If it won't</a></nav>
 
   <section class="sect" id="setup">
     <h2>The set-up</h2>
@@ -74,10 +74,21 @@
   </section>
 
   <section class="sect" id="which">
-    <h2>Which module</h2>
+    <h2>Which computer</h2>
     <p>Toradex makes six Verdin AM62s. They all use the same Cortex-A53 cores — the very cores of a Raspberry Pi 3B+ — so what differs is how many and how fast. Each is rated below against what RPi ALERT 0.17's lean decoder asks of it, and what it does with 0.19's Light decoder filtering only around bursts (<a href="#lighter">below</a>). Part numbers are Toradex's current ones. Prices are element14 Australia's, including GST, with Toradex's own direct price (to businesses only) under each — element14 charges two to three times as much for the modules.</p>
+    <p>Under them, for comparison and rated the same way: Toradex's new <b>Luna SL1680</b> board and the <b>Raspberry Pi</b> range. A Verdin's price is the module alone; a Luna's or a Pi's is the whole board. Under each CPU, how much decoding it does with a Pi 4 as 1.</p>
     <div id="variants"></div>
-    <p class="small dim">Percent of each module's CPU from the builder's model: green comfortable, amber the edge, red dropping bursts. The trial is what turns these into measurements. Change the channels and traffic under <a href="#keepup">Will it keep up?</a> and the last column follows.</p>
+    <p class="small dim">Percent of each computer's CPU from the builder's model: green comfortable, amber the edge, red dropping bursts. The trial is what turns these into measurements. Change the channels and traffic under <a href="#keepup">Will it keep up?</a> and the second-last column follows.</p>
+    <div class="card-o luna-check">
+      <h3>Would a Luna SL1680 work?</h3>
+      <p class="small"><b>Yes, on paper — untested.</b> Its four Cortex-A73 cores at 2.1 GHz should decode a little more than a Pi 4 — about 1.1 times, scaled by clock, because no one has published benchmarks yet —, so Flood-Net's four channels would take about a seventh of it on 0.17. It has what a base wants: 4 GB, 16 GB of eMMC instead of an SD card, a battery clock, four USB 3 ports for sticks, Wi-Fi and Ethernet, rated −25 to +85 °C. About US$145 from Toradex, roughly A$230 with GST plus courier.</p>
+      <ul class="small">
+        <li><b>The software route is the trial's.</b> It comes with Torizon OS, not Debian, so RPi ALERT runs in a Debian container — just what this trial tries on the Verdin. If the trial passes, the Luna takes the same route.</li>
+        <li><b>5 V only, like a Pi.</b> Up to 5 A, and it doesn't negotiate USB-PD: a proper 5 V 5 A supply, or a 12 → 5 V converter on a battery site. The Mallow takes 7–24 V directly.</li>
+        <li><b>New.</b> Released early 2026; the datasheet is preliminary, its power use not yet measured, and Toradex hasn't said how long it will make it — the Verdin AM62 is promised to 2033 and beyond. No Australian distributor stocks it yet.</li>
+      </ul>
+      <p class="small dim">Sources: <a href="https://www.toradex.com/single-board-computers/luna-sl1680" target="_blank" rel="noopener">Toradex: Luna SL1680</a> · <a href="https://docs.toradex.com/118084-luna_sl1680_datasheet.pdf" target="_blank" rel="noopener">its datasheet (preliminary)</a> · <a href="https://docs.toradex.com/118333-luna_sl1680_sbc_getting_started.pdf" target="_blank" rel="noopener">getting started</a>. It is also in the <a href="build.html#builder">base station builder</a>.</p>
+    </div>
   </section>
 
   <section class="sect" id="keepup">

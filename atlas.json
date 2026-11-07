@@ -5,7 +5,7 @@
   "repo": "cdomotor-g/open-ALERT",
   "name": "open-ALERT",
   "tagline": "A configurator for ALERT and ALERT2 flood-warning sites: say what a site must do, see the hardware that fits, its costs and consequences.",
-  "about": "For anyone planning ALERT or ALERT2 field stations, repeaters or base stations. Each site goes from needs to requirements to hardware picked from a 251-part catalogue (open and closed, Raspberry Pi to industrial), then to a bill of materials, a power budget with battery and panel sized, labour and running costs, and the consequences of the choices. The Network tab adds sites up and checks that what field stations send, repeaters relay and bases receive actually meet. A static page with no server: state lives in the browser and in share links. The base station builder (build.html) goes deeper on a receiving base running RPi ALERT: how it fits together physically and in the code, which computer keeps up with how many channels, the SDR mounting, a bill with price ranges, lead times and suppliers, and the build steps.",
+  "about": "For anyone planning ALERT or ALERT2 field stations, repeaters or base stations. Each site goes from needs to requirements to hardware picked from a 252-part catalogue (open and closed, Raspberry Pi to industrial), then to a bill of materials, a power budget with battery and panel sized, labour and running costs, and the consequences of the choices. The Network tab adds sites up and checks that what field stations send, repeaters relay and bases receive actually meet. A static page with no server: state lives in the browser and in share links. The base station builder (build.html) goes deeper on a receiving base running RPi ALERT: how it fits together physically and in the code, which computer keeps up with how many channels, the SDR mounting, a bill with price ranges, lead times and suppliers, and the build steps.",
   "kind": "static web app (configurator)",
   "logo": "site/icon.svg",
   "site": "https://cdomotor-g.github.io/open-ALERT/",
@@ -22,12 +22,13 @@
   "status": {
     "phase": "beta",
     "updated": "2026-11-07",
-    "summary": "The builder and the Mallow trial rate every computer on RPi ALERT 0.17's lean decoder and on 0.19's Light decoder filtering only around bursts (built; its first live check missed some of the weakest bursts, so it stays off by default): Flood-Net's four channels on a busy day take about an eighth of the Verdin AM62 Quad (00761200) and a quarter of the Dual (00741201); a Pi 3B+ is now one of its computers, and the one-core Solo a site of one or two channels. Exact Toradex parts, element14 Australia prices with Toradex direct beside them.",
+    "summary": "The builder and the Mallow trial rate every computer on RPi ALERT 0.17's lean decoder and on 0.19's Light decoder filtering only around bursts (built; its first live check missed some of the weakest bursts, so it stays off by default): Flood-Net's four channels on a busy day take about an eighth of the Verdin AM62 Quad (00761200) and a quarter of the Dual (00741201); a Pi 3B+ is now one of its computers, and the one-core Solo a site of one or two channels. Exact Toradex parts, element14 Australia prices with Toradex direct beside them. Toradex's new Luna SL1680 board is catalogued and rated beside the AM62s and the Raspberry Pi range: on paper a little more than a Pi 4, untested.",
     "next": [
       "Feed the trial's AM62 numbers back into the builder's CPU model",
       "Check the builder's estimated prices and lead times (marked est.) with suppliers: antennas, coax, arrestors, the mating Bulgin lead",
       "Point the Quansheng V3 entry at quansheng_alert_ALL's browser installer",
-      "Re-check the FW-LAB entry: Flood-Net's runbook says to retire and archive it"
+      "Re-check the FW-LAB entry: Flood-Net's runbook says to retire and archive it",
+      "Replace the Luna SL1680's estimated CPU and power with measurements once Toradex publishes them or someone runs one"
     ],
     "later": [
       "Recalibrate the builder's CPU model once RPi ALERT runs on a CM5 or a Verdin AM62, and once filtering around bursts passes a check at the first base station",
@@ -76,7 +77,7 @@
     {
       "id": "catalogue",
       "name": "Hardware catalogue",
-      "what": "251 parts in six family files, each with price and its source, power, temperature, grade, openness and sources.",
+      "what": "252 parts in six family files, each with price and its source, power, temperature, grade, openness and sources.",
       "paths": [
         "site/data/"
       ],
@@ -127,7 +128,7 @@
     {
       "id": "trial",
       "name": "Mallow trial",
-      "what": "trial.html: a Verdin AM62 on Mallow beside a Pi 4 on one antenna — shopping list, steps, CPU estimate and a results sheet with pass rules.",
+      "what": "trial.html: a Verdin AM62 on Mallow beside a Pi 4 on one antenna — every AM62 rated beside the Luna SL1680 and the Raspberry Pi range, shopping list, steps, CPU estimate and a results sheet with pass rules.",
       "paths": [
         "site/trial.html",
         "site/js/trial.js",
@@ -176,7 +177,7 @@
     {
       "id": "hardware-catalogue",
       "name": "ALERT hardware catalogue",
-      "what": "Plain-JavaScript records of 251 parts with prices and their sources, power, grades and links, for costing ALERT sites.",
+      "what": "Plain-JavaScript records of 252 parts with prices and their sources, power, grades and links, for costing ALERT sites.",
       "component": "catalogue",
       "paths": [
         "site/data/"

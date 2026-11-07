@@ -60,8 +60,9 @@ and what Australian law asks of a transmitter.
 - **How it works** — a diagram from field station to Flood-Net (tap a part for what it does
   and which code does it), and how a single board, a module on a carrier and a boxed computer
   fit together physically, with the SDR on USB or in an M.2 slot.
-- **Build one** — pick the computer (Pi 4 / 5, Compute Module 5, Revolution Pi Connect 5,
-  Toradex Verdin AM62 on Mallow, N150 mini PC, fanless industrial x86), the channels, the SDR
+- **Build one** — pick the computer (Pi 3B+ / 4 / 5, Compute Module 5, Revolution Pi Connect 5,
+  Toradex Verdin AM62 on Mallow, Toradex Luna SL1680, N150 mini PC, fanless industrial x86), the
+  channels, the SDR
   and how it's held (straight in, a clamped extension, a sealed Bulgin locking USB, or an M.2
   card to design), the antenna and RF chain, power, backhaul and the box. It plans the sticks
   (the narrowest window that holds each stick's channels, as RPi ALERT tunes them), works out
@@ -82,8 +83,9 @@ cases.
 
 `site/trial.html` is the plan for trying a Toradex Verdin AM62 on a Mallow carrier beside
 the Raspberry Pi 4 already running RPi ALERT, on one antenna split two ways, for two weeks
-with the sticks swapped halfway: the set-up drawn, the builder's CPU estimate for your
-channels, a shopping list with prices, lead times and where to buy (ticked off as parts
+with the sticks swapped halfway: the set-up drawn, a table of every Verdin AM62 rated for
+your channels — with Toradex's Luna SL1680 board and the Raspberry Pi range beside them for
+comparison — the builder's CPU estimate for your channels, a shopping list with prices, lead times and where to buy (ticked off as parts
 arrive), the steps — the Pi's baseline, Torizon OS, RPi ALERT in a Debian container (not
 done before: part of what the trial finds out), the splitter on site — a results sheet that
 works out the verdicts, and what to do when it won't. Its list and verdicts are
@@ -91,7 +93,7 @@ works out the verdicts, and what to do when it won't. Its list and verdicts are
 
 ## The catalogue
 
-251 parts, each with where it fits, what it can do, its price and where the price came
+252 parts, each with where it fits, what it can do, its price and where the price came
 from, its power, operating temperature, a 1–5 grade for field use, status (current, young,
 end of life, planned, DIY), firmware and openness, pros and cons, and sources.
 
@@ -99,7 +101,7 @@ end of life, planned, DIY), firmware and openness, pros and cons, and sources.
 |---|---|---|
 | ALERT equipment | 14 | ELPRO ERT-A2 and 115E-2-A2 gateway, Campbell ALERT200X / ALERT205X / ALERT121A / AL200X / AL205B, HSE 3306 / 333X / 1012, Hydrolynx |
 | Software & firmware | 10 | RPi ALERT, FW-LAB Receiver, the Flood-Net Serial Monitor, Campbell ALERT2ADM, OneRain Contrail, the Bureau's Enviromon; a minimodem encoder; open-ALERT's encoder firmware and repeater (planned) |
-| Loggers & computers | 45 | Raspberry Pi 5 / 4 / Zero 2 W / CM4 / CM5; Toradex Verdin AM62 Quad and Dual on Mallow; industrial Pis (Revolution Pi, Strato Pi, reComputer, OnLogic, CompuLab, EDATEC); BeagleBone, Moxa, Siemens IOT2050; N150 mini PCs and fanless x86; ESP32, Pico 2, STM32, Arduino Opta; Campbell CR310 / CR350 / CR1000X, OTT, HyQuest, Unidata, EnviroDIY Mayfly |
+| Loggers & computers | 46 | Raspberry Pi 5 / 4 / 3B+ / Zero 2 W / CM4 / CM5; Toradex Verdin AM62 Quad and Dual on Mallow, Luna SL1680; industrial Pis (Revolution Pi, Strato Pi, reComputer, OnLogic, CompuLab, EDATEC); BeagleBone, Moxa, Siemens IOT2050; N150 mini PCs and fanless x86; ESP32, Pico 2, STM32, Arduino Opta; Campbell CR310 / CR350 / CR1000X, OTT, HyQuest, Unidata, EnviroDIY Mayfly |
 | Radios | 23 | RTL-SDR Blog V3/V4, Airspy, SDRplay, Ettus; Quansheng UV-K5; Tait TM9300 / TM8100, Maxon, Kenwood, Icom, Motorola, Ritron |
 | RF parts | 31 | Yagis and collinears, LMR-400 and Heliax, PolyPhaser arrestors, cavity filters, duplexers, GPS antennas and HATs, a dummy load |
 | Sensors | 32 | KISTERS / HyQuest TB3 and TB4, Rimco, OTT Pluvio²; pressure, radar, ultrasonic, encoder and bubbler level sensors; SDI-12, 4–20 mA and RS-485 interfaces |

@@ -79,6 +79,27 @@
       { pid: '00711200', e14: { code: '4759327', ex: 216.76, note: 'Stock not shown' }, name: 'Solo 512MB', cores: 1, ghz: 1.0, ram: '512 MB', emmc: '4 GB', wifi: false, temp: '0 to +70 °C', usd: 54.95, pick: 'out',
         why: 'As the Solo above, but only 0–70 °C: too narrow for a box in the sun.' },
     ],
+    // The rest of the table, for comparison: Toradex's Luna SL1680 board and
+    // the Raspberry Pi range. Each names its catalogue record (`ref`), which
+    // holds its CPU, memory, rating, price and sources; `hw.sdrCh` ÷ 2 is its
+    // CPU in Pi 4 cores, as in the builder.
+    others: [
+      { group: 'luna', ref: 'toradex-luna-sl1680', short: 'Luna SL1680', detail: '03011000 · Quad 4GB WB ET', store: '16 GB eMMC', pick: 'paper', est: true,
+        buy: 'Toradex direct, US$145 plus courier; no Australian stock found',
+        why: 'Yes on paper: a little more than a Pi 4 (about 1.1 times, scaled by clock — no benchmarks published yet), 4 GB, eMMC, a battery clock, four USB 3 ports for sticks, −25 to +85 °C. But it is new (early 2026, datasheet preliminary), comes with Torizon OS — RPi ALERT would run in a Debian container, the route this trial proves on the Verdin — and takes 5 V at up to 5 A, like a Pi. Toradex hasn\'t said how long it will make it.' },
+      { group: 'pi', ref: 'rpi-zero-2w', short: 'Pi Zero 2 W', detail: 'Raspberry Pi Zero 2 W', store: 'microSD', pick: 'maybe',
+        why: 'A quarter of a Pi 4: four channels on a busy day come near the 70% line on 0.17, and are comfortable on 0.19 around bursts. One micro-USB port (a hub for a second stick) and 512 MB: no screen dashboard.' },
+      { group: 'pi', ref: 'rpi-3b-plus', short: 'Pi 3B+', detail: 'Raspberry Pi 3 Model B+', store: 'microSD', pick: 'now',
+        why: 'The Verdin Quad\'s very cores, so the same half a Pi 4: four channels on a busy day at about a third of it on 0.17. 1 GB, micro-USB power, 0–50 °C.' },
+      { group: 'pi', ref: 'rpi-4-4gb', short: 'Pi 4', detail: 'Raspberry Pi 4 Model B, 4 GB', store: 'microSD', pick: 'ref',
+        why: 'What RPi ALERT is tested on, and the Pi this trial compares against. Rated 0–50 °C, an SD card, no battery clock.' },
+      { group: 'pi', ref: 'rpi-5-4gb', short: 'Pi 5', detail: 'Raspberry Pi 5, 4 GB', store: 'microSD', pick: 'now',
+        why: 'Twice a Pi 4, and a battery clock (add the cell). Needs the 27 W supply; 0–70 °C; an SD card unless you add an NVMe HAT.' },
+      { group: 'pi', ref: 'rpi-cm4-io', short: 'CM4 + IO board', detail: 'Compute Module 4 on its IO Board', store: 'eMMC', pick: 'now',
+        why: 'A Pi 4 at 1.5 GHz as a module: eMMC, −20 to +85 °C and 12 V in on the IO board. The heart of most industrial Pis.' },
+      { group: 'pi', ref: 'rpi-cm5-io', short: 'CM5 + IO board', detail: 'Compute Module 5, 4 GB, 32 GB eMMC, on its IO Board', store: '32 GB eMMC', pick: 'now',
+        why: 'A Pi 5 as a module: eMMC, −20 to +85 °C, a battery clock. Often out of stock in Australia; 5 V 5 A in.' },
+    ],
 
     // What to compare, where to read it, and how it passes.
     measures: [
@@ -181,23 +202,44 @@
       <p class="small dim">Share of each computer's CPU, from the builder's model (RPi ALERT's measurements on a Pi 4; the AM62 at about half a Pi 4). Green is comfortable; amber is the edge; red drops bursts. In the last two columns the second figure is RPi ALERT 0.19's Light decoder filtering only around bursts: built, and being checked at the first base station. The trial is what replaces these estimates with numbers.</p>`;
   }
 
-  // Every AM62 variant: what Flood-Net's four channels on a busy day, and the
-  // Pi's channels on a heavy one, would ask of it — on RPi ALERT 0.17, and on 0.19's Light decoder filtering only around bursts.
+  // The table: every AM62 variant, then the Luna and the Raspberry Pis — what
+  // Flood-Net's four channels on a busy day, and the Pi's channels in your
+  // traffic, would ask of each, on RPi ALERT 0.17 and on 0.19's Light decoder
+  // filtering only around bursts.
   function variants() {
     const K = globalThis.OA_BUILD_API, el = $('#variants');
     if (!K || !el) return;
+    const CAT = globalThis.OA_CATALOG || [];
     const four = K.planSticks([151.5, 151.525, 151.95, 152.4], 'auto');
     const freqs = String(T.channels).split(/[ ,;]+/).map(Number).filter(f => f >= 136 && f <= 174);
     const yours = K.planSticks(freqs, 'auto');
     const pct = (plan, traffic, dec, cap) => { const u = K.load(plan, { traffic, decoder: dec }).total / cap; const v = K.verdict(u); return `<span class="${v.cls}">${Math.round(u * 100)}%</span>`; };
-    const PICK = { buy: ['ok', 'Trial this'], now: ['ok', 'Works on 0.17'], later: ['info', 'Later, lighter decoder'], small: ['info', '1–2 channels, on 0.19'], maybe: ['warn', 'Possible, tight'], out: ['bad', 'Ruled out'] };
-    el.innerHTML = `<div class="table-wrap"><table class="tbl var"><thead><tr><th>Toradex part</th><th>CPU</th><th>RAM · eMMC</th><th>Wi-Fi</th><th>Rated</th><th class="num">A$ inc GST<br><span class="dim">element14</span></th><th class="num" title="RPi ALERT 0.17 filtering always → 0.19 Light, filtering only around bursts">4 ch, busy: 0.17 → 0.19</th><th class="num" title="RPi ALERT 0.17 filtering always → 0.19 Light, filtering only around bursts">Your ${freqs.length} ch, ${esc(T.traffic)}: 0.17 → 0.19</th><th>Verdict</th></tr></thead><tbody>${TRIAL.variants.map(v => {
+    const PICK = { buy: ['ok', 'Trial this'], now: ['ok', 'Works on 0.17'], later: ['info', 'Later, lighter decoder'], small: ['info', '1–2 channels, on 0.19'], maybe: ['warn', 'Possible, tight'], out: ['bad', 'Ruled out'], ref: ['ok', 'The Pi you have'], paper: ['info', 'Should work — untested'] };
+    const chip = p => `<span class="chip st-${p[0] === 'bad' ? 'bad' : p[0] === 'warn' ? 'warn' : 'info'}">${esc(p[1])}</span>`;
+    const pi4s = (cap, est) => { const x = cap / 4; return `<div class="small dim" title="CPU for decoding, with a Raspberry Pi 4 as 1${est ? ' — an estimate' : ''}">≈ ${x >= 0.95 ? (Math.round(x * 10) / 10) : x === 0.5 ? '½' : x === 0.25 ? '¼' : Math.round(x * 100) / 100} × a Pi 4${est ? ' (est.)' : ''}</div>`; };
+    const temp = t => `${t[0] < 0 ? '−' + -t[0] : t[0]} to +${t[1]} °C`;
+    const loads = cap => `<td class="num" data-l="4 ch, busy">${pct(four, 'busy', 'filter-once', cap)} → ${pct(four, 'busy', 'light', cap)}</td><td class="num" data-l="Yours">${yours.sticks && yours.sticks.length ? `${pct(yours, T.traffic, 'filter-once', cap)} → ${pct(yours, T.traffic, 'light', cap)}` : '—'}</td>`;
+    const mallow = TRIAL.items.find(i => i.id === 'mallow'), sink = TRIAL.items.find(i => i.id === 'heatsink');
+    const head = (text, sub) => `<tr class="sub"><th colspan="9">${esc(text)}${sub ? ` <span class="grp-sub">— ${esc(sub)}</span>` : ''}</th></tr>`;
+    const verdin = TRIAL.variants.map(v => {
       const cap = v.cores * (v.ghz / 1.4) / 2;      // in Pi 4 cores
-      const p = PICK[v.pick];
-      return `<tr class="pick-${v.pick}"><th scope="row"><b>${esc(v.pid)}</b><div class="small dim">${esc(v.name)}</div></th><td>${v.cores} × A53 ${v.ghz} GHz</td><td>${esc(v.ram)} · ${esc(v.emmc)}</td><td>${v.wifi ? 'yes' : '—'}</td><td>${esc(v.temp)}</td><td class="num">${v.e14.ex ? `<b>${money(v.e14.ex * 1.1)}</b><div class="small dim">${esc(v.e14.code)}</div>` : '<span class="dim">not listed</span>'}<div class="small dim" title="Toradex's own sample price, to businesses, converted">Toradex direct ≈ ${money(aud(v.usd) * 1.1)}</div></td>
-        <td class="num">${pct(four, 'busy', 'filter-once', cap)} → ${pct(four, 'busy', 'light', cap)}</td><td class="num">${yours.sticks && yours.sticks.length ? `${pct(yours, T.traffic, 'filter-once', cap)} → ${pct(yours, T.traffic, 'light', cap)}` : '—'}</td>
-        <td><span class="chip st-${p[0] === 'ok' ? 'info' : p[0] === 'bad' ? 'bad' : p[0] === 'warn' ? 'warn' : 'info'}">${p[1]}</span><div class="small dim">${esc(v.why)}</div><div class="small dim">element14: ${esc(v.e14.note)}.</div></td></tr>`;
-    }).join('')}</tbody></table></div>`;
+      return `<tr class="pick-${v.pick}"><th scope="row"><b>${esc(v.pid)}</b><div class="small dim">${esc(v.name)}</div></th><td>${v.cores} × A53 ${v.ghz} GHz${pi4s(cap)}</td><td>${esc(v.ram)} · ${esc(v.emmc)} eMMC</td><td>${v.wifi ? 'yes' : '—'}</td><td>${esc(v.temp)}</td><td class="num">${v.e14.ex ? `<b>${money(v.e14.ex * 1.1)}</b><div class="small dim">element14 ${esc(v.e14.code)}</div>` : '<span class="dim">not at element14</span>'}<div class="small dim" title="Toradex's own sample price, to businesses, converted">Toradex direct ≈ ${money(aud(v.usd) * 1.1)}</div></td>
+        ${loads(cap)}
+        <td>${chip(PICK[v.pick])}<div class="small dim">${esc(v.why)}</div><div class="small dim">element14: ${esc(v.e14.note)}.</div></td></tr>`;
+    }).join('');
+    const other = group => TRIAL.others.filter(o => o.group === group).map(o => {
+      const it = CAT.find(x => x.id === o.ref);
+      if (!it) return '';
+      const cap = it.hw.sdrCh / 2, pr = it.price;
+      return `<tr class="pick-${o.pick}"><th scope="row"><b>${esc(o.short)}</b><div class="small dim">${esc(o.detail)}</div></th><td>${esc(it.hw.cpu)}${pi4s(cap, o.est)}</td><td>${it.hw.ram < 1 ? it.hw.ram * 1024 + ' MB' : it.hw.ram + ' GB'} · ${esc(o.store)}</td><td>${it.io && it.io.wifi ? 'yes' : '—'}</td><td>${esc(temp(it.temp))}</td><td class="num"><b>${money(pr.gst === false ? pr.aud * 1.1 : pr.aud)}</b><div class="small dim">${esc(o.buy || pr.src)}</div></td>
+        ${loads(cap)}
+        <td>${chip(PICK[o.pick])}<div class="small dim">${esc(o.why)}</div></td></tr>`;
+    }).join('');
+    el.innerHTML = `<div class="table-wrap"><table class="tbl var"><thead><tr><th>Computer</th><th>CPU</th><th>RAM · storage</th><th>Wi-Fi</th><th>Rated</th><th class="num">A$ inc GST</th><th class="num" title="RPi ALERT 0.17 filtering always → 0.19 Light, filtering only around bursts">4 ch, busy: 0.17 → 0.19</th><th class="num" title="RPi ALERT 0.17 filtering always → 0.19 Light, filtering only around bursts">Your ${freqs.length} ch, ${esc(T.traffic)}: 0.17 → 0.19</th><th>Verdict</th></tr></thead><tbody>
+      ${head('Toradex Verdin AM62', `the module only: add a Mallow carrier (${money(mallow.aud[0] * 1.1)}) and a heatsink (${range(sink.aud[0] * 1.1, sink.aud[1] * 1.1)})`)}${verdin}
+      ${head('Toradex Luna SL1680', 'a whole board, the size of a Pi')}${other('luna')}
+      ${head('Raspberry Pi', 'what RPi ALERT is made for; prices for the board alone')}${other('pi')}
+    </tbody></table></div>`;
   }
 
   function results() {

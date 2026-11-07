@@ -158,6 +158,16 @@
         src: [['Toradex Verdin AM62 (prices, availability)', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], ['element14: Mallow carrier', 'https://au.element14.com/toradex/01611102/carrier-board-mallow/dp/4759350'], ['Mallow carrier board datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf']], conf: 'medium',
       },
       {
+        id: 'toradex-luna-sl1680', ref: 'toradex-luna-sl1680', short: 'Luna SL1680', kind: 'board',
+        aud: [210.14, 255], gst: false,
+        lead: { d: [7, 35], text: 'Toradex\'s webshop, by courier from abroad; it shows no stock or lead time and no Australian distributor lists it — an estimate' },
+        where: [['Toradex webshop (US$145 for one)', 'https://www.toradex.com/single-board-computers/luna-sl1680']],
+        supply: '5v5a', usb: 4, m2: false, eth: 1, wifi: true, board: [85, 56], install: 'luna', parts: 'Luna SBC SL1680 Quad 4GB Wi-Fi / Bluetooth ET, Toradex 0301 (03011000)',
+        mainsNote: 'A 5 V supply good for 5 A — Toradex\'s figure — on a USB-C lead, or 5 V into the 40-pin header. The Luna doesn\'t negotiate USB-PD (its datasheet), so a phone or Pi 5 charger may hold it to 3 A.', mainsAud: [45, 75],
+        fit: 'A Pi-sized Toradex board: four Cortex-A73 cores at 2.1 GHz — a little more than a Pi 4, about 1.1 times, scaled by clock (no benchmarks published yet) — 4 GB, 16 GB eMMC, a battery clock, four USB 3 ports, −25 to +85 °C, about US$145. New in 2026 and untested with RPi ALERT: it comes with Torizon OS, so RPi ALERT runs in a Debian container, as on the Verdin. 5 V only, like a Pi.',
+        src: [['Toradex: Luna SL1680', 'https://www.toradex.com/single-board-computers/luna-sl1680'], ['Luna SL1680 datasheet (preliminary)', 'https://docs.toradex.com/118084-luna_sl1680_datasheet.pdf'], ['Luna SL1680 getting started', 'https://docs.toradex.com/118333-luna_sl1680_sbc_getting_started.pdf']], conf: 'low',
+      },
+      {
         id: 'mini-pc-n150', ref: 'mini-pc-n150', short: 'N150 mini PC', kind: 'box',
         aud: [230, 350], gst: true, lead: { d: [2, 10], text: 'Australian online retailers' },
         where: [['Mwave', 'https://www.mwave.com.au/'], ['Amazon Australia', 'https://www.amazon.com.au/']],

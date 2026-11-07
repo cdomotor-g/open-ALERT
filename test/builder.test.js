@@ -35,7 +35,7 @@ test('every builder option is well formed and its references resolve', () => {
   for (const p of B.platforms) {
     const it = CATALOG.find(x => x.id === p.ref);
     assert.ok(it.hw && it.hw.sdrCh > 0, `${p.id}: the catalogue gives no SDR capacity`);
-    assert.ok(['pi', 'cm', 'verdin', 'debian'].includes(p.install), `${p.id}.install`);
+    assert.ok(['pi', 'cm', 'verdin', 'luna', 'debian'].includes(p.install), `${p.id}.install`);
   }
 });
 

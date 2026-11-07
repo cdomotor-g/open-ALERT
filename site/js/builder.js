@@ -152,6 +152,7 @@
     // power
     let pwr = pw;
     if (pw.id === 'mains-plug' && (P.supply === 'mains')) pwr = Object.assign({}, pw, { aud: [0, 0], note: 'The mini PC\'s own power brick — nothing to buy.' });
+    if (pw.id === 'mains-plug' && P.mainsNote) pwr = Object.assign({}, pw, { name: 'Mains: a 5 V 5 A supply', aud: P.mainsAud || pw.aud, note: P.mainsNote, conf: 'low' });
     if (pw.id === 'mains-plug' && (P.supply === 'wide' || P.supply === '24v')) pwr = Object.assign({}, pw, { aud: [35, 90], name: `Mains: a ${P.supply === '24v' ? '24' : '12'} V DIN-rail supply`, ref: 'meanwell-hdr-30-12', note: `${P.short} takes DC on terminals: a Mean Well HDR-series supply${P.supply === '24v' ? ' (24 V model)' : ''}.` });
     if (pw.id === 'dc12') {
       if (P.supply === 'wide') pwr = Object.assign({}, pw, { aud: [0, 0], note: `${P.short} takes 12 V straight onto its terminals — just a fuse.` });
@@ -202,6 +203,7 @@
       pi: ['Write the card with Raspberry Pi Imager and the RPi ALERT repository: <code>rpi-imager --repo https://cdomotor-g.github.io/RPi_ALERT/os_list.json</code> → <b>RPi ALERT (arm64)</b>. Accept the customisation (Wi-Fi, SSH).', 'Or, on a card already running Raspberry Pi OS: <code>curl -fsSL https://raw.githubusercontent.com/cdomotor-g/RPi_ALERT/main/os/bootstrap.sh | sudo bash</code>.'],
       cm: ['Put the board in USB-boot mode (the IO board\'s boot jumper or button — see its datasheet), connect its USB-C to a computer and run <code>rpiboot</code>: the eMMC appears as a drive.', 'Write it with Raspberry Pi Imager and the RPi ALERT repository, as for a Pi (<code>rpi-imager --repo https://cdomotor-g.github.io/RPi_ALERT/os_list.json</code>). RPi ALERT has not been tested on a Compute Module yet: note what you find.'],
       verdin: ['Write the eMMC with Toradex Easy Installer (boot the module into recovery mode, connect USB) and choose Torizon OS.', 'Run the agent in a Debian container with the USB bus passed through, and RPi ALERT\'s <code>os/install.sh</code> inside it — or build a Yocto image with Node.js 18+ and <code>rtl-sdr</code>. Untested: this is the first port off the Pi; record what it takes.'],
+      luna: ['Power it up with a screen on its HDMI port: if Torizon OS is already on the eMMC, it shows a pairing screen. If not, fit the USB_BOOT jumper, connect its USB-C to a computer and run the flash script from Toradex\'s Luna image (the getting-started guide, section 4).', 'Run the agent in a Debian container with the USB bus passed through, and RPi ALERT\'s <code>os/install.sh</code> inside it — the route the Mallow trial proves on the Verdin. Untested on the Luna: record what it takes.'],
       debian: ['Install Debian 13 (Trixie) from a USB stick: no desktop needed.', 'Then <code>sudo apt install git</code>, <code>git clone https://github.com/cdomotor-g/RPi_ALERT</code>, <code>sudo ./RPi_ALERT/os/install.sh</code>. The installer is plain Debian (apt, systemd, udev) but has only been run on Raspberry Pi OS: the Pi-only parts (under-voltage, boot partition settings) do nothing here.'],
     }[P.install];
     out.push({ h: 'Bench build', items: [
