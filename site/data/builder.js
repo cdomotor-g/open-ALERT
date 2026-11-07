@@ -36,6 +36,14 @@
   const B = {
     asof: '2026-11',
 
+    // ── delivery ────────────────────────────────────────────────────────────
+    // What each shop charges to deliver an order to an Australian address,
+    // A$ inc GST: ship [a small order, a large or heavy one]; `freeOver` the
+    // order value it delivers free above; `from` where it ships from; `src`
+    // its delivery page.
+    shops: {},
+    import: { threshold: 1000, clearance: [100, 250], what: 'an import processing charge and a customs broker\'s fee (an estimate)' },
+
     // ── the decoding model ──────────────────────────────────────────────────
     model: {
       // The windows a stick can take, how far apart its channels may be, and a

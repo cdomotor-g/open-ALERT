@@ -1396,6 +1396,41 @@
     return e;
   }
 
+  // ── delivery ──────────────────────────────────────────────────────────────
+  // A catalogue price can say what delivering it costs: `price.ship` (A$ inc
+  // GST, one order to an Australian address), `price.from` (where it ships
+  // from: 'AU' or a country code) and `price.shop`. The bill charges each shop
+  // once — the most any of its parts asks, since a battery's freight carries
+  // the small parts with it. A part you have quoted yourself counts as
+  // delivered; a quote-only part's freight is in its quote. An order of more
+  // than A$1,000 from overseas pays GST at the border (already in the price
+  // shown) and a clearance charge: Home Affairs' import processing charge and
+  // a customs broker's fee.
+  const IMPORT = { threshold: 1000, clearance: 150, what: 'import processing charge and a customs broker\'s fee — an estimate' };
+  const shopOf = it => (it.price && it.price.shop) || String((it.price && it.price.src) || it.vendor || it.id).split(/[:(,;]/)[0].trim();
+  function deliveryFor(d, rows, s) {
+    const shops = new Map();
+    let unknown = 0;
+    for (const r of rows) {
+      const it = item(r.id), p = it && it.price;
+      if (!p || r.kind === 'dev') continue;
+      if (d.prices && d.prices[r.id] != null) continue;
+      if (p.aud == null || p.aud === 0 || ['free', 'existing', 'quote', 'tender'].includes(p.basis)) continue;
+      if (p.ship == null) { unknown++; continue; }
+      const k = shopOf(it);
+      const g = shops.get(k) || { shop: k, from: p.from || 'AU', ship: 0, value: 0, parts: [] };
+      g.ship = Math.max(g.ship, p.ship);
+      g.value += (unitPrice(it, { gst: true, currency: 'AUD' }, d.role) || 0) * r.qty;
+      g.parts.push(it.name);
+      shops.set(k, g);
+    }
+    const lines = [...shops.values()].map(g => {
+      const clear = g.from !== 'AU' && g.value > IMPORT.threshold ? IMPORT.clearance : 0;
+      return Object.assign(g, { clear, aud: g.ship + clear, total: shown(g.ship + clear, s) });
+    }).sort((a, b) => b.total - a.total);
+    return { lines, total: lines.reduce((a, l) => a + l.total, 0), unknown };
+  }
+
   function costs(d, lines, pb, s) {
     s = Object.assign({}, DEFAULT_SETTINGS, s || {});
     const rows = [];
@@ -1428,6 +1463,8 @@
       if (!ln.pick) continue;
       push(item(ln.pick), ln.qty, ln.label, ln.why, 'peripheral');
     }
+    const delivery = deliveryFor(d, rows, s);
+    hw += delivery.total;
     const e = effort(d);
     let labour = 0, visit = 0;
     if (s.labour) {
@@ -1437,7 +1474,7 @@
     const visitsYear = s.labour ? e.visits * visit : 0;
     const replaceTotal = replace.reduce((a, r) => a + r.cost, 0);
     const tco = hw + labour + (yearly + visitsYear) * s.years + replaceTotal;
-    return { rows, hw, unknown, yearly, labour, visitsYear, replace, replaceTotal, oneOff, tco, effort: e, settings: s };
+    return { rows, hw, delivery, unknown, yearly, labour, visitsYear, replace, replaceTotal, oneOff, tco, effort: e, settings: s };
   }
 
   // ── evaluate ────────────────────────────────────────────────────────────────
@@ -1712,10 +1749,12 @@
     const s = Object.assign({}, DEFAULT_SETTINGS, settings || {});
     const t = { hw: 0, labour: 0, yearly: 0, tco: 0, oneOff: 0, unknown: 0, sites: 0, tx: 0, w: 0 };
     for (const { d, r } of evs) {
-      t.hw += r.cost.hw * d.qty;
+      // delivery once for the lot: the sites' parts are ordered together
+      const once = r.cost.delivery ? r.cost.delivery.total * (d.qty - 1) : 0;
+      t.hw += r.cost.hw * d.qty - once;
       t.labour += r.cost.labour * d.qty;
       t.yearly += (r.cost.yearly + r.cost.visitsYear) * d.qty;
-      t.tco += r.cost.tco * d.qty + r.cost.oneOff;
+      t.tco += r.cost.tco * d.qty + r.cost.oneOff - once;
       t.oneOff += r.cost.oneOff;
       t.unknown += r.cost.unknown;
       t.sites += d.qty;
@@ -1790,7 +1829,7 @@
     ROLE_LIST, ROLES, CATS, SKILLS, ENV, GRADE, FEATURES, SLOTS, GROUPS, DEFAULT_SETTINGS, OUTPUT_TEXT,
     catLabel, catGroup, setCatalog, item, candidates, featuresFor, defaultFeatures, visibleFeatures,
     newDesign, normalise, requirements, fit, evaluate, optionsFor, autoPick, rankCands, network, peripherals, fromPreset,
-    powerBudget, unitPrice, yearlyPrice, price, money, fmtW, slotDef, coveredBy, freedBy, picked, context, shown,
+    powerBudget, unitPrice, yearlyPrice, price, money, fmtW, slotDef, coveredBy, freedBy, picked, context, shown, deliveryFor, IMPORT, shopOf,
     get catalog() { return CATALOG; },
   };
 });

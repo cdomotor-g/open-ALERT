@@ -182,13 +182,52 @@
     if (plan.error) warn.push(['bad', plan.error]);
     if (plan.capped) warn.push(['info', `These channels need at least ${plan.minK} sticks; planned on ${plan.minK}.`]);
 
+    // delivery, once a shop
+    const del = delivery(rows);
+    del.rows.forEach(r => rows.push(r));
+    if (del.unknown.length) warn.push(['info', `Delivery not counted from ${del.unknown.join(', ')}: add it to your quote.`]);
+
     // totals
     const lines = rows.map(r => Object.assign(r, { tlo: r.lo == null ? null : r.lo * r.qty, thi: r.hi == null ? null : r.hi * r.qty }));
     const total = { lo: lines.reduce((s, r) => s + (r.tlo || 0), 0), hi: lines.reduce((s, r) => s + (r.thi || 0), 0) };
-    const longest = lines.filter(r => r.lead && r.lead.d).sort((a, b) => b.lead.d[1] - a.lead.d[1])[0];
+    const longest = lines.filter(r => r.lead && r.lead.d && r.section !== 'Delivery').sort((a, b) => b.lead.d[1] - a.lead.d[1])[0];
     const likely = lines.filter(r => r.lead && r.lead.d).reduce((m, r) => Math.max(m, r.lead.d[0]), 0);
 
     return { S, P, host, plan, sdr, mount, ant, pw: pwr, bh, enc, load: L, cap, use, verdict: verdict(use), rows: lines, total, longest, likely, warn, steps: steps(S, P, plan, sdr, mount, bh, enc, pwr) };
+  }
+
+  // ── delivery ──────────────────────────────────────────────────────────────
+  // Each line is bought from the first shop it names; each shop delivers once,
+  // at its standard rate (B.shops: [a small order, a large or heavy one]),
+  // free over its threshold. An overseas order of more than A$1,000 also pays
+  // a clearance charge at the border (B.import).
+  const shopFor = name => { const k = Object.keys(B.shops || {}).find(k => name === k || name.startsWith(k + ' ') || name.startsWith(k + ':')); return k ? Object.assign({ name: k }, B.shops[k]) : null; };
+  function delivery(rows) {
+    const by = new Map();
+    for (const r of rows) {
+      if (!r.where.length || !(r.hi > 0)) continue;
+      const sh = shopFor(r.where[0][0]);
+      const key = sh ? sh.name : r.where[0][0];
+      const g = by.get(key) || { sh, name: key, lo: 0, hi: 0, parts: [] };
+      g.lo += r.lo * r.qty; g.hi += r.hi * r.qty; g.parts.push(r.name);
+      by.set(key, g);
+    }
+    const out = [], unknown = [];
+    for (const g of by.values()) {
+      const sh = g.sh;
+      if (!sh) { unknown.push(g.name); continue; }
+      let lo = sh.ship[0], hi = sh.ship[1];
+      if (sh.freeOver != null && g.lo >= sh.freeOver) { lo = 0; hi = 0; }
+      else if (sh.freeOver != null && g.hi >= sh.freeOver) { lo = 0; hi = sh.ship[0]; }
+      const IM = B.import;
+      const over = sh.from !== 'AU' && IM && g.hi > IM.threshold;
+      if (over) { hi += IM.clearance[1]; if (g.lo > IM.threshold) lo += IM.clearance[0]; }
+      lo = Math.min(lo, hi);
+      const parts = g.parts.length > 3 ? `${g.parts.slice(0, 3).join(', ')} and ${g.parts.length - 3} more` : g.parts.join(', ');
+      out.push(row('Delivery', { id: `ship-${g.name}`, name: `Delivery from ${g.name}`, aud: [lo, hi], gst: true, lead: { d: [0, 0], text: sh.text || '' },
+        where: sh.src ? [[sh.src[0][0], sh.src[0][1]]] : [], note: `${sh.note ? sh.note + ' ' : ''}For: ${parts}.${over ? ` Over A$${IM.threshold.toLocaleString('en-AU')} from overseas: GST at the border and ${IM.what}.` : ''}`, conf: sh.conf || 'medium', src: sh.src || [] }, 1));
+    }
+    return { rows: out, unknown };
   }
 
   // ── the build, step by step ───────────────────────────────────────────────

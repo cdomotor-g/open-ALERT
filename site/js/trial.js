@@ -114,6 +114,36 @@
     ],
   };
 
+  // Delivery for the list: each item is bought from the first shop it names,
+  // and each shop delivers once (the builder's B.shops, [small, large] A$ inc
+  // GST, free over its threshold); an overseas order over A$1,000 pays a
+  // clearance charge at the border. → { lines: [{ name, lo, hi, parts, sh }], lo, hi, unknown }
+  function delivery(items) {
+    const BD = isNode ? require('../data/builder.js') : globalThis.OA_BUILDER;
+    const shops = (BD && BD.shops) || {}, IM = BD && BD.import;
+    const find = n => Object.keys(shops).find(k => n === k || n.startsWith(k + ' ') || n.startsWith(k + ':'));
+    const inc = (v, gst) => gst === false ? v * 1.1 : v;
+    const by = new Map();
+    for (const it of items) {
+      if (!it.where.length) continue;
+      const k = find(it.where[0][0]) || it.where[0][0];
+      const g = by.get(k) || { name: k, sh: shops[k] || null, vlo: 0, vhi: 0, parts: [] };
+      g.vlo += inc(it.aud[0], it.gst) * it.qty; g.vhi += inc(it.aud[1], it.gst) * it.qty; g.parts.push(it.name.split(' — ')[0]);
+      by.set(k, g);
+    }
+    const lines = [], unknown = [];
+    for (const g of by.values()) {
+      if (!g.sh) { unknown.push(g.name); continue; }
+      let lo = g.sh.ship[0], hi = g.sh.ship[1];
+      if (g.sh.freeOver != null && g.vlo >= g.sh.freeOver) { lo = 0; hi = 0; }
+      else if (g.sh.freeOver != null && g.vhi >= g.sh.freeOver) { lo = 0; hi = g.sh.ship[0]; }
+      const over = g.sh.from !== 'AU' && IM && g.vhi > IM.threshold;
+      if (over) { hi += IM.clearance[1]; if (g.vlo > IM.threshold) lo += IM.clearance[0]; }
+      lines.push(Object.assign(g, { lo: Math.min(lo, hi), hi, over }));
+    }
+    return { lines, lo: lines.reduce((a, l) => a + l.lo, 0), hi: lines.reduce((a, l) => a + l.hi, 0), unknown };
+  }
+
   // A measure's verdict from the four numbers (Pi and AM62, week 1 and week 2,
   // the sticks swapped between weeks). → { cls, text } or null.
   function verdict(m, v) {
@@ -144,7 +174,7 @@
     return null;
   }
 
-  const API = { TRIAL, verdict, aud };
+  const API = { TRIAL, verdict, aud, delivery };
   if (isNode) { module.exports = API; return; }
 
   // ══ the page ══════════════════════════════════════════════════════════════
@@ -168,16 +198,24 @@
       loAll += a; hiAll += b;
       if (it.need === 'must') { lo += a; hi += b; if (!longest || it.lead.d[1] > longest.lead.d[1]) longest = it; }
     }
+    const D = delivery(TRIAL.items.filter(i => i.need === 'must'));
+    lo += D.lo; hi += D.hi; loAll += D.lo; hiAll += D.hi;
     const cl = $('#cost-line');
-    if (cl) cl.innerHTML = `About <b>${range(lo, hi)}</b> inc GST for what you need, ${range(loAll, hiAll)} with the extras. The longest wait is the Toradex parts. The list below has each part, where to get it and how long it takes.`;
+    if (cl) cl.innerHTML = `About <b>${range(lo, hi)}</b> inc GST, delivered, for what you need, ${range(loAll, hiAll)} with the extras. The longest wait is the Toradex parts. The list below has each part, where to get it and how long it takes.`;
     $('#shop').innerHTML = groups.map(([g, h]) => `<h3>${h}</h3><ul class="shop">${TRIAL.items.filter(i => i.need === g).map(it => `
       <li class="${T.got[it.id] ? 'got' : ''}"><label class="shop-chk"><input type="checkbox" data-got="${it.id}"${T.got[it.id] ? ' checked' : ''}> <span class="sr-only">Got it</span></label>
         <div class="shop-main"><b>${esc(it.name)}</b>${it.conf === 'low' ? ' <span class="chip st-warn" title="Price and lead time are estimates">est.</span>' : ''}
           <div class="small dim">${esc(it.why)}</div>
           <div class="shop-meta small"><span><b>${range(inc(it.aud[0], it.gst), inc(it.aud[1], it.gst))}</b> inc GST</span><span title="${esc(it.lead.text)}">⏱ ${esc(days(it.lead.d))}</span><span>${it.where.map(([n, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(n)}</a>`).join(' · ')}</span></div>
         </div></li>`).join('')}</ul>`).join('') +
-      `<p class="note"><b>Total for what you need:</b> ${range(lo, hi)} inc GST (${range(loAll, hiAll)} with everything). Prices are element14 Australia's where it stocks the part (2 November 2026). <b>The module is most of it:</b> Toradex sells the same 00761200 direct, to businesses only, for about A$171 inc GST — a third of element14's — so if the Bureau can order from Toradex, the whole list comes to about ${range(lo - 514.73 * 1.1 + 171, hi - 514.73 * 1.1 + 171)}.</p>`;
+      (D.lines.length ? `<h3>Delivery</h3><ul class="shop">${D.lines.map(l => `<li><span class="shop-chk" aria-hidden="true"></span><div class="shop-main"><b>Delivery from ${esc(l.name)}</b>${l.sh.conf === 'low' ? ' <span class="chip st-warn" title="An estimate">est.</span>' : ''}
+          <div class="small dim">${esc(l.sh.note || '')} For: ${esc(l.parts.join(', '))}.${l.over ? ` Over A$${TRIAL_IMPORT().threshold.toLocaleString('en-AU')} from overseas: GST at the border and ${esc(TRIAL_IMPORT().what)}.` : ''}</div>
+          <div class="shop-meta small"><span><b>${l.hi === 0 ? 'free' : range(l.lo, l.hi)}</b> inc GST</span>${l.sh.src ? `<span><a href="${esc(l.sh.src[0][1])}" target="_blank" rel="noopener">${esc(l.sh.src[0][0])}</a></span>` : ''}</div></div></li>`).join('')}</ul>` : '') +
+      (D.unknown.length ? `<p class="small dim">Delivery not counted from ${esc(D.unknown.join(', '))}.</p>` : '') +
+      `<p class="note"><b>Total for what you need, delivered:</b> ${range(lo, hi)} inc GST (${range(loAll, hiAll)} with everything). Prices are element14 Australia's where it stocks the part (2 November 2026). <b>The module is most of it:</b> Toradex sells the same 00761200 direct, to businesses only, for about A$171 inc GST — a third of element14's — so if the Bureau can order from Toradex, the whole list comes to about ${range(lo - 514.73 * 1.1 + 171, hi - 514.73 * 1.1 + 171)}.</p>`;
   }
+
+  const TRIAL_IMPORT = () => (globalThis.OA_BUILDER && globalThis.OA_BUILDER.import) || { threshold: 1000, what: 'clearance charges' };
 
   function estimate() {
     const K = globalThis.OA_BUILD_API;

@@ -34,6 +34,7 @@ const STATUS = new Set(['current', 'beta', 'eol', 'planned', 'discontinued', 'di
 const BASIS = new Set(['retail', 'list', 'estimate', 'quote', 'tender', 'used', 'free', 'existing']);
 const SUPPORT = new Set(['vendor', 'community', 'limited', 'agency', 'none']);
 const OPEN = new Set(['open', 'partial', 'closed']);
+const STOCK = new Set(['in', 'back', 'out', 'order', 'unknown']);
 const CAN = new Set(['a1-tx', 'a2-tx', 'a1-rx', 'a2-rx', 'a1-iq', 'a1-audio', 'a1-repeat', 'a2-repeat', 'a1-conc', 'radio', 'gps-int', 'logger', 'batt-v', 'ip', 'multi-ch']);
 
 test('every catalogue record is well formed', () => {
@@ -67,7 +68,37 @@ test('every catalogue record is well formed', () => {
       assert.match(s[1], /^https?:\/\//, `${where}.src ${s[1]}`);
     }
     if (it.power) for (const k of ['w', 'txW', 'rxW', 'peakW']) if (it.power[k] != null) assert.ok(it.power[k] >= 0, `${where}.power.${k}`);
+    // where it comes from and what delivering it costs
+    const p = it.price;
+    if (p.ship != null) assert.ok(typeof p.ship === 'number' && p.ship >= 0, `${where}.price.ship`);
+    if (p.from != null) assert.match(p.from, /^[A-Z]{2}$/, `${where}.price.from`);
+    if (p.stock != null) assert.ok(STOCK.has(p.stock), `${where}.price.stock ${p.stock}`);
+    if (p.shop != null) assert.ok(typeof p.shop === 'string' && p.shop.length > 1, `${where}.price.shop`);
+    if (p.ship != null && p.basis === 'retail') assert.ok(p.from, `${where}: a delivery charge says where it ships from`);
   }
+});
+
+test('the bill charges delivery once a shop, and clearance on a big overseas order', () => {
+  for (const pr of P.designs) {
+    const d = E.fromPreset(pr);
+    const c = E.evaluate(d, SETTINGS).cost;
+    assert.ok(c.delivery && Array.isArray(c.delivery.lines), `${pr.id}: no delivery`);
+    const shops = c.delivery.lines.map(l => l.shop);
+    assert.equal(new Set(shops).size, shops.length, `${pr.id}: a shop charged twice`);
+    for (const l of c.delivery.lines) {
+      assert.ok(l.total >= 0 && l.parts.length, `${pr.id}: ${l.shop}`);
+      if (l.clear) assert.ok(l.from !== 'AU' && l.value > E.IMPORT.threshold, `${pr.id}: clearance on ${l.shop}`);
+    }
+    const parts = c.rows.reduce((a, r) => a + (r.total == null || r.kind === 'dev' ? 0 : r.total), 0);
+    near(c.hw, parts + c.delivery.total, 1e-6);
+  }
+  // several sites of a kind share one delivery
+  const one = E.fromPreset(P.designs.find(p => p.id === P.designs[0].id)), many = Object.assign(E.fromPreset(P.designs[0]), { qty: 5 });
+  one.qty = 1;
+  const n1 = E.network([one], SETTINGS).totals, n5 = E.network([many], SETTINGS).totals;
+  const r1 = E.evaluate(one, SETTINGS).cost;
+  near(n5.hw, (r1.hw - r1.delivery.total) * 5 + r1.delivery.total, 1e-6);
+  assert.ok(n1.hw > 0);
 });
 
 test('every slot, cover and link in the catalogue resolves', () => {

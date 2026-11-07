@@ -82,3 +82,11 @@ test('the comparison rows below the Verdins are catalogued computers: the Luna S
   assert.equal(CATALOG.find(c => c.id === 'toradex-luna-sl1680').conf, 'low');
   assert.ok(o.find(x => x.ref === 'toradex-luna-sl1680').est, 'the Luna\'s CPU figure is marked an estimate');
 });
+
+test('the trial list adds delivery once a shop', () => {
+  const D = T.delivery(T.TRIAL.items.filter(i => i.need === 'must'));
+  const names = D.lines.map(l => l.name);
+  assert.equal(new Set(names).size, names.length);
+  for (const l of D.lines) assert.ok(l.lo >= 0 && l.lo <= l.hi, l.name);
+  assert.ok(D.lo <= D.hi);
+});

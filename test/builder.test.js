@@ -39,6 +39,24 @@ test('every builder option is well formed and its references resolve', () => {
   }
 });
 
+test('every shop the builder buys from has its delivery charge, and the bill charges each once', () => {
+  for (const [name, sh] of Object.entries(B.shops)) {
+    assert.ok(Array.isArray(sh.ship) && sh.ship.length === 2 && sh.ship[0] >= 0 && sh.ship[0] <= sh.ship[1], `${name}.ship`);
+    assert.match(sh.from, /^[A-Z]{2}$/, `${name}.from`);
+    if (sh.freeOver != null) assert.ok(sh.freeOver > 0, `${name}.freeOver`);
+    assert.ok(Array.isArray(sh.src), `${name}.src`);
+    for (const [, u] of sh.src) assert.match(u, /^https?:\/\//, `${name}.src`);
+    if (!sh.src.length) assert.equal(sh.conf, 'low', `${name}: an unsourced delivery charge is an estimate`);
+  }
+  for (const platform of B.platforms) {
+    const R = K.build({ platform: platform.id, channels: [151.5, 151.525, 151.95, 152.4], sticks: 'auto', decoder: 'filter-once', traffic: 'busy', kiosk: false,
+      sdr: 'rtl-sdr-blog-v4', mount: 'ext-clamp', antenna: 'rfi-col54', coaxM: 20, arrestor: true, power: 'dc12', backhaul: 'lan', enclosure: 'fibox', gps: false });
+    const del = R.rows.filter(r => r.section === 'Delivery');
+    assert.equal(new Set(del.map(r => r.name)).size, del.length, `${platform.id}: a shop delivers twice`);
+    for (const r of del) assert.ok(r.lo >= 0 && r.lo <= r.hi, `${platform.id}: ${r.name}`);
+  }
+});
+
 test('a stick takes the narrowest window that holds its channels, as RPi ALERT does', () => {
   // Flood-Net's four channels: one stick, 1.44 MHz (hardware.md)
   const four = K.planSticks([151.5, 151.525, 151.95, 152.4], 'auto');

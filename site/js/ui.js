@@ -426,13 +426,19 @@
         <td class="small dim">${over ? 'your quote' : esc(BASIS[x.basis] || '')}${x.yearly ? `<br>+ ${money(x.yearly)} a year` : ''}</td></tr>`;
     };
     const sum = rows => rows.reduce((a, x) => { const over = d.prices && d.prices[x.id] != null; const u = over ? overrideShown(d.prices[x.id]) : x.unit; return a + (u == null ? 0 : u * x.qty); }, 0);
-    const hw = sum(c.rows);
+    const del = c.delivery || { lines: [], total: 0, unknown: 0 };
+    const hw = sum(c.rows) + del.total;
     const tco = hw + c.labour + (c.yearly + c.visitsYear) * s.years + c.replaceTotal;
+    const FROM = { AU: 'from Australian stock', GB: 'from the UK', US: 'from the US', CN: 'from China', DE: 'from Germany', CH: 'from Switzerland', EU: 'from Europe', TW: 'from Taiwan', IL: 'from Israel', NZ: 'from New Zealand', IT: 'from Italy', NL: 'from the Netherlands', JP: 'from Japan', CA: 'from Canada', HK: 'from Hong Kong' };
+    const delRow = l => `<tr class="delivery"><th scope="row">Delivery: ${esc(l.shop)}<span class="small dim"> ${esc(FROM[l.from] || 'from ' + l.from)}</span></th>
+        <td class="small">${esc(l.parts.length > 2 ? `${l.parts.slice(0, 2).join(', ')} and ${l.parts.length - 2} more` : l.parts.join(', '))}</td><td class="num">1</td><td class="num"></td>
+        <td class="num">${money(l.total)}</td><td class="small dim">${l.clear ? `incl. ${money(E.shown(l.clear, s))} border clearance` : 'standard delivery'}</td></tr>`;
     return `<div class="table-wrap"><table class="tbl bom"><thead><tr><th scope="col">Part</th><th scope="col">For</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Each ${s.gst ? 'inc' : 'ex'} GST</th><th scope="col" class="num">Total</th><th scope="col">Basis</th></tr></thead>
       <tbody>${slotRows.map(row).join('')}
-        ${perRows.length ? `<tr class="sub"><th colspan="6" scope="rowgroup">Supporting parts</th></tr>${perRows.map(row).join('')}` : ''}</tbody>
+        ${perRows.length ? `<tr class="sub"><th colspan="6" scope="rowgroup">Supporting parts</th></tr>${perRows.map(row).join('')}` : ''}
+        ${del.lines.length ? `<tr class="sub"><th colspan="6" scope="rowgroup">Delivery — once a shop</th></tr>${del.lines.map(delRow).join('')}` : ''}</tbody>
       <tfoot>
-        <tr><th scope="row" colspan="4">Hardware${c.unknown ? ` <span class="small dim">(+ ${plural(c.unknown, 'part')} priced on request)</span>` : ''}</th><td class="num"><b>${money(hw)}</b></td><td></td></tr>
+        <tr><th scope="row" colspan="4">Hardware, delivered${c.unknown ? ` <span class="small dim">(+ ${plural(c.unknown, 'part')} priced on request)</span>` : ''}${del.unknown ? ` <span class="small dim">(delivery not known for ${plural(del.unknown, 'estimated part')})</span>` : ''}</th><td class="num"><b>${money(hw)}</b></td><td></td></tr>
         ${s.labour ? `<tr><th scope="row" colspan="4">Installation <span class="small dim">(${esc(c.effort.notes.join('; '))})</span></th><td class="num">${money(c.labour)}</td><td></td></tr>` : ''}
         <tr><th scope="row" colspan="4">Each year <span class="small dim">(plans, licences${s.labour && c.visitsYear ? ', a site visit' : ''})</span></th><td class="num">${money(c.yearly + c.visitsYear)}</td><td></td></tr>
         ${c.replace.length ? `<tr><th scope="row" colspan="4">Replacements over ${s.years} years <span class="small dim">(${esc(c.replace.map(x => `${x.name} ×${x.n}`).join(', '))})</span></th><td class="num">${money(c.replaceTotal)}</td><td></td></tr>` : ''}
@@ -625,6 +631,7 @@
       <div class="dlg-price">${priced == null ? '<b>Price on request</b>' : `<b>${priced === 0 ? 'Free' : money(priced)}${it.unit === 'm' ? ' a metre' : ''}</b> ${S.settings.gst ? 'inc' : 'ex'} GST`}
         ${p.basis ? `<span class="small dim"> · ${esc(BASIS[p.basis] || p.basis)}${p.src ? `, ${esc(p.src)}` : ''}${p.asof ? `, ${esc(p.asof)}` : ''}</span>` : ''}
         ${p.url ? ` <a class="small" href="${esc(p.url)}" target="_blank" rel="noopener">where</a>` : ''}
+        ${p.ship != null || p.stock ? `<div class="small">${p.stock ? esc({ in: 'In stock', back: 'On back-order', out: 'Out of stock', order: 'Made or configured to order', unknown: 'Stock not known' }[p.stock] || '') + ' when checked. ' : ''}${p.ship != null ? `Delivery from ${esc(p.shop || E.shopOf(it))}: ${p.ship === 0 ? 'free' : money(E.shown(p.ship, S.settings))}${p.from && p.from !== 'AU' ? `, shipped from ${esc(p.from)}` : ''} — once an order, in the bill.` : ''}</div>` : ''}
         ${it.priceBy ? `<span class="small dim"> · ${Object.entries(it.priceBy).map(([r, v]) => `as a ${E.ROLES[r].label.toLowerCase()}: ${money(E.unitPrice(it, S.settings, r))}`).join(', ')}</span>` : ''}
         ${it.yearly ? `<div class="small">Plus ${money(E.yearlyPrice(it, S.settings))} a year — ${esc(it.yearly.what || '')}</div>` : ''}</div>
       ${it.fw ? `<div class="fw"><b>Firmware / software:</b> ${esc(it.fw.name)}${it.fw.lic ? ` (${esc(it.fw.lic)})` : ''}. ${esc(it.fw.note || '')} ${it.fw.url ? `<a href="${esc(it.fw.url)}" target="_blank" rel="noopener">link</a>` : ''}</div>` : ''}
@@ -681,6 +688,7 @@
         const u = over ? overrideShown(d.prices[x.id]) : x.unit;
         out.push([d.name, E.ROLES[d.role].label, d.qty, x.name, x.vendor || '', x.slot, x.qty, u == null ? '' : round2(u), u == null ? '' : round2(u * x.qty), u == null ? '' : round2(u * x.qty * d.qty), over ? 'your quote' : (BASIS[x.basis] || ''), (it && it.price && it.price.url) || '']);
       }
+      for (const l of (r.cost.delivery || { lines: [] }).lines) out.push([d.name, E.ROLES[d.role].label, d.qty, `Delivery: ${l.shop}${l.clear ? ' (with border clearance)' : ''}`, '', l.parts.join('; '), 1, round2(l.total), round2(l.total), round2(l.total), 'delivery, once for all sites', '']);
       if (S.settings.labour) out.push([d.name, E.ROLES[d.role].label, d.qty, 'Installation labour and travel', '', '', 1, round2(r.cost.labour), round2(r.cost.labour), round2(r.cost.labour * d.qty), 'estimate', '']);
     }
     return out;
