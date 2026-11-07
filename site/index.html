@@ -82,7 +82,8 @@
 
       <h3>The assumptions behind the numbers</h3>
       <ul>
-        <li><b>Prices</b> are indicative, in Australian dollars, gathered in October 2026 from Australian retailers where possible and converted at US$0.69 and €0.61 to the dollar otherwise. Most ALERT equipment is quote-only: where a public planning figure exists (Flood-Net's ALERT2 transition plan) it is used and labelled an estimate; where none does, the price is blank — type your quote into the bill of materials and every total follows. Each price shows its basis: retail, list, estimate, used, quote.</li>
+        <li><b>Prices</b> are what one costs in November 2026 from an Australian shop that has it <b>in stock</b>. Where none has, the price is the cheapest way to get one — on back-order, or from the maker or a shop overseas — and each part's details say which, and whether it was in stock when checked. A list price for a part that is out of stock or on back-order isn't used on its own: the Pi 5 (4 GB) is A$178 on back-order but A$249 to have one this week, so the catalogue says A$249. Overseas prices are converted at US$0.69, €0.63 and 0.58 Swiss francs to the dollar, with GST added as the shop adds it at checkout. Most ALERT equipment is quote-only: where a public planning figure exists (Flood-Net's ALERT2 transition plan) it is used and labelled an estimate; where none does, the price is blank — type your quote into the bill of materials and every total follows. Each price shows its basis: retail, list, estimate, used, quote.</li>
+        <li><b>Delivery</b> is in every bill: each shop's standard charge to an Australian address, once a shop (the most any of its parts asks, so a battery's freight carries the small parts with it), free where the shop delivers free at that order value. A shop that doesn't publish its charge is counted at about A$15 within Australia and A$50 by courier from abroad, marked as an estimate. An order of more than A$1,000 from a shop overseas also pays GST at the border and about A$200–280 to clear it (Home Affairs' A$50 import processing charge, A$48 biosecurity for air freight, and a courier's or broker's fee); DigiKey, Mouser, element14 and RS clear their own. For several sites ordered together, delivery is counted once. Parts you type your own quote for count as delivered.</li>
         <li><b>GST.</b> Prices show including GST by default; switch it off on the Network tab. Planning figures quoted ex-GST are grossed up.</li>
         <li><b>Power.</b> Each part's average draw, from its datasheet. A field station's radio is powered only to send: its average is its transmit draw for about half a second per send, times the sends on a wet day you set. A repeater's receiver listens all day. A 12 V → 5 V converter loses about 12%.</li>
         <li><b>Battery.</b> Capacity = daily energy × days of autonomy ÷ (12 V × usable depth of discharge × 0.85). Usable depth: 50% for lead-acid, 80% for lithium iron phosphate.</li>
@@ -121,7 +122,7 @@
 <div id="toast" role="status" aria-live="polite"></div>
 
 <footer class="wrap small dim">
-  <p>open-ALERT · MIT licence · <a href="https://github.com/cdomotor-g/open-ALERT" target="_blank" rel="noopener">source on GitHub</a> · prices indicative, October 2026 · specifications from vendors' datasheets: confirm before you buy.</p>
+  <p>open-ALERT · MIT licence · <a href="https://github.com/cdomotor-g/open-ALERT" target="_blank" rel="noopener">source on GitHub</a> · prices checked November 2026, delivery included · specifications from vendors' datasheets: confirm before you buy.</p>
 </footer>
 
 <script src="data/alert.js"></script>

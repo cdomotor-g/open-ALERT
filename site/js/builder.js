@@ -158,7 +158,7 @@
       if (P.supply === 'wide') pwr = Object.assign({}, pw, { aud: [0, 0], note: `${P.short} takes 12 V straight onto its terminals — just a fuse.` });
       else if (P.supply === '24v') { pwr = Object.assign({}, pw, { aud: [60, 120], name: '12 → 24 V DC-DC converter', ref: null, note: 'The RevPi Connect 5 is a 24 V device: a step-up converter from a 12 V battery (an estimate; check its input range).', conf: 'low' }); warn.push(['info', 'The RevPi Connect 5 is built for 24 V cabinets: on 12 V it needs a step-up converter.']); }
       else if (P.supply === 'mains') { pwr = Object.assign({}, pw, { aud: [40, 90], name: '12 → 19 V DC-DC converter for the mini PC', ref: null, note: 'Mini PCs want 12–19 V from a brick; a car-PC style converter, an estimate.', conf: 'low' }); warn.push(['warn', 'A mini PC on a battery draws 8–25 W around the clock: size the battery and panel for it (the configurator\'s power budget does this).']); }
-      else if (P.supply === '5v5a') pwr = Object.assign({}, pw, { name: 'Mean Well DDR-30G-5 (9–36 V in, 5 V 6 A)', ref: 'meanwell-ddr-30g-5', aud: [70, 100] });
+      else if (P.supply === '5v5a') pwr = Object.assign({}, pw, { name: 'Mean Well DDR-30G-5 (9–36 V in, 5 V 6 A)', ref: 'meanwell-ddr-30g-5', aud: [77.73, 78.07], lead: { d: [1, 120], text: 'out of stock at Power Supplies Australia; RS had 3 for next-day delivery; 17 weeks from the factory' }, where: [['RS Components Australia', 'https://au.rs-online.com/web/p/dc-dc-converters/1757801'], ['Power Supplies Australia', 'https://www.power-supplies-australia.com.au/']] });
     }
     if (pw.id === 'dcups' && P.supply === 'mains') warn.push(['warn', 'A DC UPS feeds 12 V and 5 V computers; a mini PC wants an ordinary UPS (or the 12 → 19 V converter).']);
     rows.push(row('Power', pwr, 1));
@@ -170,7 +170,7 @@
 
     // the box
     rows.push(row('Enclosure', enc, 1));
-    if (!enc.indoor) rows.push(row('Enclosure', { id: 'enclosure-fittings', ref: 'enclosure-fittings', aud: [60, 110], gst: true, lead: { d: [2, 7], text: 'electrical wholesalers' }, where: [['Electrical wholesalers', 'https://www.middys.com.au/']], conf: 'low' }, 1));
+    if (!enc.indoor) rows.push(row('Enclosure', { id: 'enclosure-fittings', ref: 'enclosure-fittings', aud: [60, 110], gst: true, lead: { d: [2, 7], text: 'electrical wholesalers' }, where: [["Middy's", 'https://www.middys.com.au/']], conf: 'low' }, 1));
     const tmax = host.temp ? host.temp[1] : null;
     if (tmax != null && enc.temp != null && tmax - 10 < enc.temp) warn.push([tmax < enc.temp ? 'bad' : 'warn', `${P.short} is rated to ${tmax} °C; ${enc.indoor ? 'a room' : 'a cabinet in a hut'} can reach about ${enc.temp} °C — ${tmax < enc.temp ? 'too hot' : 'little margin'}. Shade, vent it, or pick a computer rated −20/−40 to +85 °C.`]);
 
@@ -205,7 +205,7 @@
   function delivery(rows) {
     const by = new Map();
     for (const r of rows) {
-      if (!r.where.length || !(r.hi > 0)) continue;
+      if (!r.where.length || !(r.hi > 0) || r.planned) continue;
       const sh = shopFor(r.where[0][0]);
       const key = sh ? sh.name : r.where[0][0];
       const g = by.get(key) || { sh, name: key, lo: 0, hi: 0, parts: [] };
@@ -220,12 +220,12 @@
       if (sh.freeOver != null && g.lo >= sh.freeOver) { lo = 0; hi = 0; }
       else if (sh.freeOver != null && g.hi >= sh.freeOver) { lo = 0; hi = sh.ship[0]; }
       const IM = B.import;
-      const over = sh.from !== 'AU' && IM && g.hi > IM.threshold;
+      const over = sh.from !== 'AU' && !sh.ddp && IM && g.hi > IM.threshold;
       if (over) { hi += IM.clearance[1]; if (g.lo > IM.threshold) lo += IM.clearance[0]; }
       lo = Math.min(lo, hi);
       const parts = g.parts.length > 3 ? `${g.parts.slice(0, 3).join(', ')} and ${g.parts.length - 3} more` : g.parts.join(', ');
       out.push(row('Delivery', { id: `ship-${g.name}`, name: `Delivery from ${g.name}`, aud: [lo, hi], gst: true, lead: { d: [0, 0], text: sh.text || '' },
-        where: sh.src ? [[sh.src[0][0], sh.src[0][1]]] : [], note: `${sh.note ? sh.note + ' ' : ''}For: ${parts}.${over ? ` Over A$${IM.threshold.toLocaleString('en-AU')} from overseas: GST at the border and ${IM.what}.` : ''}`, conf: sh.conf || 'medium', src: sh.src || [] }, 1));
+        where: sh.src && sh.src.length ? [[sh.src[0][0], sh.src[0][1]]] : [], note: `${sh.note ? sh.note + ' ' : ''}For: ${parts}.${over ? ` Over A$${IM.threshold.toLocaleString('en-AU')} from overseas: GST at the border and ${IM.what}.` : ''}`, conf: sh.conf || 'medium', src: sh.src || [] }, 1));
     }
     return { rows: out, unknown };
   }
@@ -467,7 +467,7 @@
     }).join('');
     return `<div class="table-wrap"><table class="tbl bomb"><thead><tr><th>Part</th><th class="num">Qty</th><th class="num">A$ inc GST</th><th>Lead time</th><th>Where</th></tr></thead><tbody>${body}</tbody>
       <tfoot><tr class="grand"><th>Total</th><td></td><td class="num">${range(R.total.lo, R.total.hi)}</td><td colspan="2" class="small">In hand in about ${R.likely <= 7 ? R.likely + ' days' : wk(R.likely)} if everything is in stock; longest wait <b>${esc(R.longest ? R.longest.name : '—')}</b> (${esc(days(R.longest && R.longest.lead.d))}).</td></tr></tfoot></table></div>
-      <p class="small dim">Labour, installation and running costs (SIM, Starlink plan) are not included — the configurator works those out. Prices indicative, ${esc(B.asof)}; ex-GST prices grossed up by 10%.</p>`;
+      <p class="small dim">Labour, installation and running costs (SIM, Starlink plan) are not included — the configurator works those out. Prices checked ${esc(B.asof)}, delivery once a shop (estimates marked est.); ex-GST prices grossed up by 10%.</p>`;
   }
 
   function leadView(R) {

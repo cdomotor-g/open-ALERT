@@ -20,7 +20,7 @@
     asof: '2026-11',
     items: [
       { id: 'verdin', need: 'must', name: 'Verdin AM62 Quad 2GB WB IT — Toradex 00761200 (element14 4852670)', qty: 1,
-        aud: [514.73, 514.73], gst: false, lead: { d: [5, 91], text: '5 in element14\'s UK stock, 3–5 business days; 13 weeks from the factory when that\'s gone' },
+        aud: [514.73, 514.73], gst: false, lead: { d: [5, 91], text: 'element14 listed 5 in UK stock on 2 November (3–5 business days); 13 weeks from the factory when that\'s gone. element14 blocks automated reads, so this was not re-checked in the November review: confirm before ordering' },
         where: [E14, TDX], why: 'The computer under test, with the headroom for a busy site: Flood-Net\'s four channels at about a third of its CPU on RPi ALERT 0.17 (see Which module, above). element14\'s listing is titled "Aquila AM69" but describes this module — confirm with element14 before ordering. Toradex sells the same part direct, to businesses only, for US$107.40 (about A$171 inc GST plus courier): a third of element14\'s price, if the Bureau can order it.',
         src: [['element14 Australia: 00761200', 'https://au.element14.com/toradex/761200/com-2ghz-32gb-arm-cortex-a72-r5f/dp/4852670'], ['Toradex: Verdin AM62 prices', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], ['Toradex: how to order', 'https://toradex.com/order-now/how-to-order']], conf: 'high' },
       { id: 'mallow', need: 'must', name: 'Mallow carrier board — Toradex 01611102 (element14 4759350)', qty: 1,
@@ -32,33 +32,33 @@
         where: [TDX, ['Mouser Australia', 'https://au.mouser.com/'], ['DigiKey Australia', 'https://www.digikey.com.au/']], why: 'Decoding keeps every core busy: without a heatsink the module throttles and the trial measures heat, not the processor. element14 Australia stocks only Toradex\'s Apalis heatsinks, which don\'t fit. The low price is Toradex\'s US$15.60; the high, a distributor\'s with shipping (an estimate).',
         src: [['Toradex: Verdin Industrial Heatsink', 'https://www.toradex.com/accessories/verdin-industrial-heatsink-type-1'], ['DigiKey: 23111001', 'https://www.digikey.nl/en/products/detail/toradex-ag/23111001/28022861']], conf: 'medium' },
       { id: 'psu', need: 'must', name: '12 V 2 A supply with a screw-terminal lead (and Mallow\'s Phoenix power plug if it isn\'t in the box)', qty: 1,
-        aud: [25, 45], gst: true, lead: { d: [1, 7], text: 'any electronics shop; the Phoenix 1805410 plug from RS or Mouser (element14 Australia doesn\'t list it)' },
-        where: [JAYCAR, ['RS Components Australia', 'https://au.rs-online.com/']], why: 'Mallow takes 7–24 V on a Phoenix Contact header (its mate is the 1805410). A 12 V plug-pack with a screw-terminal adapter, or the site\'s own 12 V.',
-        src: [['Mallow datasheet (power input)', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf']], conf: 'low' },
-      { id: 'stick', need: 'must', name: 'RTL-SDR Blog V4 — the same model as the Pi\'s', qty: 1,
-        aud: [60, 165], gst: true, lead: { d: [2, 21], text: 'kits stocked in Australia; the dongle alone from the RTL-SDR Blog store in 1–3 weeks' },
-        where: [CORE, ['RTL-SDR Blog store', 'https://www.rtl-sdr.com/buy-rtl-sdr-dvb-t-dongles/']], why: 'The same model as the Pi\'s stick, so the computers are compared and not the sticks. Sticks still differ one from another — the plan swaps them halfway.',
-        src: [['RPi ALERT hardware notes', 'https://github.com/cdomotor-g/RPi_ALERT/blob/main/docs/hardware.md']], conf: 'medium' },
+        aud: [33.95, 45], gst: true, lead: { d: [1, 7], text: 'Jaycar stores or online, and Little Bird. The Phoenix 1805410 plug comes from RS or Mouser' },
+        where: [['Jaycar', 'https://www.jaycar.com.au/'], ['Little Bird Electronics', 'https://littlebirdelectronics.com.au/'], ['RS Components Australia', 'https://au.rs-online.com/']], why: 'Mallow takes 7–24 V on a Phoenix Contact header (its mate is the 1805410). Jaycar\'s 12 V 2.5 A supply (MP3490, about A$30) with a A$4 screw-terminal adapter, or the site\'s own 12 V.',
+        src: [['Mallow datasheet (power input)', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf'], ['Jaycar MP3490 12V DC 2.5A power supply A$29.95 (search listing)', 'https://jaycar-prod.australia-southeast1.gcp.storefrontcloud.io/p/MP3490'], ['Little Bird: Female DC power adapter, 2.1 mm jack to screw terminal, A$4.00, 4 in Sydney', 'https://littlebirdelectronics.com.au/products/female-dc-power-adapter-2-1mm-jack-to-screw-terminal-block']], conf: 'low' },
+      { id: 'stick', need: 'must', name: 'An RTL-SDR stick of the same model as the Pi\'s (two V3s if the Pi\'s is a V4)', qty: 1,
+        aud: [50.65, 161.19], gst: true, lead: { d: [7, 56], text: 'a V3 from its maker: free post from China in 2–4 weeks (up to 8); a V4 only from leftover stock, if any' },
+        where: [['RTL-SDR Blog store', 'https://www.rtl-sdr.com/buy-rtl-sdr-dvb-t-dongles/'], ['Little Bird Electronics', 'https://littlebirdelectronics.com.au/'], ['Core Electronics', 'https://core-electronics.com.au/']], why: 'The same model as the Pi\'s stick, so the computers are compared and not the sticks. The V4 is end of life (May 2026) and out of stock: if the Pi has a V4 and you can\'t find another, buy two V3s (about A$51 each) and give the Pi one too. Sticks still differ one from another — the plan swaps them halfway.',
+        src: [['RTL-SDR Blog store: V3 dongle only', 'https://www.rtl-sdr.com/product/rtl-sdr-blog-v3-r820t2-rtl2832u-1ppm-tcxo-sma-software-defined-radio-dongle-only/'], ['RTL-SDR Blog V4 (out of stock)', 'https://www.rtl-sdr.com/product/rtl-sdr-blog-v4-r828d-rtl2832u-1ppm-tcxo-sma-software-defined-radio-dongle-only/'], ['RPi ALERT hardware notes', 'https://github.com/cdomotor-g/RPi_ALERT/blob/main/docs/hardware.md']], conf: 'medium' },
       { id: 'splitter', need: 'must', name: 'VHF 2-way power divider (N-type)', qty: 1,
-        aud: [80, 180], gst: true, lead: { d: [5, 21], text: 'RF suppliers' },
-        where: [ROJONE], why: 'One antenna feeding both boxes, so both hear exactly the same bursts. Costs each side about 3.5 dB — record the Pi\'s figures before you fit it.',
-        src: [], conf: 'low' },
+        aud: [239.04, 239.04], gst: true, lead: { d: [4, 12], text: 'Techwave ships from stock in 1–2 business days, plus 3–8 days\' courier' },
+        where: [['Techwave (RFI, Pulse, PolyPhaser dealer)', 'https://store.techwave.com.au/']], why: 'One antenna feeding both boxes, so both hear exactly the same bursts: RFI\'s SP1318-5102-11, A$239 in stock at Techwave. Costs each side about 3.5 dB — record the Pi\'s figures before you fit it.',
+        src: [['Techwave: RFI SP1318-5102-11 2-way 130–180 MHz N-F, A$239.04, InStock', 'https://store.techwave.com.au/products/rfi-power-splitter-2-way-130-180-mhz-100w-nf']], conf: 'high' },
       { id: 'leads', need: 'must', name: 'RF leads: an SMA-to-N pigtail for the new stick, and a short N–N jumper to the splitter', qty: 1,
-        aud: [30, 60], gst: true, lead: { d: [2, 10], text: 'RF suppliers, Jaycar' },
-        where: [ROJONE, JAYCAR], why: 'The Pi\'s stick keeps its own pigtail; the new stick needs one, and the splitter needs feeding from the antenna lead.',
-        src: [], conf: 'low' },
+        aud: [62.57, 103.53], gst: true, lead: { d: [4, 12], text: 'Techwave ships from stock in 1–2 business days, plus 3–8 days\' courier' },
+        where: [['Techwave (RFI, Pulse, PolyPhaser dealer)', 'https://store.techwave.com.au/']], why: 'A 0.5 m SMA-male to N-male lead for the new stick (A$25) and a 1 m N–N jumper for the Pi\'s pigtail (A$37); A$104 with a right-angle lead. The feedline\'s N plug goes into the splitter\'s input.',
+        src: [['Techwave: Pulse RG58 SMA-male to N-male 0.5 m, A$25.22', 'https://store.techwave.com.au/products/pulse-rg58-cable-lead-sma-male-to-n-male-0-5m'], ['Techwave: Pulse RG58 N-male to N-male 1 m, A$37.35, InStock', 'https://store.techwave.com.au/products/pulse-rg58-n-male-to-n-male-cable-lead-1m'], ['Techwave: Pulse RG58 N-female to right-angle SMA-male 0.5 m, A$66.18, InStock', 'https://store.techwave.com.au/products/pulse-rg58-n-female-to-right-angle-sma-male-cable-lead-0-5m']], conf: 'medium' },
       { id: 'eth', need: 'must', name: 'Ethernet patch lead and a spare switch or router port', qty: 1,
-        aud: [5, 15], gst: true, lead: { d: [1, 5], text: 'any electronics shop' }, where: [JAYCAR], why: 'Use Ethernet, as the Pi does, so the network isn\'t a difference.', src: [], conf: 'low' },
+        aud: [2.5, 12.95], gst: true, lead: { d: [1, 7], text: 'any electronics or computer shop' }, where: [['Little Bird Electronics', 'https://littlebirdelectronics.com.au/'], ['Mwave', 'https://www.mwave.com.au/'], ['Jaycar', 'https://www.jaycar.com.au/']], why: 'Use Ethernet, as the Pi does, so the network isn\'t a difference.', src: [['Little Bird: CAT 5 Ethernet cable A$2.50', 'https://littlebirdelectronics.com.au/products/cat-5-ethernet-cable'], ['Mwave: StarTech 2 m Cat6 A$12.95', 'https://www.mwave.com.au/products/startech-2m-cat6-sftp-patch-cable-black-ab93699']], conf: 'high' },
       { id: 'usbc', need: 'maybe', name: 'USB-C data cable', qty: 1,
-        aud: [10, 20], gst: true, lead: { d: [1, 5], text: 'any electronics shop' }, where: [JAYCAR],
-        why: 'Only if the module has lost its Toradex Easy Installer and must be loaded again in recovery mode from a computer.', src: [], conf: 'low' },
+        aud: [1.95, 12.25], gst: true, lead: { d: [1, 7], text: 'In stock in Little Bird\'s Sydney warehouse' }, where: [['Little Bird Electronics', 'https://littlebirdelectronics.com.au/'], ['Jaycar', 'https://www.jaycar.com.au/']],
+        why: 'Only if the module has lost its Toradex Easy Installer and must be loaded again in recovery mode from a computer. Check a cheap cable carries data, not just power.', src: [['Little Bird: USB-A to USB-C cable 1 m A$1.95', 'https://littlebirdelectronics.com.au/products/usb-a-to-usb-c-cable-1m'], ['Little Bird: Reversible USB A to C cable 0.3 m A$12.25', 'https://littlebirdelectronics.com.au/products/reversible-usb-a-to-c-cable-0-3m']], conf: 'medium' },
       { id: 'console', need: 'maybe', name: '3.3 V USB-serial console cable (FTDI TTL-232R-3V3 class)', qty: 1,
-        aud: [25, 45], gst: true, lead: { d: [3, 7], text: 'element14, Core Electronics' }, where: [E14, CORE],
-        why: 'Plugs into Mallow\'s 6-pin console header — the way in when it won\'t boot or the network won\'t come up. Check the pin-out against the datasheet first.',
-        src: [['Mallow datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf']], conf: 'low' },
+        aud: [8.1, 40.1], gst: true, lead: { d: [1, 7], text: 'In stock in Little Bird\'s Sydney warehouse: 104 modules, but only 1 cable' }, where: [['Little Bird Electronics', 'https://littlebirdelectronics.com.au/'], ['element14 Australia', 'https://au.element14.com/'], ['Core Electronics', 'https://core-electronics.com.au/']],
+        why: 'Plugs into Mallow\'s 6-pin console header — the way in when it won\'t boot or the network won\'t come up: an A$8 FT232RL adapter with jumper leads, or Adafruit\'s A$40 TTL-232 cable. Check the pin-out against the datasheet first.',
+        src: [['Mallow datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf'], ['Little Bird: FT232RL USB to TTL adapter module 5V/3.3V A$8.10, 104 in Sydney', 'https://littlebirdelectronics.com.au/products/ftdi-ft232rl-usb-to-ttl-serial-converter-adapter-module-5v-and-3-3v'], ['Little Bird: Adafruit FTDI Serial TTL-232 USB Cable (AF-70) A$40.10', 'https://littlebirdelectronics.com.au/products/ftdi-serial-ttl-232-usb-cable']], conf: 'medium' },
       { id: 'meters', need: 'nice', name: 'Power meters: an in-line 12 V DC meter for the Mallow, a USB-C meter for the Pi', qty: 1,
-        aud: [30, 70], gst: true, lead: { d: [1, 7], text: 'Jaycar, Core Electronics' }, where: [JAYCAR, CORE],
-        why: 'Watts matter on a solar site: the AM62 should draw well under the Pi 4\'s 4–7 W.', src: [], conf: 'low' },
+        aud: [54.5, 64.25], gst: true, lead: { d: [1, 7], text: 'Jaycar stores or online, and Little Bird\'s Sydney stock' }, where: [['Jaycar', 'https://www.jaycar.com.au/'], ['Little Bird Electronics', 'https://littlebirdelectronics.com.au/']],
+        why: 'Watts matter on a solar site: the AM62 should draw well under the Pi 4\'s 4–7 W. Jaycar\'s 20 A DC meter (QP2320, about A$35) for the Mallow, a USB-C meter (about A$20–30) for the Pi.', src: [['Jaycar QP2320 20A 6.5–100V DC power meter, A$34.95 (search listing)', 'https://jaycar-prod.australia-southeast1.gcp.storefrontcloud.io/p/QP2320'], ['Little Bird: Type-C USB Power Meter Tester A$19.55, 9 in Sydney', 'https://littlebirdelectronics.com.au/products/type-c-usb-power-meter-tester'], ['Little Bird: Mini OLED USB C Power Analyzer A$29.30', 'https://littlebirdelectronics.com.au/products/mini-oled-usb-c-power-analyzer-ada6271']], conf: 'medium' },
     ],
     // Every Verdin AM62 Toradex lists (its datasheet and price list,
     // 2026-11): what each could carry, and what element14 Australia charges
@@ -137,7 +137,7 @@
       let lo = g.sh.ship[0], hi = g.sh.ship[1];
       if (g.sh.freeOver != null && g.vlo >= g.sh.freeOver) { lo = 0; hi = 0; }
       else if (g.sh.freeOver != null && g.vhi >= g.sh.freeOver) { lo = 0; hi = g.sh.ship[0]; }
-      const over = g.sh.from !== 'AU' && IM && g.vhi > IM.threshold;
+      const over = g.sh.from !== 'AU' && !g.sh.ddp && IM && g.vhi > IM.threshold;
       if (over) { hi += IM.clearance[1]; if (g.vlo > IM.threshold) lo += IM.clearance[0]; }
       lines.push(Object.assign(g, { lo: Math.min(lo, hi), hi, over }));
     }
@@ -210,7 +210,7 @@
         </div></li>`).join('')}</ul>`).join('') +
       (D.lines.length ? `<h3>Delivery</h3><ul class="shop">${D.lines.map(l => `<li><span class="shop-chk" aria-hidden="true"></span><div class="shop-main"><b>Delivery from ${esc(l.name)}</b>${l.sh.conf === 'low' ? ' <span class="chip st-warn" title="An estimate">est.</span>' : ''}
           <div class="small dim">${esc(l.sh.note || '')} For: ${esc(l.parts.join(', '))}.${l.over ? ` Over A$${TRIAL_IMPORT().threshold.toLocaleString('en-AU')} from overseas: GST at the border and ${esc(TRIAL_IMPORT().what)}.` : ''}</div>
-          <div class="shop-meta small"><span><b>${l.hi === 0 ? 'free' : range(l.lo, l.hi)}</b> inc GST</span>${l.sh.src ? `<span><a href="${esc(l.sh.src[0][1])}" target="_blank" rel="noopener">${esc(l.sh.src[0][0])}</a></span>` : ''}</div></div></li>`).join('')}</ul>` : '') +
+          <div class="shop-meta small"><span><b>${l.hi === 0 ? 'free' : range(l.lo, l.hi)}</b> inc GST</span>${l.sh.src && l.sh.src.length ? `<span><a href="${esc(l.sh.src[0][1])}" target="_blank" rel="noopener">${esc(l.sh.src[0][0])}</a></span>` : ''}</div></div></li>`).join('')}</ul>` : '') +
       (D.unknown.length ? `<p class="small dim">Delivery not counted from ${esc(D.unknown.join(', '))}.</p>` : '') +
       `<p class="note"><b>Total for what you need, delivered:</b> ${range(lo, hi)} inc GST (${range(loAll, hiAll)} with everything). Prices are element14 Australia's where it stocks the part (2 November 2026). <b>The module is most of it:</b> Toradex sells the same 00761200 direct, to businesses only, for about A$171 inc GST — a third of element14's — so if the Bureau can order from Toradex, the whole list comes to about ${range(lo - 514.73 * 1.1 + 171, hi - 514.73 * 1.1 + 171)}.</p>`;
   }

@@ -432,7 +432,7 @@
     const FROM = { AU: 'from Australian stock', GB: 'from the UK', US: 'from the US', CN: 'from China', DE: 'from Germany', CH: 'from Switzerland', EU: 'from Europe', TW: 'from Taiwan', IL: 'from Israel', NZ: 'from New Zealand', IT: 'from Italy', NL: 'from the Netherlands', JP: 'from Japan', CA: 'from Canada', HK: 'from Hong Kong' };
     const delRow = l => `<tr class="delivery"><th scope="row">Delivery: ${esc(l.shop)}<span class="small dim"> ${esc(FROM[l.from] || 'from ' + l.from)}</span></th>
         <td class="small">${esc(l.parts.length > 2 ? `${l.parts.slice(0, 2).join(', ')} and ${l.parts.length - 2} more` : l.parts.join(', '))}</td><td class="num">1</td><td class="num"></td>
-        <td class="num">${money(l.total)}</td><td class="small dim">${l.clear ? `incl. ${money(E.shown(l.clear, s))} border clearance` : 'standard delivery'}</td></tr>`;
+        <td class="num">${money(l.total)}</td><td class="small dim">${l.est ? 'estimate' : 'standard delivery'}${l.clear ? `, incl. ${money(E.shown(l.clear, s))} border clearance` : ''}</td></tr>`;
     return `<div class="table-wrap"><table class="tbl bom"><thead><tr><th scope="col">Part</th><th scope="col">For</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Each ${s.gst ? 'inc' : 'ex'} GST</th><th scope="col" class="num">Total</th><th scope="col">Basis</th></tr></thead>
       <tbody>${slotRows.map(row).join('')}
         ${perRows.length ? `<tr class="sub"><th colspan="6" scope="rowgroup">Supporting parts</th></tr>${perRows.map(row).join('')}` : ''}

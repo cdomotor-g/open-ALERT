@@ -1406,7 +1406,12 @@
   // than A$1,000 from overseas pays GST at the border (already in the price
   // shown) and a clearance charge: Home Affairs' import processing charge and
   // a customs broker's fee.
-  const IMPORT = { threshold: 1000, clearance: 150, what: 'import processing charge and a customs broker\'s fee — an estimate' };
+  // A shop that doesn't publish its delivery charge gets an estimate: about
+  // A$15 within Australia, A$50 by courier from abroad. DigiKey, Mouser,
+  // element14 and RS clear customs themselves and charge GST at checkout.
+  const IMPORT = { threshold: 1000, clearance: 240, what: 'about A$200–280 to clear it at the border: Home Affairs\' A$50 import processing charge, A$48 biosecurity for air freight and a courier\'s or broker\'s fee (an estimate)' };
+  const SHIP_EST = { AU: 15, abroad: 50 };
+  const CLEARS_ITSELF = /digikey|mouser|element14|\brs\b|rs components/i;
   const shopOf = it => (it.price && it.price.shop) || String((it.price && it.price.src) || it.vendor || it.id).split(/[:(,;]/)[0].trim();
   function deliveryFor(d, rows, s) {
     const shops = new Map();
@@ -1416,16 +1421,19 @@
       if (!p || r.kind === 'dev') continue;
       if (d.prices && d.prices[r.id] != null) continue;
       if (p.aud == null || p.aud === 0 || ['free', 'existing', 'quote', 'tender'].includes(p.basis)) continue;
-      if (p.ship == null) { unknown++; continue; }
+      if (p.ship == null && !p.from) { unknown++; continue; }
+      const est = p.ship == null;
+      const ship = est ? (p.from === 'AU' ? SHIP_EST.AU : SHIP_EST.abroad) : p.ship;
       const k = shopOf(it);
       const g = shops.get(k) || { shop: k, from: p.from || 'AU', ship: 0, value: 0, parts: [] };
-      g.ship = Math.max(g.ship, p.ship);
+      g.ship = Math.max(g.ship, ship);
+      if (est) g.est = true;
       g.value += (unitPrice(it, { gst: true, currency: 'AUD' }, d.role) || 0) * r.qty;
       g.parts.push(it.name);
       shops.set(k, g);
     }
     const lines = [...shops.values()].map(g => {
-      const clear = g.from !== 'AU' && g.value > IMPORT.threshold ? IMPORT.clearance : 0;
+      const clear = g.from !== 'AU' && !CLEARS_ITSELF.test(g.shop) && g.value > IMPORT.threshold ? IMPORT.clearance : 0;
       return Object.assign(g, { clear, aud: g.ship + clear, total: shown(g.ship + clear, s) });
     }).sort((a, b) => b.total - a.total);
     return { lines, total: lines.reduce((a, l) => a + l.total, 0), unknown };

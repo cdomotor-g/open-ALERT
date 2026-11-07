@@ -110,8 +110,11 @@ end of life, planned, DIY), firmware and openness, pros and cons, and sources.
 
 Most ALERT equipment is sold by quote. Where Flood-Net's ALERT2 transition plan has a
 planning figure it is used and labelled an estimate; elsewhere the price is blank and the
-page asks for your quote. Prices are indicative, in Australian dollars, gathered in
-October 2026; GST and US dollars are a setting.
+page asks for your quote. Prices are what one costs in November 2026 from an Australian
+shop with it in stock — or, where none has, the cheapest way to get one (a back-order, or a
+shop overseas), and the part says which. Every bill adds each shop's delivery once, and an
+overseas order over A$1,000 the border's GST and clearance charges. GST and US dollars are a
+setting.
 
 **22 presets** (an ERT-A2 rain gauge, a Campbell ALERT2 station, an open ESP32 gauge, a Pi
 Zero field station, IP gauges, a bench prototype; ERT-A2 and HSE repeaters, a DIY Pi
