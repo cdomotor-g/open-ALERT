@@ -29,8 +29,7 @@
       "Point the Quansheng V3 entry at quansheng_alert_ALL's browser installer",
       "Re-check the FW-LAB entry: Flood-Net's runbook says to retire and archive it",
       "Replace the Luna SL1680's estimated CPU and power with measurements once Toradex publishes them or someone runs one",
-      "Confirm by hand the prices automated reads couldn't: element14 (the trial's Verdin and Mallow), Toradex direct, Core Electronics and Jaycar",
-      "Choose the builder's default antenna now the RFI COL54 is A$3,218 (the COL17 is A$651 in stock)"
+      "Confirm by hand the prices automated reads couldn't: element14 (the trial's Verdin and Mallow), Toradex direct, Core Electronics and Jaycar"
     ],
     "later": [
       "Recalibrate the builder's CPU model once RPi ALERT runs on a CM5 or a Verdin AM62, and once filtering around bursts passes a check at the first base station",
