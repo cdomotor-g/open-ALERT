@@ -296,7 +296,7 @@
   const KEY = 'open-alert:builder';
   const DEFAULT = {
     platform: 'rpi-4-4gb', channels: B.channels.filter(c => c.def).map(c => c.mhz), sticks: 'auto',
-    decoder: 'filter-once', traffic: 'busy', kiosk: false, sdr: 'rtl-sdr-blog-v4', mount: 'ext-clamp',
+    decoder: 'filter-once', traffic: 'busy', kiosk: false, sdr: 'rtl-sdr-blog-v3', mount: 'ext-clamp',
     antenna: 'rfi-col54', coaxM: 15, arrestor: true, power: 'mains-plug', backhaul: 'lan', enclosure: 'fibox', gps: false,
   };
   let S = load0();

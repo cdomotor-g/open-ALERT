@@ -22,13 +22,15 @@
   "status": {
     "phase": "beta",
     "updated": "2026-11-07",
-    "summary": "The builder and the Mallow trial rate every computer on RPi ALERT 0.17's lean decoder and on 0.19's Light decoder filtering only around bursts (built; its first live check missed some of the weakest bursts, so it stays off by default): Flood-Net's four channels on a busy day take about an eighth of the Verdin AM62 Quad (00761200) and a quarter of the Dual (00741201); a Pi 3B+ is now one of its computers, and the one-core Solo a site of one or two channels. Exact Toradex parts, element14 Australia prices with Toradex direct beside them. Toradex's new Luna SL1680 board is catalogued and rated beside the AM62s and the Raspberry Pi range: on paper a little more than a Pi 4, untested.",
+    "summary": "Prices re-checked in November 2026: each part is what one costs from an Australian shop with it in stock (else the cheapest way to get one, and when), and every bill — configurator, builder, trial — adds each shop's delivery once and clearance on an overseas order over A$1,000. The Pi 5 4 GB is A$249 in stock (A$178 was a back-order price); the RFI COL54 collinear is A$3,218 at Techwave, not the A$650 guessed; the RTL-SDR Blog V4 is end of life, so the V3 is the builder's stick. The builder and the Mallow trial rate every computer on RPi ALERT 0.17 and 0.19, with the Luna SL1680 and the Raspberry Pi range beside the Verdin AM62s.",
     "next": [
       "Feed the trial's AM62 numbers back into the builder's CPU model",
-      "Check the builder's estimated prices and lead times (marked est.) with suppliers: antennas, coax, arrestors, the mating Bulgin lead",
+      "Check what is still marked est. with suppliers: the mating Bulgin lead, the earth kit, the 18 Ah battery, delivery from shops that price it only at checkout",
       "Point the Quansheng V3 entry at quansheng_alert_ALL's browser installer",
       "Re-check the FW-LAB entry: Flood-Net's runbook says to retire and archive it",
-      "Replace the Luna SL1680's estimated CPU and power with measurements once Toradex publishes them or someone runs one"
+      "Replace the Luna SL1680's estimated CPU and power with measurements once Toradex publishes them or someone runs one",
+      "Confirm by hand the prices automated reads couldn't: element14 (the trial's Verdin and Mallow), Toradex direct, Core Electronics and Jaycar",
+      "Choose the builder's default antenna now the RFI COL54 is A$3,218 (the COL17 is A$651 in stock)"
     ],
     "later": [
       "Recalibrate the builder's CPU model once RPi ALERT runs on a CM5 or a Verdin AM62, and once filtering around bursts passes a check at the first base station",
