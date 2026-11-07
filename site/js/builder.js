@@ -138,7 +138,7 @@
       if (!P.m2 || P.m2 === 'hat' || P.m2 === 'nvme') warn.push(['bad', `${P.short} has no M.2 slot carrying USB: a card SDR needs Mallow's B-key slot or a carrier of your own.`]);
       if (nSticks > 1) warn.push(['warn', `One M.2 slot holds one card: the other ${nSticks - 1} stick${nSticks > 2 ? 's' : ''} go on USB.`]);
     } else if (nSticks > P.usb) warn.push(['warn', `${nSticks} sticks and ${P.usb} USB ports: add a powered USB hub.`]);
-    if (S.decoder === 'lean') warn.push(['info', `The CPU figures assume RPi ALERT 0.18 filtering only around bursts — built, off by default until its check at the first base station is done. Filtering always (0.17's way): ${Math.round(load(plan, Object.assign({}, S, { decoder: 'filter-once' })).total / (capacity(P) || 1) * 100)}% of this computer's CPU.`]);
+    if (S.decoder === 'lean') warn.push(['info', `The CPU figures assume RPi ALERT 0.18 filtering only around bursts — built, and off by default: its first live check missed some of the weakest bursts, ones just over the squelch. Filtering always (0.17's way): ${Math.round(load(plan, Object.assign({}, S, { decoder: 'filter-once' })).total / (capacity(P) || 1) * 100)}% of this computer's CPU.`]);
     if (sdr.planned) warn.push(['info', 'The M.2 card is a design to commission, not a part to buy: plan on USB sticks until it exists (see the custom path below).']);
 
     // RF

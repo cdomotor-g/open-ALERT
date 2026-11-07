@@ -21,8 +21,8 @@
   },
   "status": {
     "phase": "beta",
-    "updated": "2026-11-03",
-    "summary": "The builder and the Mallow trial rate every computer on RPi ALERT 0.17's lean decoder and on 0.19's Light decoder filtering only around bursts (built, being checked at the first base station): Flood-Net's four channels on a busy day take about an eighth of the Verdin AM62 Quad (00761200) and a quarter of the Dual (00741201); a Pi 3B+ is now one of its computers, and the one-core Solo a site of one or two channels. Exact Toradex parts, element14 Australia prices with Toradex direct beside them.",
+    "updated": "2026-11-07",
+    "summary": "The builder and the Mallow trial rate every computer on RPi ALERT 0.17's lean decoder and on 0.19's Light decoder filtering only around bursts (built; its first live check missed some of the weakest bursts, so it stays off by default): Flood-Net's four channels on a busy day take about an eighth of the Verdin AM62 Quad (00761200) and a quarter of the Dual (00741201); a Pi 3B+ is now one of its computers, and the one-core Solo a site of one or two channels. Exact Toradex parts, element14 Australia prices with Toradex direct beside them.",
     "next": [
       "Feed the trial's AM62 numbers back into the builder's CPU model",
       "Check the builder's estimated prices and lead times (marked est.) with suppliers: antennas, coax, arrestors, the mating Bulgin lead",
@@ -30,7 +30,7 @@
       "Re-check the FW-LAB entry: Flood-Net's runbook says to retire and archive it"
     ],
     "later": [
-      "Recalibrate the builder's CPU model once RPi ALERT runs on a CM5 or a Verdin AM62, and once 0.18's around-bursts check has run at the first base station",
+      "Recalibrate the builder's CPU model once RPi ALERT runs on a CM5 or a Verdin AM62, and once filtering around bursts passes a check at the first base station",
       "Write the open-ALERT ALERT1 encoder firmware (catalogued as planned)",
       "Write the open-ALERT store-and-forward repeater on RPi ALERT's receive side",
       "Re-check quote-only and estimated prices with suppliers"
@@ -349,7 +349,7 @@
         "os/install.sh"
       ],
       "since": {
-        "date": "2026-11-03"
+        "date": "2026-11-07"
       },
       "on_change": "Re-check model.windows, chCore240, burstCoreS and kioskCore in site/data/builder.js and the steps() text in site/js/builder.js; run npm test."
     }

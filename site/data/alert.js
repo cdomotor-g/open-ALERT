@@ -273,7 +273,7 @@
       price: { aud: 0, gst: true, basis: 'free' },
       grade: 3, gradeWhy: 'in service on a Pi 4 at a Brisbane base feeding Flood-Net; young, one maintainer', support: 'community',
       open: { hw: null, sw: 'open', lic: 'MIT' },
-      fw: { name: 'RPi ALERT 0.19.0', lic: 'MIT', url: 'https://github.com/cdomotor-g/RPi_ALERT', note: 'Flash the image with Raspberry Pi Imager, or one line on an existing Raspberry Pi OS. Hardware watchdog, auto-reconnect, remote management from Flood-Net, SSH keys only.' },
+      fw: { name: 'RPi ALERT 0.19.1', lic: 'MIT', url: 'https://github.com/cdomotor-g/RPi_ALERT', note: 'Flash the image with Raspberry Pi Imager, or one line on an existing Raspberry Pi OS. Hardware watchdog, auto-reconnect, remote management from Flood-Net, SSH keys only.' },
       skills: ['linux'], status: 'beta',
       pros: ['Free and open; the same decoders Flood-Net runs', 'Decodes several channels from one stick', 'Survey mode for candidate sites', 'Managed from Flood-Net\'s Base Stations tab'],
       cons: ['Young: one base in service so far', 'ALERT2 off the air is its own decoder (Flood-Net has none yet to compare against)', 'RTL2832U sticks only (no Airspy or SDRplay yet)', 'CPU-hungry: eight channels in wide windows overloaded a Pi 4 with its screen on — keep each stick\'s channels close (see the base-station builder); 0.17 decodes lean by default, a third of the full decoder\'s time; 0.18 can filter each channel only around its bursts and 0.19 adds the Light decoder (half of lean\'s time a burst) — with both, a Pi 3 carries a whole site; both off until their checks at the Brisbane base are done'],
