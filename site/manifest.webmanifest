@@ -1,0 +1,21 @@
+{
+  "id": "./",
+  "name": "open-ALERT",
+  "short_name": "open-ALERT",
+  "description": "Plan ALERT and ALERT2 flood-warning field stations, repeaters and base stations: the hardware that fits, what it costs delivered, and how to build a base station.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e3b5c",
+  "theme_color": "#0e3b5c",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Base station builder", "url": "build.html", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Mallow trial", "url": "trial.html", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] }
+  ]
+}

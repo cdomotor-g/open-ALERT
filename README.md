@@ -18,6 +18,10 @@ Mallow trial) and **Learn** (How it works).
 It is a static page with no build step and no server: everything runs in the browser, and
 what you build is kept in your browser and in share links.
 
+On a phone it installs as an app (Share → Add to Home Screen on an iPhone, Install app on
+Android), and opens without a signal from the last copy it saw. Old addresses under `site/`
+still lead to the right page.
+
 ## How it works
 
 Each site goes through four steps.

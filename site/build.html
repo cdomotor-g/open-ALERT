@@ -7,6 +7,12 @@
 <title>Base station builder · open-ALERT</title>
 <meta name="description" content="Build an ALERT receiving base station: which computer, which SDR sticks and how they're held, the antenna and RF chain, power, backhaul and the box — how it fits together, how the code and Flood-Net use it, what it costs, where to get it and how long it takes.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0e3b5c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="open-ALERT">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="build.css">
 </head>
@@ -176,5 +182,6 @@
 <script src="data/site.js"></script>
 <script src="data/builder.js"></script>
 <script src="js/builder.js"></script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
 </body>
 </html>

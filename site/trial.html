@@ -7,6 +7,12 @@
 <title>Mallow trial · open-ALERT</title>
 <meta name="description" content="Trial a Toradex Verdin AM62 on a Mallow carrier running RPi ALERT beside the Raspberry Pi already doing the job, on the same antenna: what to buy, what to do, what to compare and how it passes.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0e3b5c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="open-ALERT">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="build.css">
 </head>
@@ -245,5 +251,6 @@ docker logs -f rpi-alert</pre></div>
 <script src="data/builder.js"></script>
 <script src="js/builder.js"></script>
 <script src="js/trial.js"></script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
 </body>
 </html>
