@@ -5,13 +5,14 @@
 // The agent makes those calls with Node's built-in fetch(), and before 22.21
 // fetch() takes no notice of HTTPS_PROXY. Debian and Ubuntu build their
 // Node.js with the "undici" library that fetch() runs on as a package of its
-// own, so it can be told from outside to use the proxy. Nothing in the agent
-// is changed: /usr/lib/open-alert-base/start loads this file first
-// (NODE_OPTIONS=--require …), and only when HTTPS_PROXY is set.
+// own (node-undici), so fetch() can be told from outside to use the proxy.
+// Nothing in the agent is changed: /usr/lib/open-alert-base/start loads this
+// file first (NODE_OPTIONS=--require …), and only when HTTPS_PROXY is set.
 //
-// With no NO_PROXY, this is the three lines that were tested with RPi ALERT's
-// own uplink code on Ubuntu 24.04 (Node 18, undici 5.26) and Debian 13
-// (Node 20, undici 7.3). With NO_PROXY, the addresses it lists go direct.
+// What goes where, the same as a newer Node.js does by itself:
+//   https:// addresses   through the proxy named in HTTPS_PROXY
+//   http:// addresses    direct (Flood-Net's are all https)
+//   NO_PROXY             the addresses it lists go direct
 // If the proxy cannot be set up, the agent still starts: it receives, keeps
 // what it hears on disk, and says here why nothing is being sent.
 (function () {
@@ -27,30 +28,43 @@
       + '"undici" package beside it (Debian and Ubuntu: the node-undici package). Readings are kept on disk and not sent until this is put right.');
     return;
   }
+  let viaProxy;
+  try { viaProxy = new undici.ProxyAgent(proxy); }
+  catch (e) {
+    note('the web proxy could not be set up (' + e.message + '). Readings are kept on disk and not sent until this is put right.');
+    return;
+  }
   try {
-    const viaProxy = new undici.ProxyAgent(proxy);
     const exempt = String(process.env.NO_PROXY || process.env.no_proxy || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-    if (!exempt.length) { undici.setGlobalDispatcher(viaProxy); return; }
     const direct = new undici.Agent();
     // NO_PROXY the usual way: "*" (everything), a host name, ".example.org" or
     // "example.org" (that name and everything under it), an address; a port
     // after a colon is ignored.
     const goesDirect = (origin) => {
-      let host = '';
-      try { host = new URL(String(origin)).hostname.toLowerCase().replace(/^\[|\]$/g, ''); } catch (_) { return false; }
+      let url;
+      try { url = new URL(String(origin)); } catch (_) { return false; }
+      if (url.protocol !== 'https:') return true;
+      const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
       return exempt.some((e) => {
         if (e === '*') return true;
         const name = e.replace(/^\*?\./, '').replace(/^\[|\]$/g, '').replace(/^([^:]+):\d+$/, '$1');
         return host === name || host.endsWith('.' + name);
       });
     };
-    class ProxyUnlessExempt extends undici.Dispatcher {
+    class ProxyForHttps extends undici.Dispatcher {
       dispatch(opts, handler) { return (goesDirect(opts.origin) ? direct : viaProxy).dispatch(opts, handler); }
       close() { return Promise.all([direct.close(), viaProxy.close()]); }
       destroy(...args) { return Promise.all([direct.destroy(...args), viaProxy.destroy(...args)]); }
     }
-    undici.setGlobalDispatcher(new ProxyUnlessExempt());
+    undici.setGlobalDispatcher(new ProxyForHttps());
   } catch (e) {
-    note('the web proxy could not be set up (' + e.message + '). Readings are kept on disk and not sent until this is put right.');
+    // The plain way, as first tested with RPi ALERT's own uplink code on
+    // Ubuntu 24.04 (Node 18) and Debian 13 (Node 20): everything through the proxy.
+    try {
+      undici.setGlobalDispatcher(viaProxy);
+      note('NO_PROXY could not be honoured on this Node.js (' + e.message + '): every call goes through the web proxy.');
+    } catch (e2) {
+      note('the web proxy could not be set up (' + e2.message + '). Readings are kept on disk and not sent until this is put right.');
+    }
   }
 })();

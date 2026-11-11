@@ -11,8 +11,9 @@
 //   settings.js summary                the settings that matter to the platform, NAME=value a line
 //   settings.js differ <profile.json>  where the settings now differ from a profile, a line each
 //
-// In a profile, a setting given as null means "take this setting out", so that
-// the agent's own default applies.
+// In a profile, a setting given as null means "as the agent has it by itself":
+// the agent's own default where this agent knows the setting, and taken out of
+// the file where it does not (a setting that only a newer agent has).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -59,26 +60,30 @@ function dropPath(obj, p) {
   delete o[last];
   return true;
 }
-const show = (v) => (v === undefined ? 'not set' : typeof v === 'string' ? v : JSON.stringify(v));
+const show = (v) => (v === undefined ? 'not set' : v === '' ? 'empty' : typeof v === 'string' ? v : JSON.stringify(v));
 
 function load() {
-  const { Config } = agentConfig();
-  const c = new Config();
+  const lib = agentConfig();
+  const c = new lib.Config();
   let exists = true;
   try { fs.lstatSync(c.file); } catch (_) { exists = false; }
   c.load();
-  return { c, exists };
+  return { c, exists, defaults: typeof lib.defaults === 'function' ? lib.defaults() : {} };
 }
 
 function apply(file) {
   const profile = readProfile(file);
-  const { c, exists } = load();
+  const { c, exists, defaults } = load();
   if (c.loadError && /not valid JSON/.test(c.loadError)) {
     die('the settings file ' + c.file + ' is not valid JSON, so it was left alone. Put it right or move it away, then run this again. (' + c.loadError + ')');
   }
   if (c.loadError) process.stderr.write('open-alert-base: note — ' + c.loadError + '\n');
   const set = {}, unset = [];
-  for (const [p, v] of leaves(profile.settings, '', [])) { if (v === null) unset.push(p); else setPath(set, p, v); }
+  for (const [p, v] of leaves(profile.settings, '', [])) {
+    if (v !== null) setPath(set, p, v);
+    else if (getPath(defaults, p) !== undefined) setPath(set, p, getPath(defaults, p));
+    else unset.push(p);
+  }
   const r = c.update(set);
   if (!r.ok) die('the profile was not applied, because the agent refuses these settings: ' + r.errors.join('; '));
   const removed = unset.filter(p => dropPath(c.data, p));
@@ -120,11 +125,12 @@ function summary() {
 
 function differ(file) {
   const profile = readProfile(file);
-  const { c } = load();
-  for (const [p, want] of leaves(profile.settings, '', [])) {
+  const { c, defaults } = load();
+  for (const [p, asked] of leaves(profile.settings, '', [])) {
     const have = getPath(c.get(), p);
-    if (want === null ? have !== undefined : JSON.stringify(have) !== JSON.stringify(want)) {
-      console.log(p + ' is ' + show(have) + '; the profile has ' + (want === null ? 'it not set' : show(want)));
+    const want = asked === null ? getPath(defaults, p) : asked;
+    if (want === undefined ? have !== undefined : JSON.stringify(have) !== JSON.stringify(want)) {
+      console.log(p + ' is ' + show(have) + '; the profile has ' + (want === undefined ? 'it not set' : show(want)));
     }
   }
 }

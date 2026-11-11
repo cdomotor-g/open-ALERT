@@ -1,0 +1,58 @@
+# R7 - x86-64 boxes with TPM 2.0 + Secure Boot for the RPi ALERT base station (read 2026-11-11)
+
+Labels: fetched = page/PDF opened; snippet = search-result text only; memory = unchecked.
+Prices: deliberately not chased (owner's instruction). Seller + link given instead. Several retailer pages returned 403 and were not retried.
+
+## 1. Tier 1 - enterprise brands
+
+| Model | Facts (source, basis) | AU seller / link |
+|---|---|---|
+| Lenovo ThinkEdge SE10n Gen2 (N150 or Core 3 N355, 1x DDR5 SODIMM up to 16 GB, 1x M.2 2280, 2x 2.5GbE I226-V) | PSREF dated 22 Oct 2026, fetched: discrete TPM 2.0 TCG-certified; Secure boot; fanless-class 1 L box with DIN-rail and VESA mount; 0-40C model (N150, 0.97 kg) or 0-50C model (N150/N355, 1.16 kg); power is a 65 W adapter into a "DC in 20 V" connector, plus an optional front Phoenix terminal block (its voltage is NOT stated in the sheet); 2x RS232/422/485 serial; MIL-STD-810H passed; vibration 3 Grms (0-50C); warranty 1 yr courier/carry-in, 1 yr or 3 yr onsite; lists Red Hat Enterprise Linux Certified, Ubuntu Server Certified, Ubuntu Core Certified, preload Ubuntu Server 26.04 LTS. https://psref.lenovo.com/syspool/Sys/PDF/ThinkEdge/ThinkEdge_SE10n_Gen2/ThinkEdge_SE10n_Gen2_Spec.pdf (fetched) | No AU seller found. Snippet only: Lenovo model 13LJ000AUT at US dealer Provantage https://www.provantage.com/~7LEN84F2.htm . Ask Lenovo AU / a Lenovo partner. |
+| Lenovo ThinkEdge SE10 (older, Atom x6000RE) | Snippet: SE10-I variant -20 to 60C, 9-36 V DC on 3-pin Phoenix; standard SE10 0-50C. Ubuntu certified (fetched): 5 configs, Ubuntu 22.04 LTS and Core 22, certified 31 Oct 2023: https://ubuntu.com/certified/platforms/13902?format=md . Atom x6000 is Elkhart Lake (2021), weaker than N150; now superseded. | Not found. |
+| Lenovo ThinkCentre neo 50q Gen 5 Tiny | Search summary: discrete TPM 2.0, TCG/FIPS 140-2; 179x182.9x34.5 mm; has a fan (not fanless). Ubuntu certified for ONE config (Core 7 240H) on 24.04 LTS, kernel 6.11 OEM, certified 2 Jun 2025; page warns standard images may not work (fetched): https://ubuntu.com/certified/202503-36446 . Datasheet: https://cdn.panacompu.com/doc/pd/ThinkCentre-neo-50q-Gen-5-EN.pdf (snippet). | Via Lenovo partners / government panel. Not looked up. |
+| Dell OptiPlex Micro 7020 / Micro Plus 7020 (14th gen, T-series CPUs) | TPM 2.0 (StorageReview, snippet). Ubuntu certified: Micro 7020 i5-14600T on 22.04 LTS; Micro 7010 i5-13600T (Mar 2023); Dell Pro Micro QCM1250 / QCM1255 certified incl. 24.04 LTS (snippets from https://ubuntu.com/certified/platforms/14268 , /13754 , /11526). 35 W-class CPUs, fan, 182x178x36 mm, 130/180 W adapter. No idle-power figure found. | Dell AU direct / resellers. Not looked up. |
+| Dell Embedded Box PC 3000/5000 | Snippet only, 2016 launch: 0-50C, MIL-STD-810G, IP30, 12-26 V DC adapter, Skylake/Atom. Old; treat as lapsed until Dell shows a current generation. https://www.automation.com/article/dell-introduces-embedded-box-pc-3000-and-5000 | - |
+| HP Elite/Pro Mini, t-series thin clients | NOT researched (budget). | - |
+| Refurbished ex-lease micros (ThinkCentre M920q etc.) | Reboot IT sells M920q (i5-8500T/i7-8700T) ex-business/government/education stock, Blancco-wiped, 1 yr or 3 mo warranty (snippet): https://reboot-it.com.au/products/lenovo-m920q-tiny-i5-8500t-2-1ghz-8gb-256gb-ssd-w11p-pc-1yr-wty . PB Tech reconditioned M920q i5-8500T/8GB/256GB about A$322 (snippet; 403 on fetch): https://www.pbtech.com/product/EXWKSLEN0091060/Lenovo-Think-Center-M920Q-Intel-Core-i5-8500T-Tiny . Dell/HP refurb not found. | Reboot IT, PB Tech. Fan, 8th gen, discrete-style TPM 2.0 on M920q from memory only. |
+
+## 2. Tier 2 - industrial fanless
+
+| Model | Facts | AU route |
+|---|---|---|
+| OnLogic Cabrio CL260 (N150 / N250, up to 8 GB LPDDR5 soldered, M.2 2280) | CNX Software, fetched 2026-01-21: TPM 2.0 module, 12-24 V DC 3-pin terminal block, 0-50C, 2x GbE, 4x USB-A, 2x USB-C, RS232/422/485, Ubuntu 24.04 Desktop/Server listed, 6 W TDP; from US$641 (N150/8GB/128GB); 5-yr warranty option. https://www.cnx-software.com/2026/01/21/onlogic-cl260-fanless-intel-n150-n250-industrial-mini-pc-offers-rs232-rs485-terminal-block-12-24v-dc-input/ . Fanless is implied by the family; not stated in what I read. Maker country: US (Vermont) design, snippet. | Search found NO Australian OnLogic distributor; OnLogic sells direct (snippet). Order via https://www.onlogic.com (official page URL I guessed 404'd). |
+| OnLogic CL210 / CL250 | Old (Celeron N3350 / Pentium J3455); CL250 Red Hat certified, PTT TPM (snippet https://catalog.redhat.com/hardware/detail/134927). Obsolete platform. | - |
+| Advantech ARK-1221L (Atom x6413E / J6412 / N6210) | Snippet: 12-28 V DC, -40 to 60C (Advantech page); another catalogue says 9-36 V / -40 to 85C. Conflict, unresolved. ARK-1250L (11th gen Core): 12-24 V, -40 to 60C. ARK-1125H (N200). No N100/N150 ARK confirmed. https://www.advantech.com/en/products/1-2jkbyz/ark-1221l/mod_06c34358-87b6-4f11-97af-be1a1dd885dd | PB Tech stocks some Advantech ARK (ARK-1251, ARK-2251, ARK-3533 at A$2,422 snippet): https://www.pbtech.com/au/product/IPCAVH020008A/Advantech-Ultra-Slim-Fanless-ARK-1251-S3A1-Intel-C ; Advantech Australia Pty Ltd exists; Mouser AU is a distributor. |
+| Compulab fitlet3 (Elkhart Lake: Atom x6425E, Celeron J6412, Atom x6211E) | Fetched Metromatics page: DC 7-42 V twist-lock; -40 to 85C (industrial config); Intel PTT fTPM, optional discrete TPM 2.0; Ubuntu & Linux Mint listed; no price - "contact us" / quote. Offices incl. Brisbane. https://metromatics.com.au/product/fanless-industrial-pc-fitlet3/ . Israeli maker (memory). Elkhart Lake is older and slower than N150. | Metromatics (AU/NZ). |
+| Protectli Vault VP2430 (N150, 4x 2.5GbE) | Fetched: optional TPM 2.0, coreboot supported (AMI or coreboot), 12 V jack only (not wide-range), -10 to +50C, max 45 W, 2-yr warranty (to 5), C$649. https://ca.protectli.com/?p=132332 . Snippet: Protectli markets NDAA compliance; the earlier VP2420 review said no TPM option at time. Coreboot is the main open-firmware answer in this tier. | No AU stockist found. |
+| ASRock Industrial NUC BOX-N150 / iBOX | Snippet: NUC-N150 board TPM 2.0, 9-19 V DC; iBOX-1215UE -20 to 40C wide, 12-19 V. https://download.asrock.com/IPC/Download/e-catalog/NUC-N150.pdf . Not fully read. | Not found. |
+| ASUS NUC 14 Essential (N97/N150/N250/N355) | Spec sheet (snippet): fTPM or dTPM 2.0; op temp garbled (possibly 0-35C). Fanless variant reported by Guru3D. Note: Intel NUC business moved to ASUS; check lifecycle. https://www.igel.de/wp-content/uploads/ASUS-NUC-14-Essential-Spec-Sheet-v1.5.pdf ; https://www.guru3d.com/story/asus-nuc-14-essential-fanless-packs-twin-lake-into-a-silent-074liter-pc/ | PB Tech AU lists the barebone (403 on fetch): https://www.pbtech.com/au/product/BPCASU11010/ASUS-NUC14-Essential-Mini-PC-Barebone-Kit-Intel-Co |
+| Tekdis (Axiomtek, IEI, NEXCOM), IP Trading (Moxa), Interworld (Aplex), ED2 (Kontron) | Snippet-level AU distributors for industrial x86. Tekdis pages returned 403. https://www.tekdis.com.au/products/industrial-computing-au/embedded-computers/din-mountable.html ; https://www.iptrading.com.au/moxa-industrial-computing | Model-level data not obtained. |
+| AAEON, Cincoze, Neousys, Vecow, DFI, Shuttle, Zotac | NOT researched (budget). | - |
+
+## 3. Tier 3 - consumer N100/N150 (price floor)
+- AU street prices seen only as expired deals (OzBargain, snippet): GMKtec N150 12 GB/256 GB A$149.99; Beelink EQ14 N150 16 GB/500 GB-1 TB A$280-299; Newegg AU EQ14 A$515.90. Not current. https://ozbargain.com.au/node/891657 ; https://ozbargain.com.au/node/888637
+- MINIX Z150 0dB (fanless N150, 16/512) at PB Tech AU, listed A$675.54 out of stock (snippet): https://www.pbtech.com/au/product/IPCMNXZ15001/MINIX-Fanless-MiniPC-Z150-0dB-Intel-N150-16G512G
+- Usually TPM is Intel PTT (firmware) in BIOS, 12-19 V barrel, 0-35/40C, 1-yr warranty, Chinese makers, no Canonical/Red Hat cert; reviewers report need to enable ASPM for low idle (snippet https://www.faceofit.com/top-intel-n100-mini-pcs/). Not verified per model.
+
+## 4. Performance vs Raspberry Pi 4
+- Geekbench 5 multi-core aggregator figure: Pi 4 601 vs N100 2864 (about 4.8x); single 202 vs 982 (snippet, cpu-monkey/cpu-compare, not primary): https://www.cpu-monkey.com/en/compare_cpu-raspberry_pi_4_b_broadcom_bcm2711-vs-intel_processor_n100
+- Fetched (CNX): Pi 5 vs N100, Geekbench 6 1523 vs 3272 multi; N100 about 2x Pi 5 multi-core. Jeff Geerling (fetched): N150 1.5-2x a Pi 5 but needed a fan added in a cheap case to hold thermals. Pi 5 is roughly 2-3x a Pi 4 (memory, unchecked), consistent with 4-5x over the Pi 4. https://www.cnx-software.com/2024/04/29/raspberry-pi-5-intel-n100-mini-pc-comparison-features-benchmarks-price/ ; https://jeffgeerling.com/blog/2025/intel-n100-better-value-raspberry-pi
+- Power (fetched CNX): idle Pi 5 3.0-3.6 W vs N100 7.5-10 W typical, load 8.8 W vs 17-20 W; tuned Linux reports 1.8-2.5 W idle. ServeTheHome measured 10.5-12 W idle on fanless N100/N200 units (snippet): https://servethehome.com/fanless-intel-n100-firewall-and-virtualization-appliance-review/4 . So x86 idles at 2-3x an ARM board; N150 6 W TDP boxes cap near 15-25 W in practice.
+
+## 5. Comparison for this job
+- CPU headroom: any N150/N355 box is about 4-5x a Pi 4; the 8-core N355 (SE10n Gen2) more. Plenty for 8 channels, ALERT2, and growth. Atom x6000 (fitlet3, ARK-1221, SE10) is Elkhart Lake: about 1.5-2x a Pi 4 (memory, unchecked) - less margin; prefer N150+.
+- Power/solar: x86 worse (idle 2-3x). 12 V systems: only fitlet3 (7-42 V), CL260 (12-24 V), SE10 (9-36 V, SE10-I), ARK (12-24/28 V) take battery voltage directly. SE10n Gen2 documents only a 20 V adapter (Phoenix option unverified); Protectli 12 V jack only; consumer boxes need a DC-DC converter.
+- Heat (QLD hut/cabinet 40-50C ambient): consumer and Lenovo 0-40C variants fail the test; 0-50C is marginal (needs 0.7 m/s airflow per Lenovo PSREF); only fitlet3 (-40 to 85C) and SE10-I / ARK (-40/-20 to 60C) are real answers. Raspberry Pi 4 is rated 0-50C (memory), so x86 industrial is not worse here.
+- Security review: TPM 2.0 + Secure Boot + vendor-signed firmware updates + Ubuntu/RHEL certification + onshore support are what reviewers look for. Dell/Lenovo are strongest (panel familiarity, 3-yr onsite warranty, Ubuntu certified); industrial makers (Advantech, OnLogic, Compulab) next; Protectli coreboot gives open firmware but small vendor; consumer Chinese mini PCs are weakest (country-of-origin, BIOS update trust, no cert). I did not find an Australian government source to back reviewer attitudes; this is judgement.
+- Where x86 wins: CPU headroom, M.2 NVMe, mainline Debian/Ubuntu with UEFI Secure Boot and TPM measured boot (Pi 4 has neither), standard enterprise vendors, 2.5 GbE, serial ports. Where it loses: idle power, heat dissipation when fanless at 6 W TDP, price versus a Pi, size.
+
+## Could not confirm
+- Any Australian price or stock for any model (retailer pages returned 403 or were not opened; owner will check by hand).
+- Whether SE10n Gen2's Phoenix terminal accepts battery-range DC; its Australian availability.
+- Idle/loaded watts for Dell OptiPlex Micro, SE10n Gen2, CL260 (CL260 "up to 65 W" is the adapter/max).
+- OnLogic CL260 fanless statement and operating-temp beyond 0-50C; OnLogic AU distributor.
+- Advantech ARK input range conflict (9-36 vs 12-28 V); no N150-class ARK found.
+- Canonical/Red Hat certification of CL260, VP2430, fitlet3, ASUS NUC.
+- HP, AAEON, Cincoze, Neousys, Vecow, DFI, Shuttle, Zotac not researched.
+- Primary Geekbench entries for Pi 4 (only aggregators).
+- Australian government hardware panel membership (not checked).

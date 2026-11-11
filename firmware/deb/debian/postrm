@@ -11,6 +11,11 @@ DROPIN_DIR=/etc/systemd/system/open-alert-base.service.d
 
 case "${1:-}" in
   remove)
+    # The service files are gone; what says "start it when the computer
+    # starts" is kept for a reinstall and made harmless until then.
+    if command -v deb-systemd-helper >/dev/null 2>&1; then
+      for u in $UNITS; do deb-systemd-helper mask "$u" >/dev/null 2>&1 || true; done
+    fi
     if [ -d /run/systemd/system ]; then systemctl --system daemon-reload >/dev/null || true; fi
     if command -v udevadm >/dev/null 2>&1 && [ -S /run/udev/control ]; then udevadm control --reload-rules >/dev/null 2>&1 || true; fi
     ;;

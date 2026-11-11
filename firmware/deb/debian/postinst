@@ -4,6 +4,7 @@ set -euo pipefail
 
 SVC_USER=rpi-alert
 UNIT=open-alert-base.service
+FW_UNIT=open-alert-base-firewall.service
 
 case "${1:-}" in
   configure)
@@ -23,6 +24,12 @@ case "${1:-}" in
     # ── its two folders, owned by it, as the agent expects ───────────────────
     install -d -o "$SVC_USER" -g "$SVC_USER" -m 0750 /etc/rpi-alert /var/lib/rpi-alert
 
+    # A removed package leaves its two services marked "not to be started"
+    # (see postrm); lift that before anything turns one on.
+    if command -v deb-systemd-helper >/dev/null 2>&1; then
+      deb-systemd-helper unmask "$UNIT" >/dev/null || true
+      deb-systemd-helper unmask "$FW_UNIT" >/dev/null || true
+    fi
     if [ -d /run/systemd/system ]; then systemctl --system daemon-reload >/dev/null || true; fi
 
     # ── settings: a profile only when there is no settings file yet ──────────

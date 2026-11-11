@@ -102,67 +102,122 @@ const WINDOWS = [240000, 960000, 1200000, 1440000, 2400000];
 const WINDOW_NOTE = { 1200000: 'measured because it is one of the three windows a Raspberry Pi 4 figure exists for', 1440000: 'the window Flood-Net\'s four channels need' };
 const FS = 240000;                   // the decoder's own sample rate
 
-// ── a between-bursts thread of our own: the agent's sdr-bench.js loop, unrounded ──
+// ── a piece of the measuring, in a process of its own ──────────────────────
+// Every measurement runs in a fresh Node process that ends when it is done,
+// so the memory it used goes back to the computer straight away and this
+// process stays small. (A decoder holds tens of megabytes and Node hands
+// memory back slowly: measured all in one process, a run peaked over 500 MB,
+// which a small computer with a base station running on it may not have.)
+// The work to do goes in on standard input and the result comes back on
+// standard output, both as JSON; progress goes straight to the error stream.
+function job(ctx, name, params) {
+  const { spawnSync } = require('node:child_process');
+  const r = spawnSync(process.execPath, [__filename, '--job=' + name], {
+    input: JSON.stringify({ agentDir: ctx.agentDir, quiet: ctx.quiet, params }), encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'inherit'], maxBuffer: 64 * 1048576, timeout: 3600000 });
+  if (r.error) throw new Error('a measuring process could not be run: ' + errText(r.error));
+  let m = null;
+  try { m = JSON.parse(String(r.stdout).trim().split('\n').pop()); } catch (e) { /* said below */ }
+  if (!m) throw new Error('a measuring process stopped' + (r.signal ? ' (' + r.signal + ')' : r.status ? ' (exit ' + r.status + ')' : '') + ' and gave no result');
+  if (m.error) throw new Error(m.error);
+  ctx.peakJobMb = Math.max(ctx.peakJobMb || 0, m.peakMb || 0);
+  if (process.env.OA_BENCH_DEBUG) process.stderr.write('      [job ' + name + '] peak ' + m.peakMb + ' MB ' + JSON.stringify(params).slice(0, 90) + '\n');
+  return m.ok;
+}
+
+// ── between bursts: the agent's sdr-bench.js loop, unrounded ───────────────
 // (The agent rounds to a thousandth of a core, one part in ten on a fast
 // computer, and sets the pipeline up as it was before agent 0.19.)
-// Unlike the agent's, every window is first run for a tenth of a second so the
+// Unlike the agent's, the window is first run for a tenth of a second so the
 // JavaScript engine has compiled the decoder (a base station runs for weeks),
 // and a try is never shorter than `minTryMs`: on a fast computer the agent's
 // 0.4 s of samples is over in five milliseconds, too short to time well.
-function benchLoop(agentDir, rates, extraCfg, seconds, tries, minTryMs) {
-  const { AlertDsp } = require(path.join(agentDir, 'lib', 'meganet-codecs'));
-  const out = {}, perChunk = {};
-  const now = () => Number(process.hrtime.bigint()) / 1e9;
-  for (const pass of [0, 1]) for (const rate of rates) {
-    const chunk = rate >= 900000 ? 65536 : 16384;      // rtl_sdr's own reads, as sdr-bench.js
-    const u8 = new Uint8Array(chunk);
-    let seed = 1;
-    for (let i = 0; i < chunk; i++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; u8[i] = 117 + (seed % 21); }
-    const pipe = new AlertDsp.Pipeline(() => {});
-    pipe.configure(Object.assign({ deviceRate: rate, channelOffsetHz: 37000, specHz: 1, scopeHz: 1, fftSize: 2048 }, extraCfg || {}));
-    for (let i = 0; i < 4; i++) pipe.feed(u8);
-    if (!pass) {                                       // warm up, and see roughly what a chunk costs
-      const t0 = now();
-      let k = 0;
-      do { pipe.feed(u8); k++; } while (k < 8 || now() - t0 < 0.1);
-      perChunk[rate] = (now() - t0) / k;
-      continue;
-    }
-    const n = Math.max(8, Math.round(seconds * rate * 2 / chunk), Math.ceil((minTryMs || 0) / 1000 / perChunk[rate]));
-    let best = Infinity;
-    for (let t = 0; t < tries; t++) {
-      const t0 = now();
-      for (let i = 0; i < n; i++) pipe.feed(u8);
-      best = Math.min(best, (now() - t0) / (n * chunk / 2 / rate));
-    }
-    out[rate] = best;
+
+// A quiet band's noise, as the agent's own sdr-bench.js makes it.
+function noiseChunk(bytes, seed) {
+  const u8 = new Uint8Array(bytes);
+  for (let i = 0; i < bytes; i++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; u8[i] = 117 + (seed % 21); }
+  return u8;
+}
+const chunkBytes = (rate) => (rate >= 900000 ? 65536 : 16384);      // rtl_sdr's own reads, as sdr-bench.js
+const now = () => Number(process.hrtime.bigint()) / 1e9;
+const codecs = (agentDir) => require(path.join(agentDir, 'lib', 'meganet-codecs'));
+
+// One window: → the cores a channel takes, the least of `tries`.
+function benchLoop(agentDir, rate, extraCfg, seconds, tries, minTryMs) {
+  const { AlertDsp } = codecs(agentDir);
+  const chunk = chunkBytes(rate), u8 = noiseChunk(chunk, 1);
+  const pipe = new AlertDsp.Pipeline(() => {});
+  pipe.configure(Object.assign({ deviceRate: rate, channelOffsetHz: 37000, specHz: 1, scopeHz: 1, fftSize: 2048 }, extraCfg || {}));
+  const t00 = now();                                   // warm up, and see roughly what a chunk costs
+  let k = 0;
+  do { pipe.feed(u8); k++; } while (k < 12 || now() - t00 < 0.1);
+  const perChunk = (now() - t00) / k;
+  const n = Math.max(8, Math.round(seconds * rate * 2 / chunk), Math.ceil((minTryMs || 0) / 1000 / perChunk));
+  let best = Infinity;
+  for (let t = 0; t < tries; t++) {
+    const t0 = now();
+    for (let i = 0; i < n; i++) pipe.feed(u8);
+    best = Math.min(best, (now() - t0) / (n * chunk / 2 / rate));
   }
-  return out;
+  return best;
+}
+
+// The same loop for the every-core-busy test: warm up, say so, wait to be told
+// "go", then feed the window for `ms` and say how many cores that took. Every
+// thread is told "go" together and runs for the same time, so each is measured
+// only while all the others are busy too.
+function togetherThread(d) {
+  const { AlertDsp } = codecs(d.agentDir);
+  const chunk = chunkBytes(d.rate), u8 = noiseChunk(chunk, 1);
+  const pipe = new AlertDsp.Pipeline(() => {});
+  pipe.configure(Object.assign({ deviceRate: d.rate, channelOffsetHz: 37000, specHz: 1, scopeHz: 1, fftSize: 2048 }, d.cfg || {}));
+  const t0 = now();
+  let k = 0;
+  do { pipe.feed(u8); k++; } while (k < 12 || now() - t0 < 0.1);
+  parentPort.on('message', (m) => {
+    if (m !== 'go') return;
+    try {
+      const t1 = now();
+      let n = 0, t = 0;
+      do { pipe.feed(u8); n++; t = now() - t1; } while (t < d.ms / 1000);
+      parentPort.postMessage({ ok: t / (n * chunk / 2 / d.rate) });
+    } catch (e) { parentPort.postMessage({ error: String((e && e.stack) || e) }); }
+  });
+  parentPort.postMessage({ warm: true });
 }
 
 if (!isMainThread && workerData && workerData.openAlertBench) {
-  try {
-    parentPort.postMessage({ ok: benchLoop(workerData.agentDir, workerData.rates, workerData.cfg, workerData.seconds, workerData.tries, workerData.minTryMs) });
-  } catch (e) { parentPort.postMessage({ error: String((e && e.stack) || e) }); }
+  try { togetherThread(workerData); } catch (e) { parentPort.postMessage({ error: String((e && e.stack) || e) }); }
   return;
 }
 
-function runLoopOnce(agentDir, rates, cfg, P) {
+// `n` of those threads at once → the cores each took, all measured over the same `ms`.
+function together(agentDir, n, rate, cfg, ms) {
   return new Promise((resolve, reject) => {
-    const w = new Worker(__filename, { workerData: { openAlertBench: true, agentDir, rates, cfg, seconds: P.loopSeconds, tries: P.loopTries, minTryMs: P.loopMinTryMs } });
-    let done = false;
-    w.on('message', (m) => { done = true; w.terminate(); if (m.error) reject(new Error(m.error)); else resolve(m.ok); });
-    w.on('error', (e) => { if (!done) { done = true; reject(e); } });
-    w.on('exit', (code) => { if (!done) { done = true; reject(new Error('the measuring thread stopped (' + code + ')')); } });
+    const ws = [], got = [];
+    let warm = 0, done = false;
+    const finish = (err) => { if (done) return; done = true; for (const w of ws) w.terminate(); if (err) reject(err); else resolve(got); };
+    for (let i = 0; i < n; i++) {
+      const w = new Worker(__filename, { workerData: { openAlertBench: true, agentDir, rate, cfg, ms } });
+      ws.push(w);
+      w.on('message', (m) => {
+        if (m.error) finish(new Error(m.error));
+        else if (m.warm) { if (++warm === n) for (const x of ws) x.postMessage('go'); }
+        else { got.push(m.ok); if (got.length === n) finish(); }
+      });
+      w.on('error', (e) => finish(e));
+      w.on('exit', (code) => finish(new Error('a measuring thread stopped (' + code + ')')));
+    }
   });
 }
 
-// The least of `passes` runs of the loop, window by window (each run a thread of its own).
-async function runLoop(agentDir, rates, cfg, P, passes) {
-  let best = null;
-  for (let k = 0; k < (passes || P.loopPasses); k++) {
-    const r = await runLoopOnce(agentDir, rates, cfg, P);
-    best = best ? Object.fromEntries(rates.map(x => [x, Math.min(best[x], r[x])])) : r;
+// The least of `passes` runs of the loop, window by window (each run a process of its own).
+function runLoop(ctx, rates, cfg, P) {
+  const best = {};
+  for (let k = 0; k < P.loopPasses; k++) for (const rate of rates) {
+    const v = job(ctx, 'loop', { rate, cfg, seconds: P.loopSeconds, tries: P.loopTries, minTryMs: P.loopMinTryMs });
+    best[rate] = best[rate] == null ? v : Math.min(best[rate], v);
   }
   return best;
 }
@@ -177,10 +232,13 @@ const errText = (e) => String((e && e.message) || e).split('\n')[0];
 function slurp(file) { try { return fs.readFileSync(file, 'utf8'); } catch (e) { return null; } }
 function firstMatch(file, re) { const s = slurp(file); const m = s && re.exec(s); return m ? m[1].trim() : null; }
 
-// fn() timed: twice to warm up, then until `minRuns` and `minMs` are both met.
-function timeIt(fn, minRuns, minMs) {
+// fn() timed: `warm` runs first, untimed, so that the JavaScript engine has
+// compiled the decoder (a base station runs for weeks; Node 18 needs four or
+// five runs of a decoder before it is at speed), then until `minRuns` and
+// `minMs` are both met.
+function timeIt(fn, minRuns, minMs, warm) {
   let last;
-  fn(); fn();
+  for (let i = 0; i < (warm == null ? 2 : warm); i++) fn();
   const ms = [];
   const t00 = Date.now();
   while (ms.length < minRuns || (Date.now() - t00 < minMs && ms.length < 60)) {
@@ -272,6 +330,7 @@ function machine() {
     os: os.type() + ' ' + os.release(),
     distro: firstMatch('/etc/os-release', /^PRETTY_NAME="?([^"\n]+)"?/m) || firstMatch('/usr/lib/os-release', /^PRETTY_NAME="?([^"\n]+)"?/m),
     node: process.version,
+    nodeMajor: Number(process.versions.node.split('.')[0]),
     v8: process.versions.v8,
     loadAvgAtStart: os.loadavg().map(v => round(v, 2)),
     loadAvgAtEnd: null,
@@ -308,6 +367,12 @@ function toU8(re, im) {
 const pdu = (bytes, src) => ({ source: src || 11762, path: [10115, 11056], hopLimit: 2, stamp: 7907,
   records: Array.from({ length: Math.max(1, Math.round((bytes - 14) / 4)) }, (_, i) => ({ id: 1000 + i, value: (i * 37) % 2048, before: i % 200 })) });
 
+// Seconds an ALERT2 frame of `bytes` is on the air: the sync word and the coded bits at 4800 bits a second.
+function alert2AirSeconds(bytes) {
+  const D = Math.max(0, bytes - 22), nf = Math.ceil(D / 32);
+  return (80 + 656 + (D ? 2 * (8 * (D + 16 * nf) + 7) + 2 : 0)) / 4800;
+}
+
 // ── 1. one legacy burst's decode, each decoder ─────────────────────────────
 const RECORDINGS = [
   ['binary_151.500_1957.iq8', 'BINARY', 'a strong burst, recorded off the air', 'a strong legacy ALERT burst recorded off the air (ALERT Binary, about 16 dB over the noise)', '1957=29'],
@@ -322,7 +387,7 @@ function measureBursts(AlertDsp, fixDir, modes, P) {
     if (!f) { out.recordings.push({ recording: name, short, what, skipped: 'not in this copy of the agent' }); continue; }
     const row = { recording: name, short, what, format, windowSeconds: round(f.seconds, 2), ms: {}, best: {}, read: {}, expected: expect, readCorrectly: true };
     for (const [mode, lean] of modes) {
-      const t = timeIt(() => AlertDsp.decodeWindow(f.re, f.im, { format: AlertDsp[format], minVotes: 4, minVotesCrc: 4, lean }), P.runs, P.minMs);
+      const t = timeIt(() => AlertDsp.decodeWindow(f.re, f.im, { format: AlertDsp[format], minVotes: 4, minVotesCrc: 4, lean }), P.runs, P.minMs, P.warm);
       row.ms[mode] = t.ms; row.best[mode] = t.best;
       row.read[mode] = t.last.readings.map(r => r.sensorId + '=' + r.value).join(' ');
       if (!expect.split(' ').every(x => row.read[mode].split(' ').includes(x))) row.readCorrectly = false;
@@ -338,7 +403,7 @@ function measureBursts(AlertDsp, fixDir, modes, P) {
     const row = { recording: 'synthesised', short: 'a made-up burst', what: 'a made-up ALERT Binary burst (this copy of the agent has no recordings): not comparable with results taken on the real recordings',
       format: 'BINARY', windowSeconds: 1.25, ms: {}, best: {}, read: {}, expected: '1957=29', readCorrectly: true };
     for (const [mode, lean] of modes) {
-      const t = timeIt(() => AlertDsp.decodeWindow(f.re, f.im, { format: AlertDsp.BINARY, minVotes: 4, minVotesCrc: 4, lean }), P.runs, P.minMs);
+      const t = timeIt(() => AlertDsp.decodeWindow(f.re, f.im, { format: AlertDsp.BINARY, minVotes: 4, minVotesCrc: 4, lean }), P.runs, P.minMs, P.warm);
       row.ms[mode] = t.ms; row.best[mode] = t.best;
       row.read[mode] = t.last.readings.map(r => r.sensorId + '=' + r.value).join(' ');
       if (row.read[mode] !== row.expected) row.readCorrectly = false;
@@ -373,10 +438,8 @@ function measureAlert2(agentDir, AlertDsp, fixDir, modes, typical, P, quick) {
   let Tx = null;
   try { Tx = require(path.join(agentDir, 'test', 'helpers', 'alert2-tx')); } catch (e) { out.synthNote = 'no made-up frames: this copy of the agent has no test/helpers/alert2-tx.js'; }
   if (Tx) {
-    // Seconds on the air: the sync word and the coded bits at 4800 bits a second.
-    const air = (bytes) => { const D = Math.max(0, bytes - 22), nf = Math.ceil(D / 32); return (80 + 656 + (D ? 2 * (8 * (D + 16 * nf) + 7) + 2 : 0)) / 4800; };
     for (const bytes of quick ? [350] : [54, 150, 350, 500]) {
-      const a = air(bytes), seconds = a + 0.9;
+      const a = alert2AirSeconds(bytes), seconds = a + 0.9;
       const w = Tx.window({ seconds, snrDb: 20, seed: 5, frames: [{ startSec: 0.4, pdus: [pdu(bytes)], cfoHz: 600 }] });
       const made = typeof Tx.mantPdu === 'function' ? Tx.mantPdu(pdu(bytes)).length : null;      // 500 asked for is 502 made
       windows.push({ name: 'made_up_' + bytes + '_bytes', short: 'a made-up frame of ' + bytes + ' bytes (' + round(a, 2) + ' s on the air)', what: 'made up with the agent\'s own test transmitter: one frame of ' + bytes + ' bytes, ' + round(a, 2) + ' s on the air', re: w.re, im: w.im, seconds, real: false, expectLen: made });
@@ -389,7 +452,7 @@ function measureAlert2(agentDir, AlertDsp, fixDir, modes, typical, P, quick) {
       const t = timeIt(() => AlertDsp.decodeWindow(w.re, w.im, { format: AlertDsp.BINARY, minVotes: 4, minVotesCrc: 4, lean }), Math.min(P.runs, 5), P.minMs / 2);
       row.legacyTryMs[mode] = t.ms;
     }
-    const a = timeIt(() => Air.receive(w.re, w.im), Math.min(P.runs, 5), P.minMs / 2);
+    const a = timeIt(() => Air.receive(w.re, w.im), Math.min(P.runs, 5), P.minMs / 2, P.warm);
     row.alert2Ms = a.ms;
     row.frames = a.last.frames.map(f => (f.ok ? 'ok, ' + f.len + ' bytes' : 'not read: ' + f.error));
     const ok = a.last.frames.filter(f => f.ok);
@@ -407,29 +470,33 @@ function measureAlert2(agentDir, AlertDsp, fixDir, modes, typical, P, quick) {
 }
 
 // ── 3. between bursts, a channel, each window ──────────────────────────────
-async function measureBetweenBursts(agentDir, has, P, quick) {
-  const plan = (() => { try { return require(path.join(agentDir, 'web', 'sdr-plan')); } catch (e) { return null; } })();
-  const rates = WINDOWS.filter(r => !plan || !plan.RATES || plan.RATES.includes(r));
+function measureBetweenBursts(ctx, has, P, quick) {
+  const rates = WINDOWS.filter(r => !has.rates || has.rates.includes(r));
   const out = { unit: 'cores one channel takes while nothing is on the air (0.05 is 5 % of one core)', windowsHz: rates, windowNotes: WINDOW_NOTE };
-  try {
-    const bench = require(path.join(agentDir, 'lib', 'devices', 'sdr-bench'));
-    let per = null, watched = null;
-    for (let k = 0; k < (quick ? 1 : 3); k++) {          // the least of the runs, each already the best of three tries
-      const r = await bench.measure(rates);
-      const pc = r.perChannel || r;
-      per = per ? Object.fromEntries(rates.map(x => [x, Math.min(per[x], pc[x])])) : pc;
-      if (r.watched) watched = watched ? Object.fromEntries(rates.map(x => [x, Math.min(watched[x], r.watched[x])])) : r.watched;
-    }
-    out.agentOwnMeasure = { note: 'the agent\'s own measurement (lib/devices/sdr-bench.js), as its settings page shows it, rounded to 0.001 of a core', filterEverySample: per, filterOnlyAroundBursts: watched };
-  } catch (e) { out.agentOwnMeasure = { error: errText(e) }; }
+  if (!has.ownBench) out.agentOwnMeasure = { measured: false, why: 'this agent has no measurement of its own (lib/devices/sdr-bench.js came with agent 0.15)' };
+  else if (ctx.memAvailableMb != null && ctx.memAvailableMb < 700) out.agentOwnMeasure = { measured: false, why: 'left out: it wants more memory than is free here (' + ctx.memAvailableMb + ' MB)' };
+  else {
+    try {
+      const per = {}, watched = {};
+      // The least of the runs, each already the best of three tries; a window a run, to keep it small.
+      for (let k = 0; k < (quick ? 1 : 3); k++) for (const rate of rates) {
+        const r = job(ctx, 'agentBench', { rates: [rate] });
+        const pc = r.perChannel || r;
+        per[rate] = per[rate] == null ? pc[rate] : Math.min(per[rate], pc[rate]);
+        if (r.watched) watched[rate] = watched[rate] == null ? r.watched[rate] : Math.min(watched[rate], r.watched[rate]);
+      }
+      out.agentOwnMeasure = { measured: true, note: 'the agent\'s own measurement (lib/devices/sdr-bench.js), as its settings page shows it, rounded to 0.001 of a core',
+        filterEverySample: per, filterOnlyAroundBursts: Object.keys(watched).length ? watched : null };
+    } catch (e) { out.agentOwnMeasure = { measured: false, why: errText(e) }; }
+  }
   const fine = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, round(v, 4)]));
-  const asBench = await runLoop(agentDir, rates, null, P);
+  const asBench = runLoop(ctx, rates, null, P);
   out.asAgentMeasures = Object.assign({ note: 'the same loop as the agent\'s own measurement, unrounded: what the Raspberry Pi 4 figures are compared with' }, fine(asBench));
   if (has.ringS) {
     out.asDecoderThreadFirstChannel = Object.assign({ note: 'with the settings the decoder threads really run with since agent 0.19, spectrum on: a stick\'s first channel' },
-      fine(await runLoop(agentDir, rates, { ringS: 5, capture: false, specHz: 1 }, P)));
+      fine(runLoop(ctx, rates, { ringS: 5, capture: false, specHz: 1 }, P)));
     out.asDecoderThreadOtherChannels = Object.assign({ note: 'the same with the spectrum off: a stick\'s other channels' },
-      fine(await runLoop(agentDir, rates, { ringS: 5, capture: false, specHz: 0 }, P)));
+      fine(runLoop(ctx, rates, { ringS: 5, capture: false, specHz: 0 }, P)));
   } else {
     out.asDecoderThreadFirstChannel = Object.assign({ note: 'this agent is older than 0.19: its decoder threads run as its own measurement does' }, fine(asBench));
     out.asDecoderThreadOtherChannels = Object.assign({ note: 'this agent is older than 0.19: its decoder threads run as its own measurement does' }, fine(asBench));
@@ -441,24 +508,33 @@ async function measureBetweenBursts(agentDir, has, P, quick) {
 }
 
 // ── 4. every core busy at once ─────────────────────────────────────────────
-async function measureParallel(agentDir, threads, P) {
-  const rate = 1440000;
-  const before = (await runLoop(agentDir, [rate], null, P))[rate];
-  const all = await Promise.all(Array.from({ length: threads }, () => runLoop(agentDir, [rate], null, P, 2)));
-  const after = (await runLoop(agentDir, [rate], null, P))[rate];
-  const each = all.map(r => r[rate]), solo = Math.min(before, after), ratio = median(each) / solo;
-  return { note: 'the between-bursts loop at 1.44 MHz in ' + threads + ' threads at once against one alone (the better of a run before and a run after): 1.0 means a channel costs the same with every core busy. A ratio under 1 can only be something else disturbing the run alone, so the slowdown is never put under 1.',
-    threads, aloneCores: round(solo, 4), togetherCoresEach: each.map(v => round(v, 4)), ratio: round(ratio, 2), slowdown: Math.max(1, round(ratio, 2)) };
+// One thread alone, then as many as the computer has, turn about, each run
+// the same length. The least of the runs alone against the least of the runs
+// together (each the middle thread of its run): anything else the computer is
+// doing can only make a run slower, never faster.
+function measureParallel(ctx, threads, has, P) {
+  const rate = 1440000, cfg = has.ringS ? { ringS: 5, capture: false, specHz: 0 } : null;
+  const needMb = 120 + 60 * threads;
+  if (ctx.memAvailableMb != null && ctx.memAvailableMb < needMb + 100) {
+    return { measured: false, why: 'left out: ' + threads + ' decoders at once want about ' + needMb + ' MB and ' + ctx.memAvailableMb + ' MB is free. The channel counts below take a channel to cost the same with every core busy, which flatters them.', threads, slowdown: 1 };
+  }
+  const run = (n) => job(ctx, 'together', { n, rate, cfg, ms: P.togetherMs });
+  const alone = [], rounds = [];
+  for (let r = 0; r < P.togetherRounds; r++) { alone.push(run(1)[0]); rounds.push(run(threads)); }
+  alone.push(run(1)[0]);
+  const solo = Math.min(...alone);
+  const best = rounds.slice().sort((x, y) => median(x) - median(y))[0];
+  const ratio = median(best) / solo;
+  return { measured: true, note: 'the between-bursts loop at 1.44 MHz (set up as a decoder thread is) in ' + threads + ' threads started together and run for the same ' + P.togetherMs + ' ms, against one alone; ' + P.togetherRounds + ' runs together and ' + alone.length + ' alone, the least of each. 1.0 means a channel costs the same with every core busy. A ratio under 1 can only be something else disturbing the runs alone, so the slowdown is never put under 1.',
+    threads, aloneCores: round(solo, 4), togetherCoresEach: best.map(v => round(v, 4)), ratio: round(ratio, 2), slowdown: Math.max(1, round(ratio, 2)) };
 }
 
 // ── 5. memory a channel ────────────────────────────────────────────────────
-// --mem-child=K: K real decoder threads, six seconds of a 1.44 MHz window each → { rss }.
-async function memChild(agentDir, K) {
+// K real decoder threads, six seconds of a 1.44 MHz window each → the memory this process then holds.
+async function decoderThreadsRss(agentDir, K) {
   const rate = 1440000, WORKER = path.join(agentDir, 'lib', 'devices', 'sdr-worker.js');
-  require(path.join(agentDir, 'lib', 'meganet-codecs'));       // as the agent's own main thread has it loaded
-  const chunk = new Uint8Array(65536);
-  let seed = 3;
-  for (let i = 0; i < chunk.length; i++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; chunk[i] = 117 + (seed % 21); }
+  codecs(agentDir);                                            // as the agent's own main thread has it loaded
+  const chunk = noiseChunk(chunkBytes(rate), 3);
   const total = Math.ceil(6 * rate * 2 / chunk.length);
   const ws = [];
   await Promise.all(Array.from({ length: K }, (_, k) => new Promise((resolve, reject) => {
@@ -478,22 +554,16 @@ async function memChild(agentDir, K) {
     });
   })));
   await new Promise(r => setTimeout(r, 500));
-  process.stdout.write(JSON.stringify({ rss: process.memoryUsage().rss }) + '\n');
+  const rss = process.memoryUsage().rss;
   await Promise.all(ws.map(w => w.terminate()));
+  return { rss };
 }
 
-// Real decoder threads in a fresh process of their own (this one's memory is
-// full of what it has just timed), against the same process with none.
-function measureMemory(agentDir, availableMb) {
-  const { spawnSync } = require('node:child_process');
-  const child = (k) => {
-    const r = spawnSync(process.execPath, [__filename, agentDir, '--mem-child=' + k], { encoding: 'utf8', timeout: 300000 });
-    if (r.status !== 0) throw new Error(((r.stderr || '').trim().split('\n').pop()) || 'the memory run stopped');
-    return JSON.parse(r.stdout).rss;
-  };
-  const K = availableMb != null && availableMb < 700 ? 2 : 4;
+// Real decoder threads in a fresh process of their own, against the same process with none.
+function measureMemory(ctx) {
+  const K = ctx.memAvailableMb != null && ctx.memAvailableMb < 700 ? 2 : 4;
   const none = [], some = [];
-  for (let i = 0; i < 3; i++) { none.push(child(0)); some.push(child(K)); }
+  for (let i = 0; i < 3; i++) { none.push(job(ctx, 'memory', { threads: 0 }).rss); some.push(job(ctx, 'memory', { threads: K }).rss); }
   const n = median(none), s = median(some);
   return { note: 'memory each of ' + K + ' real decoder threads adds on a 1.44 MHz window after six seconds of samples (the middle of three runs), with nothing queued. A decoder that falls behind may queue up to 20 s of samples on top (lib/devices/sdr.js, lines 70-81).',
     threads: K, mbPerChannel: round((s - n) / 1048576 / K, 1), mbAgentWithoutDecoders: round(n / 1048576, 1) };
@@ -543,49 +613,86 @@ function throughWorker(agentDir, cfg, u8, warm) {
   });
 }
 
-async function measureTraffic(agentDir, AlertDsp, modes, mode, quick, tick) {
+// When the bursts of a stream start: from two seconds in, the last of them
+// early enough to be over, and decoded, before the stream ends.
+function burstStarts(x) {
+  const tail = Math.max(1.5, x.kind === 'alert2' ? alert2AirSeconds(x.bytes) + 0.6 : 0), a = [];
+  if (x.kind !== 'quiet') for (let t = 2; t < x.seconds - tail; t += 60 / x.perMin) a.push(t);
+  return a;
+}
+
+// An ALERT2 stream as a stick would send it (bytes), made a few seconds at a
+// time: the agent's test transmitter works in numbers eight times that size,
+// and half a minute of them at once would be 120 MB.
+function alert2Stream(agentDir, x) {
+  const Tx = require(path.join(agentDir, 'test', 'helpers', 'alert2-tx'));
+  const starts = burstStarts(x), u8 = new Uint8Array(Math.round(x.seconds * FS) * 2);
+  const cuts = [0];                          // where the pieces join: each just before a frame starts
+  for (const t of starts) if (t - 0.05 - cuts[cuts.length - 1] >= 4) cuts.push(t - 0.05);
+  cuts.push(x.seconds);
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const a = Math.round(cuts[i] * FS), b = Math.round(cuts[i + 1] * FS), frames = [];
+    starts.forEach((t, k) => { if (t >= cuts[i] && t < cuts[i + 1]) frames.push({ startSec: t - a / FS, pdus: [pdu(x.bytes, 20000 + k)], cfoHz: ((k * 61) % 600) - 300 }); });
+    const w = Tx.window({ seconds: (b - a) / FS, snrDb: 22, seed: 31 + i, frames });
+    u8.set(toU8(w.re, w.im).subarray(0, (b - a) * 2), a * 2);
+  }
+  return u8;
+}
+
+// One scenario with one decoder, in a process of its own (the job "traffic":
+// a decoder thread that has read a stream of bursts holds on to a good deal
+// of memory, so each gets a fresh process). sc: { kind: 'quiet' | 'legacy' |
+// 'alert2', perMin, bytes, seconds, warm: { kind, perMin, bytes, seconds } },
+// lean: the decoder as the agent names it → { sent, cores, readings, alert2Ok, alert2Bad }.
+async function trafficScenario(agentDir, sc, lean) {
+  const { AlertDsp } = codecs(agentDir);
+  const B = (id, v) => AlertDsp.encodeFrame(AlertDsp.BINARY, id, v);
+  const make = (x) => {
+    if (x.kind === 'quiet') return AlertDsp.synthIq({ fs: FS, seconds: x.seconds, amp: 30, snrDb: 25, seed: 3, bursts: [] });
+    if (x.kind === 'legacy') return AlertDsp.synthIq({ fs: FS, seconds: x.seconds, amp: 30, snrDb: 25, seed: 21,
+      bursts: burstStarts(x).map((t, k) => ({ startSec: t, frames: [B(1000 + k, (k * 53) % 2048)], cfoHz: ((k * 97) % 800) - 400, amp: 30 })) });
+    return alert2Stream(agentDir, x);
+  };
+  const base = { deviceRate: FS, channelOffsetHz: 0, format: 'BINARY', gate: true, squelchDb: 8, minVotes: 4, minVotesCrc: 4, alert2: true, watch: 'always', ringS: 5, capture: false, specHz: 1 };
+  const r = await throughWorker(agentDir, Object.assign({}, base, { lean }), make(sc), make(sc.warm));
+  return { sent: burstStarts(sc).length, cores: r.cores, readings: r.readings, alert2Ok: r.alert2Ok, alert2Bad: r.alert2Bad };
+}
+
+function measureTraffic(ctx, modes, mode, has, quick, tick) {
   // The default decoder first; the quick run times no other.
   const mine = modes.filter(x => x[0] === mode), use = quick ? mine : mine.concat(modes.filter(x => x[0] !== mode));
   const S = quick ? 20 : 32;                 // seconds of signal a scenario
-  const base = { deviceRate: FS, channelOffsetHz: 0, format: 'BINARY', gate: true, squelchDb: 8, minVotes: 4, minVotesCrc: 4, alert2: true, watch: 'always', ringS: 5, capture: false, specHz: 1 };
-  const out = { note: 'One channel in a 240 kHz window through the agent\'s real decoder thread (lib/devices/sdr-worker.js): ' + S + ' s of made-up signal a scenario, 20-25 dB over the noise, fed as fast as the thread takes it after an untimed warm-up of ten seconds of the same kind of traffic. Cores = the time it took / the seconds of signal, so 1 or more means the thread could not keep up with a real radio.',
+  const out = { note: 'One channel in a 240 kHz window through the agent\'s real decoder thread (lib/devices/sdr-worker.js): ' + S + ' s of made-up signal a scenario, 20-25 dB over the noise, fed as fast as the thread takes it after an untimed warm-up of ten seconds of the same kind of traffic. measuredCores = the time it took / the seconds of signal. The stream starts and ends with a quiet stretch, so it holds a little under the rate named: msABurst is what each burst added over a quiet channel, and cores = the quiet channel + the bursts a minute named x msABurst — the share of one core at that rate. 1 or more means the thread could not keep up with a real radio.',
     secondsOfSignal: S, decoders: use.map(m => m[0]), scenarios: [] };
-  const B = (id, v) => AlertDsp.encodeFrame(AlertDsp.BINARY, id, v);
-  const quiet = AlertDsp.synthIq({ fs: FS, seconds: 10, amp: 30, snrDb: 25, seed: 3, bursts: [] });
-  const starts = (perMin, secs) => { const a = []; for (let t = 2; t < (secs || S) - 1.5; t += 60 / perMin) a.push(t); return a; };
-  const legacy = (perMin, secs) => AlertDsp.synthIq({ fs: FS, seconds: secs || S, amp: 30, snrDb: 25, seed: 21,
-    bursts: starts(perMin, secs).map((t, k) => ({ startSec: t, frames: [B(1000 + k, (k * 53) % 2048)], cfoHz: ((k * 97) % 800) - 400, amp: 30 })) });
-  let Tx = null;
-  try { Tx = require(path.join(agentDir, 'test', 'helpers', 'alert2-tx')); } catch (e) { out.alert2Note = 'no ALERT2 scenarios: this copy of the agent has no test/helpers/alert2-tx.js'; }
-  const alert2 = (perMin, bytes, secs) => {
-    const w = Tx.window({ seconds: secs || S, snrDb: 22, seed: 31, frames: starts(perMin, secs).map((t, k) => ({ startSec: t, pdus: [pdu(bytes, 20000 + k)], cfoHz: ((k * 61) % 600) - 300 })) });
-    return toU8(w.re, w.im);
-  };
+  if (!has.alert2Tx) out.alert2Note = 'No ALERT2 traffic was tried: this copy of the agent has no test transmitter (test/helpers/alert2-tx.js).';
   // The untimed warm-ups: a burst a second for ten seconds (long frames: four of them).
-  const warmLegacy = legacy(60, 10), warmAlert2 = Tx ? alert2(60, 64, 10) : null, warmLong = Tx && !quick ? alert2(24, 350, 13) : null;
-  const q = await throughWorker(agentDir, Object.assign({}, base, { lean: mine[0][1] }), quiet, warmLegacy);
-  out.quietCores = round(q.cores, 4);
+  const warmLegacy = { kind: 'legacy', perMin: 60, seconds: 10 }, warmAlert2 = { kind: 'alert2', perMin: 60, bytes: 64, seconds: 10 }, warmLong = { kind: 'alert2', perMin: 24, bytes: 350, seconds: 13 };
+  const q = job(ctx, 'traffic', { scenario: { kind: 'quiet', seconds: 10, warm: warmLegacy }, lean: mine[0][1] }).cores;
+  out.quietCores = round(q, 4);
   const list = [
-    ['legacy-busy', 'legacy ALERT, 8 bursts a minute', 'legacy ALERT, 8 bursts a minute (a busy day)', 'legacy', 8, () => legacy(8), warmLegacy],
-    ['legacy-heavy', 'legacy ALERT, 20 bursts a minute', 'legacy ALERT, 20 bursts a minute (a storm)', 'legacy', 20, () => legacy(20), warmLegacy],
+    ['legacy-busy', 'legacy ALERT, 8 bursts a minute', 'legacy ALERT, 8 bursts a minute (a busy day)', { kind: 'legacy', perMin: 8, warm: warmLegacy }],
+    ['legacy-heavy', 'legacy ALERT, 20 bursts a minute', 'legacy ALERT, 20 bursts a minute (a storm)', { kind: 'legacy', perMin: 20, warm: warmLegacy }],
   ];
-  if (Tx) {
-    list.push(['alert2-today', 'ALERT2, 20 frames a minute', 'ALERT2, 20 frames a minute of 74 bytes (about what one ALERT2 link carries today)', 'alert2', 20, () => alert2(20, 74), warmAlert2]);
-    list.push(['alert2-every-slot', 'ALERT2, every half-second slot used', 'ALERT2 with every half-second slot used: 120 frames a minute of 54 bytes (the most the protocol allows)', 'alert2', 120, () => alert2(120, 54), warmAlert2]);
-    if (!quick) list.push(['alert2-long-frames', 'ALERT2, long frames, 24 a minute', 'ALERT2, a 350-byte frame every 2.5 s: 24 a minute, on the air three quarters of the time', 'alert2', 24, () => alert2(24, 350), warmLong]);
+  if (has.alert2Tx) {
+    list.push(['alert2-today', 'ALERT2, 20 frames a minute', 'ALERT2, 20 frames a minute of 74 bytes (about what one ALERT2 link carries today)', { kind: 'alert2', perMin: 20, bytes: 74, warm: warmAlert2 }]);
+    list.push(['alert2-every-slot', 'ALERT2, every half-second slot used', 'ALERT2 with every half-second slot used: 120 frames a minute of 54 bytes (the most the protocol allows)', { kind: 'alert2', perMin: 120, bytes: 54, warm: warmAlert2 }]);
+    if (!quick) list.push(['alert2-long-frames', 'ALERT2, long frames, 24 a minute', 'ALERT2, a 350-byte frame every 2.5 s: 24 a minute, on the air three quarters of the time', { kind: 'alert2', perMin: 24, bytes: 350, warm: warmLong }]);
   }
-  for (const [name, short, what, kind, perMin, make, warm] of list) {
+  for (const [name, short, what, sc] of list) {
     tick(what);
-    const u8 = make(), sent = starts(perMin).length;
-    const row = { scenario: name, short, what, kind, burstsAMinute: perMin, sent, cores: {}, msABurst: {}, read: {}, allRead: true, keepsUp: true };
+    const row = { scenario: name, short, what, kind: sc.kind, burstsAMinute: sc.perMin, sent: null, measuredCores: {}, msABurst: {}, cores: {}, read: {}, allRead: true, keepsUp: true };
     for (const [dec, lean] of use) {
-      const r = await throughWorker(agentDir, Object.assign({}, base, { lean }), u8, warm);
-      const got = kind === 'alert2' ? r.alert2Ok : r.readings;
-      row.cores[dec] = round(r.cores, 3);
-      row.msABurst[dec] = sent ? round(Math.max(0, r.cores - q.cores) * S * 1000 / sent, 1) : null;
+      const x = job(ctx, 'traffic', { scenario: Object.assign({ seconds: S }, sc), lean });
+      const got = sc.kind === 'alert2' ? x.alert2Ok : x.readings;
+      const each = Math.max(0, x.cores - q) * S / x.sent;                 // seconds of one core a burst added
+      const atRate = q + sc.perMin / 60 * each;
+      row.sent = x.sent;
+      row.measuredCores[dec] = round(x.cores, 4);
+      row.msABurst[dec] = round(each * 1000, 1);
+      row.cores[dec] = round(atRate, 4);
       row.read[dec] = got;
-      if (got !== sent || (kind === 'alert2' && r.alert2Bad)) row.allRead = false;
-      if (r.cores >= 1) row.keepsUp = false;
+      if (got !== x.sent || (sc.kind === 'alert2' && x.alert2Bad)) row.allRead = false;
+      if (atRate >= 1 || x.cores >= 1) row.keepsUp = false;
     }
     out.scenarios.push(row);
   }
@@ -811,33 +918,36 @@ function summarise(o, mode) {
     L.push('  Decoding one burst — milliseconds of one core' + (o.burst.realRecordings ? ', on real recordings off the air' : ''));
     L.push('    ' + padE('', 52) + modes.map(x => padS(x.charAt(0).toUpperCase() + x.slice(1), 8)).join(''));
     for (const r of o.burst.recordings) if (r.ms) L.push('    ' + padE(r.short, 52) + modes.map(x => padS(num(r.ms[x]), 8)).join(''));
-    L.push('    ' + Mode + ' is the decoder the agent uses unless it is told otherwise.' + (o.burst.realRecordings ? '' : ' This copy of the agent has no recordings, so a made-up burst was used.'));
-  } else L.push('  Decoding one burst — NOT MEASURED: ' + ((o.burst && o.burst.error) || 'no result'));
+    para(Mode + ' is the decoder the agent uses unless it is told otherwise.' + (o.burst.realRecordings ? '' : ' This copy of the agent has no recordings, so a made-up burst was used.'), 4);
+  } else para('Decoding one burst — NOT MEASURED: ' + ((o.burst && o.burst.error) || 'no result'));
   L.push('');
   if (o.alert2 && o.alert2.measured) {
     L.push('  An ALERT2 burst — milliseconds of one core (' + Mode + ' decoder)');
     for (const r of o.alert2.bursts) L.push('    ' + padE(r.short, 52) + padS(num(r.totalMs[mode]), 8) + '   (' + num(r.legacyTryMs[mode]) + ' tried as a legacy burst first, then ' + num(r.alert2Ms) + ' as ALERT2)');
     if (o.alert2.againstALegacyBurst[mode]) L.push('    A typical ALERT2 burst costs ' + num(o.alert2.againstALegacyBurst[mode], 1) + ' times a legacy burst, because it is tried as one first.');
-  } else L.push('  An ALERT2 burst — NOT MEASURED: ' + ((o.alert2 && (o.alert2.why || o.alert2.error)) || 'no result'));
+  } else para('An ALERT2 burst — NOT MEASURED: ' + ((o.alert2 && (o.alert2.why || o.alert2.error)) || 'no result'));
   L.push('');
   if (o.betweenBursts && !o.betweenBursts.error) {
     const b = o.betweenBursts;
     L.push('  A channel while nothing is on the air — share of one core');
     para('The "window" is the slice of the band a radio stick listens to at once; a wider one holds channels further apart and costs more.', 4);
     for (const r of b.windowsHz) L.push('    ' + padE(khz(r) + ' window', 52) + padS(pct(b.aChannel[r]), 8) + (r === 1440000 ? '   (the window Flood-Net\'s four channels need)' : ''));
-    if (o.parallel && !o.parallel.error && o.parallel.threads > 1) L.push('    With all ' + o.parallel.threads + ' cores busy at once, a channel costs ' + (o.parallel.slowdown > 1.005 ? num(o.parallel.slowdown, 2) + ' times as much as on its own.' : 'the same as on its own.'));
-  } else L.push('  A channel while nothing is on the air — NOT MEASURED: ' + ((o.betweenBursts && o.betweenBursts.error) || 'no result'));
+    const pl = o.parallel;
+    if (pl && pl.measured && pl.threads > 1) L.push('    With all ' + pl.threads + ' cores busy at once, a channel costs ' + (pl.slowdown > 1.005 ? num(pl.slowdown, 2) + ' times as much as on its own.' : 'the same as on its own.'));
+    else if (pl && pl.measured === false) para('With every core busy at once — NOT MEASURED, ' + pl.why, 4);
+    else if (pl && pl.error) para('With every core busy at once — NOT MEASURED: ' + pl.error, 4);
+  } else para('A channel while nothing is on the air — NOT MEASURED: ' + ((o.betweenBursts && o.betweenBursts.error) || 'no result'));
   L.push('');
   if (o.memory && !o.memory.error) L.push('  Memory — ' + num(o.memory.mbPerChannel) + ' MB for each channel, on top of ' + num(o.memory.mbAgentWithoutDecoders) + ' MB for the agent itself.');
-  else L.push('  Memory — NOT MEASURED: ' + ((o.memory && o.memory.error) || 'no result'));
+  else para('Memory — NOT MEASURED: ' + ((o.memory && (o.memory.why || o.memory.error)) || 'no result'));
   L.push('');
   if (o.traffic && !o.traffic.error) {
     L.push('  One channel under traffic, through the agent\'s real decoder thread — share of one core (' + Mode + ' decoder, 240 kHz window)');
     L.push('    ' + padE('nothing on the air', 52) + padS(pct(o.traffic.quietCores), 8));
     for (const r of o.traffic.scenarios) L.push('    ' + padE(r.short, 52) + padS(pct(r.cores[mode]), 8) + '   ' + r.read[mode] + ' of ' + r.sent + ' read' + (r.keepsUp ? '' : '   CANNOT KEEP UP'));
-    para('8 legacy bursts a minute is a busy day and 20 a storm. 20 ALERT2 frames a minute is about what one ALERT2 link carries today; every half-second slot used (120 a minute) is the most the protocol allows.', 4);
-    if (o.traffic.alert2Note) L.push('    ' + o.traffic.alert2Note);
-  } else L.push('  One channel under traffic — NOT MEASURED: ' + ((o.traffic && o.traffic.error) || 'no result'));
+    para('8 legacy bursts a minute is a busy day and 20 a storm.' + (o.traffic.alert2Note ? '' : ' 20 ALERT2 frames a minute is about what one ALERT2 link carries today; every half-second slot used (120 a minute) is the most the protocol allows.'), 4);
+    if (o.traffic.alert2Note) para(o.traffic.alert2Note, 4);
+  } else para('One channel under traffic — NOT MEASURED: ' + ((o.traffic && o.traffic.error) || 'no result'));
   L.push('');
 
   L.push('HOW MANY CHANNELS');
@@ -858,7 +968,7 @@ function summarise(o, mode) {
       L.push('  Three set layouts, checked the same way:');
       for (const k of o.sizing.checks) item(k.check + ': ' + (k.ofOneCore != null ? pct(k.ofOneCore, 0) + ' of one core (the limit is ' + pct(k.limit, 0) + ')' : pct(k.ofThisComputer, 0) + ' of this computer (the limit is ' + pct(k.limit, 0) + ')'), k.ok ? '    fits      ' : '    TOO MUCH  ');
     }
-  } else L.push('  Could not be worked out: ' + ((c && c.error) || 'no result'));
+  } else para('Could not be worked out: ' + ((c && c.error) || 'no result'));
   L.push('');
 
   L.push('THE ALERT2 HEADROOM RULE: ' + verdictWord);
@@ -906,16 +1016,19 @@ function summarise(o, mode) {
 }
 
 // ── the command line ───────────────────────────────────────────────────────
+const NEEDS_MB = 450;       // free memory wanted before starting: on four cores the tool itself peaks at about 350 MB
+
 const USAGE = [
   TOOL + ' ' + VERSION + ' — how many channels will this computer carry?',
   '',
-  '  node open-alert-bench.js [AGENT_DIRECTORY] [options]',
+  '  node open-alert-bench.js [AGENT_FOLDER] [options]',
   '',
-  'AGENT_DIRECTORY is a copy of the RPi ALERT agent: the folder that holds bin, lib, vendor',
-  'and test. Left out, it looks in ' + DEFAULT_AGENT_DIRS.join(' and then ') + '.',
+  'AGENT_FOLDER is a copy of the RPi ALERT agent: the folder that holds bin, lib, vendor and',
+  'test (or a release unpacked, which holds that folder). Left out, it looks in',
+  DEFAULT_AGENT_DIRS.join(' and then ') + '.',
   '',
   '  --quick          a quick look: about a minute on a desktop-class computer, rougher figures',
-  '  --full           the full run, about three and a half minutes (what runs if you choose neither)',
+  '  --full           the full run, about four minutes (what runs if you choose neither)',
   '  --json           print the full figures as JSON instead of the summary',
   '  --out=FILE       also save the full figures as JSON in FILE, to send to somebody',
   '  --label=TEXT     what this computer is, in your own words (make, model, processor)',
@@ -925,12 +1038,16 @@ const USAGE = [
   '  --help, --version',
   '',
   'It needs no network, no radio stick and no administrator rights, and changes nothing: it only',
-  'reads AGENT_DIRECTORY and uses the processor. Run it on an otherwise idle computer. A slower',
-  'computer takes longer in proportion (a Raspberry Pi 4: about five times as long).',
+  'reads AGENT_FOLDER, uses the processor and, while it runs, up to about 350 MB of memory (it will',
+  'not start with under ' + NEEDS_MB + ' MB free). Run it on an otherwise idle computer. A slower computer',
+  'takes longer in proportion (a Raspberry Pi 4: about five times as long).',
+  '',
+  'It ends with status 0 when everything was measured and every test burst was read correctly,',
+  '1 when a part did not run or a burst was read wrongly, 2 when it could not start.',
 ].join('\n');
 
 function parseArgs(argv) {
-  const o = { mode: 'full', json: false, out: null, label: null, fixtures: null, show: null, quiet: false, dir: null, memChild: null, help: false, version: false };
+  const o = { mode: 'full', json: false, out: null, label: null, fixtures: null, show: null, quiet: false, dir: null, job: null, help: false, version: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const value = (name) => {
@@ -948,12 +1065,21 @@ function parseArgs(argv) {
     else if ((v = value('--label')) !== undefined) o.label = v;
     else if ((v = value('--fixtures')) !== undefined) o.fixtures = v;
     else if ((v = value('--show')) !== undefined) o.show = v;
-    else if ((v = value('--mem-child')) !== undefined) o.memChild = Number(v);
+    else if ((v = value('--job')) !== undefined) o.job = v;           // this tool starting itself: see job()
     else if (a.startsWith('-')) throw new Error('unknown option ' + a);
     else if (o.dir == null) o.dir = a;
-    else throw new Error('more than one agent directory given');
+    else throw new Error('more than one agent folder given');
   }
   return o;
+}
+
+// A folder as it goes into the result, which is made to be passed on: the two
+// usual places in full, anything else by its last two names only, so that no
+// home directory (and so no person's name) travels with the figures.
+function shortDir(d) {
+  if (DEFAULT_AGENT_DIRS.includes(d)) return d;
+  const parts = d.split(path.sep).filter(Boolean);
+  return (parts.length > 2 ? '.../' : path.sep) + parts.slice(-2).join('/');
 }
 
 const isAgentDir = (d) => fs.existsSync(path.join(d, 'lib', 'meganet-codecs.js')) && fs.existsSync(path.join(d, 'vendor', 'meganet', 'alert-dsp.js'));
@@ -963,10 +1089,10 @@ function findAgent(given) {
     const d = path.resolve(given);
     if (isAgentDir(d)) return d;
     if (isAgentDir(path.join(d, 'agent'))) return path.join(d, 'agent');     // a release unpacked, or a checkout
-    throw new Error(d + ' is not an RPi ALERT agent directory (it has no lib/meganet-codecs.js). Give the folder that holds bin, lib, vendor and test.');
+    throw new Error(d + ' is not an RPi ALERT agent folder (it has no lib/meganet-codecs.js). Give the folder that holds bin, lib, vendor and test.');
   }
   for (const d of DEFAULT_AGENT_DIRS) if (isAgentDir(d)) return d;
-  throw new Error('No RPi ALERT agent found in ' + DEFAULT_AGENT_DIRS.join(' or ') + '. Give its directory: node open-alert-bench.js /path/to/agent');
+  throw new Error('No RPi ALERT agent found in ' + DEFAULT_AGENT_DIRS.join(' or ') + '. Give its folder: node open-alert-bench.js /path/to/agent');
 }
 
 // The result out: the summary (or, with --json, the figures) on standard output, and the figures in --out's file.
@@ -979,12 +1105,35 @@ function emit(out, args, say) {
   process.stdout.write((args.json ? json : out.summary.text.join('\n')) + '\n');
 }
 
+// The measuring this tool starts itself to do (job() above): name → (agent folder, what to do) → the result.
+const JOBS = {
+  burst: (dir, p) => measureBursts(codecs(dir).AlertDsp, p.fixDir, p.modes, p.P),
+  alert2: (dir, p) => measureAlert2(dir, codecs(dir).AlertDsp, p.fixDir, p.modes, p.typical, p.P, p.quick),
+  agentBench: (dir, p) => require(path.join(dir, 'lib', 'devices', 'sdr-bench')).measure(p.rates),
+  loop: (dir, p) => benchLoop(dir, p.rate, p.cfg, p.seconds, p.tries, p.minTryMs),
+  together: (dir, p) => together(dir, p.n, p.rate, p.cfg, p.ms),
+  memory: (dir, p) => decoderThreadsRss(dir, p.threads),
+  traffic: (dir, p) => trafficScenario(dir, p.scenario, p.lean),
+};
+
+async function runJob(name) {
+  let reply;
+  try {
+    if (!Object.prototype.hasOwnProperty.call(JOBS, name)) throw new Error('there is no job "' + name + '"');
+    const order = JSON.parse(fs.readFileSync(0, 'utf8'));
+    const ok = await JOBS[name](order.agentDir, order.params || {});
+    reply = { ok, peakMb: Math.round(process.resourceUsage().maxRSS / 1024) };
+  } catch (e) { reply = { error: errText(e) }; }
+  process.stdout.write(JSON.stringify(reply) + '\n', () => process.exit(0));
+}
+
 async function main() {
   let args;
   try { args = parseArgs(process.argv.slice(2)); } catch (e) { console.error(TOOL + ': ' + errText(e) + '\n\n' + USAGE); process.exit(2); }
   if (args.help) { console.log(USAGE); return; }
   if (args.version) { console.log(TOOL + ' ' + VERSION); return; }
   if (Number(process.versions.node.split('.')[0]) < 18) { console.error(TOOL + ': this needs Node 18 or later; this is Node ' + process.version + '.'); process.exit(2); }
+  if (args.job) { await runJob(args.job); return; }
   const say = (s) => { if (!args.quiet) process.stderr.write(s + '\n'); };
   if (args.show) {
     let text, saved = null;
@@ -996,70 +1145,84 @@ async function main() {
   }
   let agentDir;
   try { agentDir = findAgent(args.dir); } catch (e) { console.error(TOOL + ': ' + errText(e)); process.exit(2); }
-  if (args.memChild != null) { await memChild(agentDir, args.memChild); return; }
 
   const quick = args.mode === 'quick';
-  const P = quick ? { runs: 3, minMs: 300, loopSeconds: 0.4, loopTries: 5, loopPasses: 2, loopMinTryMs: 40 }
-    : { runs: 7, minMs: 1500, loopSeconds: 1.0, loopTries: 5, loopPasses: 3, loopMinTryMs: 80 };
+  const P = quick ? { runs: 3, minMs: 300, warm: 4, loopSeconds: 0.4, loopTries: 5, loopPasses: 2, loopMinTryMs: 40, togetherMs: 400, togetherRounds: 2 }
+    : { runs: 7, minMs: 1500, warm: 6, loopSeconds: 1.0, loopTries: 5, loopPasses: 3, loopMinTryMs: 80, togetherMs: 1000, togetherRounds: 3 };
   const STEPS = 6;
   let stepNo = 0;
   const step = (s) => say('[' + (++stepNo) + '/' + STEPS + '] ' + s);
   const tick = (s) => say('      ' + s);
 
-  const { AlertDsp } = require(path.join(agentDir, 'lib', 'meganet-codecs'));
+  // What this agent has, read from its files: nothing of it is loaded into this process.
   const dspSrc = fs.readFileSync(path.join(agentDir, 'vendor', 'meganet', 'alert-dsp.js'), 'utf8');
-  const has = { lean: /opts\.lean/.test(dspSrc), light: /lean === 2/.test(dspSrc), ringS: /ringS/.test(dspSrc) };
+  const planSrc = slurp(path.join(agentDir, 'web', 'sdr-plan.js')) || '';
+  const planRates = /\bRATES\s*=\s*\[([\d,\s]+)\]/.exec(planSrc);
+  const has = { lean: /opts\.lean/.test(dspSrc), light: /lean === 2/.test(dspSrc), ringS: /ringS/.test(dspSrc),
+    rates: planRates ? planRates[1].split(',').map(Number).filter(Boolean) : null,
+    ownBench: fs.existsSync(path.join(agentDir, 'lib', 'devices', 'sdr-bench.js')),
+    alert2Tx: fs.existsSync(path.join(agentDir, 'test', 'helpers', 'alert2-tx.js')) && fs.existsSync(path.join(agentDir, 'lib', 'devices', 'alert2-air.js')) };
   const modes = [['full', false]].concat(has.lean ? [['lean', true]] : [], has.light ? [['light', 2]] : []);
   const mode = has.lean ? 'lean' : 'full';       // the decoder the agent uses unless told otherwise
   const fixDir = args.fixtures ? path.resolve(args.fixtures) : path.join(agentDir, 'test', 'fixtures');
   const t00 = Date.now();
   const out = {
     schema: SCHEMA,
-    tool: { name: TOOL, version: VERSION },
+    tool: { name: TOOL, version: VERSION, peakMemoryMb: null },
     mode: args.mode,
     label: args.label || null,
     startedAt: new Date().toISOString(),
     tookSeconds: null,
     machine: machine(),
     agent: {
-      dir: agentDir,
+      dir: shortDir(agentDir),
       version: firstMatch(path.join(agentDir, 'package.json'), /"version"\s*:\s*"([^"]+)"/),
       decoderCommit: firstMatch(path.join(agentDir, 'vendor', 'meganet', 'SOURCE'), /^commit:\s*(.+)$/m),
       decoders: modes.map(x => x[0]),
       defaultDecoder: mode,
-      recordingsDir: fs.existsSync(fixDir) ? fixDir : null,
+      recordings: !fs.existsSync(fixDir) ? null : args.fixtures ? 'a folder given with --fixtures' : 'the agent\'s own test/fixtures',
     },
     warnings: [],
     errors: [],
     sectionSeconds: {},
   };
   const M = out.machine;
-  if (M.agentRunning) out.warnings.push('A base station (or the rtl_sdr program) is running on this computer. It keeps working, though its decoding may run a few seconds behind until this finishes; and the figures below will come out worse than the computer really is. For a result to rely on, run this while the base station is stopped.');
+  if (M.memAvailableMb != null && M.memAvailableMb < NEEDS_MB) {
+    console.error(TOOL + ': only ' + M.memAvailableMb + ' MB of memory is free on this computer and this needs ' + NEEDS_MB + ' MB to run without getting in anything\'s way. Nothing was measured.'
+      + (M.agentRunning ? ' A base station is running here: stopping it for the few minutes this takes would free enough.' : ''));
+    process.exit(2);
+  }
+  // A base station running here comes first: this run takes the lowest
+  // priority, set before anything is started so that all of it inherits it.
+  M.lowPriority = false;
+  if (M.agentRunning) { try { os.setPriority(os.constants.priority.PRIORITY_LOW); M.lowPriority = true; } catch (e) { /* not allowed: carry on as we are */ } }
+  if (M.agentRunning) out.warnings.push('A base station (or the rtl_sdr program) is running on this computer. It keeps working: this run ' + (M.lowPriority ? 'gives way to it (it runs at the lowest priority) and ' : '') + 'touches none of its files. But the figures below will come out worse than the computer really is. For a result to rely on, run this while the base station is stopped.');
   else if (M.loadAvgAtStart[0] > 0.5) out.warnings.push('This computer was already busy when the run began (load ' + M.loadAvgAtStart[0] + '), so the figures will come out worse than it really is. Run it again when the computer is idle.');
+  if (M.nodeMajor < 20) out.warnings.push('This ran under Node ' + process.versions.node + '. On the one computer where the same bursts were timed under Node 18, 20 and 22 (firmware/bench/results/README.md), Node 18 took about twice as long over a burst as the other two with the decoder the agent uses. So a newer Node on this computer may well carry more than this result says.');
   if (quick) out.warnings.push('This was the quick run. Its figures are rougher than the full run\'s (they can be 10 to 20 % out): use the full run before deciding anything, and for any result you share.');
-  if (!fs.existsSync(fixDir)) out.warnings.push('This copy of the agent has no test recordings (' + fixDir + ' is missing), so made-up bursts were used and ALERT2 may not be measured. For figures that compare with other computers, unpack an RPi ALERT release and give its agent directory.');
-  if (M.memAvailableMb != null && M.memAvailableMb < 400) out.warnings.push('Little memory is free (' + M.memAvailableMb + ' MB): this run may slow the computer while it lasts.');
+  if (!fs.existsSync(fixDir)) out.warnings.push('This copy of the agent has no test recordings (' + (args.fixtures ? 'the folder given with --fixtures' : 'its test/fixtures folder') + ' is missing), so a made-up burst was timed' + (has.alert2Tx ? '' : ' and ALERT2 was not measured') + '. For figures that compare with other computers, download and unpack an RPi ALERT release and give its agent folder (firmware/bench/README.md says how).');
   if (M.cpuLimitCores != null && M.cpuLimitCores < M.logicalCpus) out.warnings.push('This container is allowed ' + M.cpuLimitCores + ' of the computer\'s ' + M.logicalCpus + ' processor threads: the figures are for that allowance, not the whole computer.');
 
   say(TOOL + ' ' + VERSION + ': the ' + args.mode + ' run on RPi ALERT ' + (out.agent.version || '?') + ' in ' + agentDir);
-  const section = async (name, fn) => {
+  const ctx = { agentDir, quiet: args.quiet, memAvailableMb: M.memAvailableMb, peakJobMb: 0 };
+  const section = (name, fn) => {
     const t0 = Date.now();
-    try { out[name] = await fn(); } catch (e) { out[name] = { error: errText(e) }; out.errors.push(name + ': ' + errText(e)); }
+    try { out[name] = fn(); } catch (e) { out[name] = { error: errText(e) }; out.errors.push(name + ': ' + errText(e)); }
     out.sectionSeconds[name] = round((Date.now() - t0) / 1000, 1);
   };
 
   step('Decoding recorded bursts with each decoder (' + modes.map(x => x[0]).join(', ') + ')');
-  await section('burst', () => measureBursts(AlertDsp, fixDir, modes, P));
+  section('burst', () => job(ctx, 'burst', { fixDir, modes, P }));
   step('Decoding ALERT2 bursts');
-  await section('alert2', () => measureAlert2(agentDir, AlertDsp, fixDir, modes, (out.burst && out.burst.typicalMs) || {}, P, quick));
+  section('alert2', () => job(ctx, 'alert2', { fixDir, modes, typical: (out.burst && out.burst.typicalMs) || {}, P, quick }));
   step('A channel while nothing is on the air, at each window');
-  await section('betweenBursts', () => measureBetweenBursts(agentDir, has, P, quick));
+  section('betweenBursts', () => measureBetweenBursts(ctx, has, P, quick));
   step('The same with every core busy at once (' + M.threads + ' thread' + (M.threads === 1 ? '' : 's') + ')');
-  await section('parallel', () => measureParallel(agentDir, M.threads, P));
+  section('parallel', () => measureParallel(ctx, M.threads, has, P));
   step('Memory a channel');
-  await section('memory', () => measureMemory(agentDir, M.memAvailableMb));
+  section('memory', () => measureMemory(ctx));
   step('One channel under traffic, through the agent\'s real decoder thread');
-  await section('traffic', () => measureTraffic(agentDir, AlertDsp, modes, mode, quick, tick));
+  section('traffic', () => measureTraffic(ctx, modes, mode, has, quick, tick));
 
   out.timesARaspberryPi4 = againstPi4(out);
   out.capacity = capacity(out, mode);
@@ -1069,6 +1232,8 @@ async function main() {
   M.loadAvgAtEnd = os.loadavg().map(v => round(v, 2));
   M.tempCAtEnd = temperatureC();
   out.tookSeconds = round((Date.now() - t00) / 1000, 1);
+  // This process, and the largest of the measuring processes it started.
+  out.tool.peakMemoryMb = Math.round(process.resourceUsage().maxRSS / 1024) + ctx.peakJobMb;
   const today = out.capacity.channelsToday || null;
   out.summary = {
     timesAPi4Core: out.timesARaspberryPi4.perCore,

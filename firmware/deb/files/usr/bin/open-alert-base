@@ -14,6 +14,9 @@
 #
 # The agent's own command is "rpi-alert" (rpi-alert status, rpi-alert setup, …).
 set -euo pipefail
+# Files this command makes are readable by all and writable by root only,
+# whatever the caller's own setting.
+umask 022
 
 LIB=/usr/lib/open-alert-base
 SHARE=/usr/share/open-alert-base
@@ -70,6 +73,52 @@ load_summary() {
 setting() { printf '%s\n' "$SUMMARY" | sed -n "s|^$1=\(.*\)\$|\1|p" | head -n 1; }
 is_loopback() { case "$1" in 127.*|::1|localhost) return 0 ;; *) return 1 ;; esac; }
 
+# The running agent's process number, or nothing: asked of systemd, else found
+# among the agent user's own processes.
+agent_pid() {
+  local pid='' d uid
+  if have_systemd; then pid=$(systemctl show -p MainPID --value "$UNIT" 2>/dev/null || true); fi
+  case "$pid" in ''|0|*[!0-9]*) pid='' ;; esac
+  if [ -z "$pid" ] && id "$SVC_USER" >/dev/null 2>&1; then
+    uid=$(id -u "$SVC_USER")
+    for d in /proc/[0-9]*; do
+      [ "$(stat -c %u "$d" 2>/dev/null || true)" = "$uid" ] || continue
+      if tr '\0' ' ' < "$d/cmdline" 2>/dev/null | grep -qF "$AGENT/bin/rpi-alert daemon"; then pid=${d#/proc/}; break; fi
+    done
+  fi
+  printf '%s' "$pid"
+}
+# A line of /proc/<pid>/status: its value.
+proc_status() { sed -n "s/^$2:[[:space:]]*//p" "/proc/$1/status" 2>/dev/null | head -n 1; }
+# A set of privileges as the kernel prints it (sixteen hex digits), in words.
+caps_in_words() {
+  case "$1" in
+    0000000000000000) echo "none" ;;
+    0000000000000400) echo "one: CAP_NET_BIND_SERVICE (open a port below 1024)" ;;
+    '') echo "unknown" ;;
+    *) echo "MORE THAN EXPECTED: $1" ;;
+  esac
+}
+
+# Does this system's RTL-SDR library know the RTL-SDR Blog V4 stick? (The test
+# RPi ALERT's own installer makes: the stick's name is in the library file.)
+rtl_knows_v4() {
+  local lib
+  for lib in $( (ldconfig -p 2>/dev/null || /sbin/ldconfig -p 2>/dev/null || true) | awk '/librtlsdr\.so/ {print $NF}'); do
+    if grep -aq "Blog V4" "$lib" 2>/dev/null; then return 0; fi
+  done
+  return 1
+}
+rtl_line() {
+  local v
+  v=$(dpkg-query -W -f '${Version}' rtl-sdr 2>/dev/null || true)
+  if rtl_knows_v4; then
+    printf 'rtl-sdr %s — knows the RTL-SDR Blog V4 stick as well as the V3 and generic ones' "${v:-(version unknown)}"
+  else
+    printf 'rtl-sdr %s — does NOT know the RTL-SDR Blog V4 stick: V3 and generic sticks only (Debian 13 and Ubuntu 24.04 have a newer rtl-sdr that does)' "${v:-(version unknown)}"
+  fi
+}
+
 # ── version ──────────────────────────────────────────────────────────────────
 cmd_version() {
   say "open-alert-base $(package_version)"
@@ -77,6 +126,7 @@ cmd_version() {
   say "    release tarball  sha256 $(pin AGENT_SHA256)"
   say "    release key      $(pin KEY_FINGERPRINT)"
   say "Node.js $("$NODE" --version 2>/dev/null || echo 'not found') ($NODE)"
+  say "$(rtl_line)"
 }
 
 # ── status ───────────────────────────────────────────────────────────────────
@@ -104,14 +154,17 @@ cmd_status() {
 }
 
 # ── the platform follows the settings ────────────────────────────────────────
+# Both services start with the computer the usual way (multi-user.target).
+# Where there is no systemctl to ask (a container, a system being built), the
+# link that "enable" makes is made, or removed, by hand.
+WANTS_DIR=/etc/systemd/system/multi-user.target.wants
 unit_enable() {
-  if command -v systemctl >/dev/null 2>&1; then systemctl enable "$1" >/dev/null 2>&1
-  elif command -v deb-systemd-helper >/dev/null 2>&1; then deb-systemd-helper enable "$1" >/dev/null 2>&1
-  else return 1; fi
+  if command -v systemctl >/dev/null 2>&1 && systemctl enable "$1" >/dev/null 2>&1; then return 0; fi
+  install -d -m 0755 "$WANTS_DIR" && ln -sf "/usr/lib/systemd/system/$1" "$WANTS_DIR/$1"
 }
 unit_disable() {
-  if command -v systemctl >/dev/null 2>&1; then systemctl disable "$1" >/dev/null 2>&1 || true
-  elif command -v deb-systemd-helper >/dev/null 2>&1; then deb-systemd-helper disable "$1" >/dev/null 2>&1 || true; fi
+  if command -v systemctl >/dev/null 2>&1; then systemctl disable "$1" >/dev/null 2>&1 || true; fi
+  rm -f "$WANTS_DIR/$1"
 }
 lock_state() {
   if ! command -v nft >/dev/null 2>&1; then echo "NOT ON — nftables is not installed"; return; fi
@@ -262,7 +315,7 @@ absent() { if [ -e "$2" ] || [ -L "$2" ]; then say "    PRESENT  $1 ($2) — not
 env_value() { sed -n "s|^$1=\(.*\)\$|\1|p" "$ETC/env" 2>/dev/null | tail -n 1; }
 
 cmd_audit() {
-  local uid='' port bind remote node_ver major rest minor proxy shown
+  local uid='' port bind remote node_ver major rest minor proxy shown pid
   say "open-ALERT base station — security posture"
   say "Taken $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(hostname) ($(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' /etc/os-release 2>/dev/null), $(uname -m))"
   is_root || say "NOTE: not run as root, so the agent's settings, the firewall and the sudo rules could not be read. For all of it: sudo open-alert-base audit"
@@ -280,6 +333,7 @@ cmd_audit() {
   fi
   node_ver=$("$NODE" -p 'process.versions.node' 2>/dev/null || echo unknown)
   say "    Node.js         $node_ver, the operating system's own package"
+  say "    radio driver    $(rtl_line)"
   say "    No packages from npm: the agent uses none."
 
   say ""
@@ -321,6 +375,23 @@ cmd_audit() {
     say "    Privileges: none at all (CapabilityBoundingSet and AmbientCapabilities are empty)."
   fi
   say "    Not set: MemoryDenyWriteExecute — Node.js makes machine code as it runs and needs such memory."
+  pid=$(agent_pid)
+  if [ -n "$pid" ] && [ -r "/proc/$pid/status" ]; then
+    say "    As it runs at this moment (process $pid, read from the kernel):"
+    say "      user id                 $(proc_status "$pid" Uid | awk '{print $2}') (effective), group ids $(proc_status "$pid" Groups)"
+    say "      privileges in use       $(caps_in_words "$(proc_status "$pid" CapEff)")"
+    say "      privileges it could get $(caps_in_words "$(proc_status "$pid" CapBnd)")"
+    case "$(proc_status "$pid" NoNewPrivs)" in
+      1) say "      no-new-privileges       on (sudo and set-user-id programs do nothing for it)" ;;
+      *) say "      no-new-privileges       OFF" ;;
+    esac
+    case "$(proc_status "$pid" Seccomp)" in
+      2) say "      system-call filter      on" ;;
+      *) say "      system-call filter      OFF" ;;
+    esac
+  else
+    say "    The agent is not running at this moment, so only the service's file could be read."
+  fi
   if have_systemd && command -v systemd-analyze >/dev/null 2>&1; then
     say "    systemd's own score: $(systemd-analyze security --no-pager "$UNIT" 2>/dev/null | sed -n 's/^.*Overall exposure level for [^:]*: *//p' | sed 's/ *[^ -~].*$//')  (0 is the most closed, 10 the most open)"
   fi

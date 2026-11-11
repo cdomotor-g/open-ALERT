@@ -8,7 +8,7 @@
 #   3. the signature file is that key's Ed25519 signature over the tarball
 #      (checked with OpenSSL 3, and with Node as well when both are there);
 #   4. the tarball holds only plain files and folders, all under one folder
-#      named after the release;
+#      named after the release, none of them set-user-id;
 #   5. the agent inside says it is the version the pin names.
 #
 #   fetch-agent.sh --out DIR                       download, check, unpack into DIR
@@ -142,12 +142,16 @@ say "signature  Ed25519, good (checked with $checked)"
 # ── 4. what is inside ────────────────────────────────────────────────────────
 TOP="rpi-alert-$TAG"
 names=$(tar -tzf "$TARBALL") || fail "the tarball cannot be read"
-bad=$(printf '%s\n' "$names" | grep -Ev "^$TOP(/|\$)" | head -n 1 || true)
+# Compared as plain text, not as a pattern: the dots in the name stand for dots.
+bad=$(printf '%s\n' "$names" | awk -v top="$TOP" '$0 != top && $0 != top "/" && index($0, top "/") != 1 { print; exit }')
 [ -z "$bad" ] || fail "the tarball holds something outside $TOP/: $bad"
 bad=$(printf '%s\n' "$names" | grep -E '(^|/)\.\.(/|$)' | head -n 1 || true)
 [ -z "$bad" ] || fail "the tarball holds a path that climbs out of its folder: $bad"
 bad=$(tar -tvzf "$TARBALL" | grep -Ev '^[-d]' | head -n 1 || true)
 [ -z "$bad" ] || fail "the tarball holds something that is neither a plain file nor a folder: $bad"
+# No file that would run as somebody else (set-user-id or set-group-id).
+bad=$(tar -tvzf "$TARBALL" | grep -E '^.{3}[sS]|^.{6}[sS]' | head -n 1 || true)
+[ -z "$bad" ] || fail "the tarball holds a set-user-id or set-group-id file: $bad"
 printf '%s\n' "$names" | grep -qx "$TOP/agent/package.json" || fail "the tarball has no $TOP/agent/package.json"
 in_version=$(tar -xzOf "$TARBALL" "$TOP/agent/package.json" | sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
 [ "$in_version" = "$VERSION" ] || fail "the agent inside says it is version '${in_version:-unknown}', and the pin names $VERSION"
@@ -158,6 +162,8 @@ if [ "$VERIFY_ONLY" = 1 ]; then say "verified   RPi ALERT $TAG (nothing unpacked
 # ── 5. unpack ────────────────────────────────────────────────────────────────
 if [ -e "$OUT" ] && [ -n "$(ls -A "$OUT" 2>/dev/null)" ]; then cant "$OUT is not empty: give an empty or a new folder"; fi
 mkdir -p "$OUT"
-( umask 022; tar -xzf "$TARBALL" -C "$OUT" --strip-components=1 --no-same-owner )
+# Unpacked as the user running this, with that user's ordinary file modes:
+# nothing in the tarball decides who owns a file or what it may do.
+( umask 022; tar -xzf "$TARBALL" -C "$OUT" --strip-components=1 --no-same-owner --no-same-permissions )
 [ -f "$OUT/agent/bin/rpi-alert" ] || fail "the unpacked release has no agent/bin/rpi-alert"
 say "verified   RPi ALERT $TAG, unpacked into $OUT"
