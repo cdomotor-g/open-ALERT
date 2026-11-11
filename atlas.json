@@ -5,7 +5,7 @@
   "repo": "cdomotor-g/open-ALERT",
   "name": "open-ALERT",
   "tagline": "A configurator for ALERT and ALERT2 flood-warning sites: say what a site must do, see the hardware that fits, its costs and consequences.",
-  "about": "For anyone planning ALERT or ALERT2 field stations, repeaters or base stations. Each site goes from needs to requirements to hardware picked from a 252-part catalogue (open and closed, Raspberry Pi to industrial), then to a bill of materials, a power budget with battery and panel sized, labour and running costs, and the consequences of the choices. The Network tab adds sites up and checks that what field stations send, repeaters relay and bases receive actually meet. A static page with no server: state lives in the browser and in share links. The base station builder (build.html) goes deeper on a receiving base running RPi ALERT: how it fits together physically and in the code, which computer keeps up with how many channels, the SDR mounting, a bill with price ranges, lead times and suppliers, and the build steps.",
+  "about": "For anyone planning ALERT or ALERT2 field stations, repeaters or base stations. Each site goes from needs to requirements to hardware picked from a 263-part catalogue (open and closed, Raspberry Pi to industrial), then to a bill of materials, a power budget with battery and panel sized, labour and running costs, and the consequences of the choices. The Network tab adds sites up and checks that what field stations send, repeaters relay and bases receive actually meet. A static page with no server: state lives in the browser and in share links. The base station builder (build.html) goes deeper on a receiving base running RPi ALERT: how it fits together physically and in the code, which computer keeps up with how many channels, the SDR mounting, a bill with price ranges, lead times and suppliers, and the build steps.",
   "kind": "static web app (configurator)",
   "logo": "site/icon.svg",
   "site": "https://cdomotor-g.github.io/open-ALERT/",
@@ -84,7 +84,7 @@
     {
       "id": "catalogue",
       "name": "Hardware catalogue",
-      "what": "252 parts in six family files, each with price and its source, power, temperature, grade, openness and sources.",
+      "what": "263 parts in six family files, each with price and its source, power, temperature, grade, openness and sources.",
       "paths": [
         "site/data/"
       ],
@@ -184,7 +184,7 @@
     {
       "id": "hardware-catalogue",
       "name": "ALERT hardware catalogue",
-      "what": "Plain-JavaScript records of 252 parts with prices and their sources, power, grades and links, for costing ALERT sites.",
+      "what": "Plain-JavaScript records of 263 parts with prices and their sources, power, grades and links, for costing ALERT sites.",
       "component": "catalogue",
       "paths": [
         "site/data/"

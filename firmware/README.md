@@ -95,7 +95,8 @@ firmware/deb/build-deb.sh                                # downloads the pinned 
 firmware/deb/build-deb.sh --tarball F --sig S            # uses two files already here
 ```
 
-It needs `dpkg-deb`, `tar`, `gzip` and either OpenSSL 3 or Node.js; no compiler. The result is
+It needs `dpkg-deb`, `tar`, `gzip`, either OpenSSL 3 or Node.js, and `curl` for the download;
+no compiler. The result is
 `dist/open-alert-base_0.23.1+oa1_all.deb`, about 2.4 MB. The version is the agent's version,
 then `+oa` and this layer's own revision. `all` means one file for every kind of processor: the
 package is JavaScript and shell scripts. Built twice from the same files it is the same file,
@@ -170,7 +171,7 @@ service file tells it to run the agent as the user `rpi-alert` with these limits
 
 systemd gives a service an *exposure score* from 0 (most closed) to 10 (most open). This one
 scores **1.7** with the enterprise profile and **1.9** with the standard profile (the one extra
-capability), on systemd 255 and 257. RPi ALERT's own service on a Pi, which keeps `sudo`, is not
+capability), on systemd 252, 255 and 257. RPi ALERT's own service on a Pi, which keeps `sudo`, is not
 comparable and was not scored here.
 
 What is **not** installed, on purpose: no sudo rule, no "alert" maintenance account, no timer
@@ -331,18 +332,46 @@ passed. In order:
 
 Everything below was run on 11 November 2026 on one computer: a virtual machine with an ordinary
 64-bit PC processor (x86-64), Ubuntu 24.04, Docker 29. **It has no USB at all, so no radio stick,
-real or passed through, was involved in any of it.**
+real or passed through, was involved in any of it.** One run of `firmware/test/deb.sh` (started
+10:14 UTC, 16 minutes): **719 checks passed, none failed, 1 skipped.** After that run, what
+`audit` prints about the dashboard's reach and about where the agent calls out to was made
+plainer, and checks for it were added; the run is being repeated on the files as they are now,
+and this paragraph is updated when it ends.
 
-| What | Where | Result |
-|---|---|---|
-| The release check accepts the real v0.23.1 (from local files, and downloaded from GitHub) and refuses the 14 bad cases listed above | The test computer | Passed |
-| shellcheck on every shell script here | The test computer, shellcheck 0.9.0 | Nothing to report |
-| The package builds; a second build is the same file | The test computer | Passed: 2.4 MB |
-| lintian, Debian's package checker | The test computer | No errors; 7 warnings, none acted on (no manual pages, the 0640 mode of `env`, two release files with a script line but no run permission, and the like) |
-| Install with `apt`, files and owners, both profiles, the agent run as the service would run it with stand-ins, proxy on Node.js 18 and on Node.js 22.23, remove / reinstall / purge, the refusal beside RPi ALERT (part a) | Ubuntu 24.04 container | Passed, without the agent's own test suite — **the full run is being repeated; this table is updated when it ends** |
-| The firewall lock, tried from a second container (part b) | Ubuntu 24.04 container | Passed |
-| The real service under a real systemd, sandbox tried from inside (part c) | Ubuntu 24.04 (systemd 255) and Debian 13 (systemd 257) containers | Passed |
-| Parts a and b on Debian 13; everything on Debian 12; the agent's own test suite from the installed package | — | **Being run now** |
+The three systems, as the containers had them:
+
+| | Debian 13 | Ubuntu 24.04 | Debian 12 (not a target) |
+|---|---|---|---|
+| Node.js | 20.19.2 | 18.19.1 | 18.20.4 |
+| `rtl-sdr` | 2.0.2 | 2.0.1 | 0.6.0 — **does not know the RTL-SDR Blog V4 stick** |
+| The `undici` library beside Node.js | 7.3.0 | 5.26.3 | 5.15.0 |
+| systemd | 257 | 255 | 252 |
+| nftables | 1.1.3 | 1.0.9 | 1.0.6 |
+
+| What | Debian 13 | Ubuntu 24.04 | Debian 12 |
+|---|---|---|---|
+| `apt install ./the.deb`, everything it needs from the system's own packages; files, owners and modes; `dpkg --verify`; every installed agent file has the SHA-256 it has in the signed release | Passed | Passed | Passed |
+| The agent's own test suite from the installed files, as the service's user (30 of its 31 test files; the other tests the root helper, which is not installed) | 238 of 238 | 238 of 238 | 238 of 238 |
+| The agent started as the service file says, with stand-ins for a stick and for Flood-Net: the dashboard answers, decoded readings reach the stand-in | Passed | Passed | Passed |
+| Standard profile: port 80 with exactly one capability; the same service without the drop-in file is refused port 80 | Passed | Passed | Passed |
+| Enterprise profile: port 8080, no capability at all, checks in with Flood-Net as "report"; `web.bind` survives the agent rewriting its settings | Passed | Passed | Passed |
+| A web proxy that is the only way out, with a private certificate authority, `NO_PROXY`, with and without a password — on the system's own Node.js (the start-up file) | Passed | Passed | Passed |
+| The same on Node.js 22.23.4 (`NODE_USE_ENV_PROXY`); this Node.js was the test computer's own, not a Debian or Ubuntu package | Passed | Passed | Passed |
+| Remove keeps settings and data; reinstall leaves the settings byte for byte; purge deletes everything; refused beside RPi ALERT's own install | Passed | Passed | Passed |
+| systemd's checker (`systemd-analyze verify`) on both service files | Nothing to report | Nothing to report | Nothing to report |
+| Exposure score of the service (`systemd-analyze security`, from the file and from the running service) | 1.7 enterprise, 1.9 standard | 1.7, 1.9 | 1.7, 1.9 |
+| The firewall lock, tried from a second container: the dashboard's port open before, refused with the lock on, another user's port left alone, open again when the table is removed | Passed | Passed | Passed |
+| Under a real systemd in a container: the install starts the service; port 80 by the drop-in file; the service itself is refused writing in `/usr`, `/etc` and `/var`, can write its two folders, has its own `/tmp`, cannot read the proxy file; the agent arms systemd's watchdog; killed, it is restarted; the enterprise profile loads the firewall lock; an update over itself; remove and purge | Passed | Passed | Passed |
+| The kernel's device list for the running service | Skipped: this systemd keeps it where it cannot be listed | Listed: the standard pseudo-devices only. USB was not on it, because the test computer's kernel has no USB | As Ubuntu |
+
+Also, on the test computer itself:
+
+| What | Result |
+|---|---|
+| The release check accepts the real v0.23.1 — from local files, and downloaded from GitHub — and refuses the 14 bad cases listed under Testing | Passed |
+| shellcheck 0.9.0 on the 11 shell scripts here | Nothing to report |
+| The package builds; a second build is the same file | Passed: 2.4 MB, 5.9 MB installed |
+| lintian, Debian's package checker | No errors; 7 warnings, none acted on (no manual pages; the 0640 mode of `env`; a `systemctl` call in the install script; two files with a script line but no run permission, one of them the release's own; a udev rule without desktop-catalogue data) |
 
 ## What has not been tested
 

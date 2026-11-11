@@ -94,9 +94,10 @@ function apply(file) {
   else console.log('Settings were already as the profile has them.');
 }
 
+// Where a list of addresses points: "https://floodwarning.net", each once.
 function hostsOf(list) {
   const out = [];
-  for (const u of Array.isArray(list) ? list : []) { try { const h = new URL(u).host; if (!out.includes(h)) out.push(h); } catch (_) {} }
+  for (const u of Array.isArray(list) ? list : []) { try { const h = new URL(u).origin; if (!out.includes(h)) out.push(h); } catch (_) {} }
   return out;
 }
 

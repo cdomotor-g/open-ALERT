@@ -16,15 +16,32 @@
 //          figure is a guess.
 //   open   'open' | 'partial' | 'closed' — the hardware design.
 //
-// Decoding cost (`model`) is RPi ALERT's own measurements, from its
-// docs/hardware.md: a channel's work grows with the stick's window (sample
-// rate), and a burst's decode is about a second of a Pi 4 core. Platform
-// capacity is the catalogue's `hw.sdrCh` (channels at 960 kHz on that box,
-// scaled from a Pi 4's 8), turned into Pi 4 cores. Everything here is an
-// estimate to plan with; the agent measures the real figures on the box.
+// Decoding cost (`model`) is counted in Pi 4 cores: the work one of a
+// Raspberry Pi 4's four cores can do. The figures are RPi ALERT's own, read
+// from its notes on ONE Raspberry Pi 4 that was busy at the time (eight
+// channels and a screen), so they may read high; what a burst or an ALERT2
+// frame costs was timed on a PC and scaled (the hardware review's reports U2
+// and R9, in docs/hardware-review/research/). A computer's capacity is the
+// catalogue's `hw.sdrCh` ÷ 2, in Pi 4 cores (a Pi 4 is 8, so 4); its
+// one-core speed is that divided by its number of cores (`cores` on the
+// platform entry, or `hw.cores` in the catalogue, or read from `hw.cpu`),
+// because a channel is decoded on one core and cannot use more. No computer
+// but the Pi 4 has run the decoder: firmware/bench/open-alert-bench.js is how
+// to settle it on a real one.
 
 (function () {
   const RPI_HW = ['RPi ALERT hardware notes', 'https://github.com/cdomotor-g/RPi_ALERT/blob/main/docs/hardware.md'];
+  const RPI_BENCH = ['RPi ALERT roadmap: the Raspberry Pi 4\'s own figures (6%, 27% and 31% of a core a channel; 1.6 times that under load)', 'https://github.com/cdomotor-g/RPi_ALERT/blob/37fee8bc/docs/roadmap.md#L112-L113'];
+  const REVIEW_U2 = ['Hardware review, report U2: what the decoding costs, and where this model was wrong', 'https://github.com/cdomotor-g/open-ALERT/blob/main/docs/hardware-review/research/U2-decoder-cost-and-bench.md'];
+  const REVIEW_R9 = ['Hardware review, report R9: what ALERT2 will ask of a base station', 'https://github.com/cdomotor-g/open-ALERT/blob/main/docs/hardware-review/research/R9-alert2-demands.md'];
+  const REV = 'https://github.com/cdomotor-g/open-ALERT/blob/main/docs/hardware-review/research/';
+  const REVIEW_R1 = ['Hardware review, report R1: the audit of the Toradex Verdin and Mallow', REV + 'R1-toradex-verdin-mallow.md'];
+  const REVIEW_R2 = ['Hardware review, report R2: the audit of the Toradex Luna SL1680', REV + 'R2-toradex-luna-sl1680.md'];
+  const REVIEW_R5 = ['Hardware review, report R5: open-hardware boards', REV + 'R5-open-hardware-boards.md'];
+  const REVIEW_R6 = ['Hardware review, report R6: industrial Arm computers and gateways', REV + 'R6-industrial-arm-gateways.md'];
+  const REVIEW_R7 = ['Hardware review, report R7: small PCs with a TPM and Secure Boot', REV + 'R7-x86-boxes.md'];
+  const REVIEW_R8 = ['Hardware review, report R8: processor speeds against a Raspberry Pi 4', REV + 'R8-cpu-performance.md'];
+  const OA_BENCH = ['open-ALERT firmware/bench: the benchmark that measures a real computer', 'https://github.com/cdomotor-g/open-ALERT/tree/main/firmware/bench'];
   const RPI_HOW = ['RPi ALERT: how it works', 'https://github.com/cdomotor-g/RPi_ALERT/blob/main/docs/how-it-works.md'];
   const AU_STOCK = { d: [2, 7], text: 'stocked by Australian retailers' };
   const CORE = ['Core Electronics', 'https://core-electronics.com.au/'];
@@ -62,6 +79,7 @@
       'RTL-SDR Blog store': { ship: [0, 0], from: 'CN', note: 'Free economy post from its China warehouse: usually 2–4 weeks, up to 8; express costs extra.', src: [['RTL-SDR Blog store: shipping policy', 'https://www.rtl-sdr.com/buy-rtl-sdr-dvb-t-dongles/']], conf: 'high' },
       'Radio Parts': { ship: [12, 20], from: 'AU', note: 'Road freight by weight and zone from Melbourne: an estimate.', src: [['Radio Parts freight', 'https://radioparts.com.au/freight']], conf: 'low' },
       'City Technology': { ship: [15, 30], from: 'AU', note: 'Not published: an estimate.', src: [['City Technology: IS-50NX-C2', 'https://citytechnology.com.au/shop/is-50nx-c2-polyphaser-is-50nx-c2-125-1000mhz-dc-block-nf-to-nf-5041']], conf: 'low' },
+      'Pakronics': { ship: [10, 20], from: 'AU', note: 'Worked out at checkout from the postcode, by Australia Post: an estimate.', src: [['Pakronics BeagleY-AI page: shipping calculated at checkout by Australia Post', 'https://www.pakronics.com.au/products/beagley-ai-ss102991834']], conf: 'low' },
       'PB Tech Australia': { ship: [10, 20], from: 'AU', note: 'Not checked: an estimate.', src: [], conf: 'low' },
       'Strictly Ham': { ship: [15, 45], from: 'AU', note: 'eParcel, or a courier for an antenna over 1.05 m, quoted at checkout: an estimate.', src: [['Strictly Ham terms and conditions (shipping & delivery)', 'https://www.strictlyham.com.au/terms-and-conditions']], conf: 'low' },
       'Toradex webshop': { ship: [60, 150], from: 'CH', note: 'Express courier from Europe, charged at checkout and not published: an estimate. Businesses only; the buyer pays any import charges.', src: [['Toradex: how to order (search listing; the page refuses automated reads)', 'https://toradex.com/order-now/how-to-order']], conf: 'low' },
@@ -74,54 +92,108 @@
       src: [['Australian Border Force: import processing charges', 'https://www.abf.gov.au/importing-exporting-and-manufacturing/importing/cost-of-importing-goods/charges/import-processing-charge'], ['DHL Express Australia: customs services and fees', 'https://mydhl.express.dhl/au/en/ship/customs-services.html'], ['ATO: GST on low value imported goods', 'https://www.ato.gov.au/Business/International-tax-for-business/GST-on-imported-goods-and-services/GST-on-low-value-imported-goods/'], ['DHL AU customs forum answer: brokers A$115–180 (search listing)', 'https://www.dhl.com/discover/en-au/logistics-advice/import-export-advice/customs-declaration-when-importing-and-exporting-from-australia']] },
 
     // ── the decoding model ──────────────────────────────────────────────────
+    // Every figure is in Pi 4 cores (one of a Raspberry Pi 4's four cores = 1).
     model: {
-      // The windows a stick can take, how far apart its channels may be, and a
-      // channel's continuous decoding at each relative to 240 kHz (hardware.md).
-      // `fits` keeps 50 kHz in hand for the agent's tuning rules (the DC spike
+      // The windows a stick can take, how far apart its channels may be
+      // (`holds`, MHz), and what ONE channel costs between bursts in each:
+      //   pi4    Pi 4 cores, by RPi ALERT's own bench on the first base
+      //          station's Raspberry Pi 4 (its roadmap.md: "240 kHz 6%,
+      //          1.2 MHz 27%, 1.44 MHz 31% a channel") — `basis: 'bench'`.
+      //          Nobody wrote down a Pi 4 figure for the other three windows:
+      //          they are scaled from the nearest measured one in proportion
+      //          to `rel` (960 kHz from 1.2 MHz; 1.92 and 2.4 MHz from
+      //          1.44 MHz) — `basis: 'scaled'`. A second Pi 4 observation,
+      //          0.12 a channel at 960 kHz with bursts, disagrees with 0.22;
+      //          the higher is used (U2 §5, §7).
+      //   rel    the docs' own table relative to 240 kHz (hardware.md). It
+      //          matches a PC; the Pi 4's own ratios are steeper (4.5 and 5.2
+      //          where it says 3.7 and 4.1).
+      // `holds` keeps 50 kHz in hand for the agent's tuning rules (the DC spike
       // and a zero-IF tuner's mirror images): it reproduces the docs' own
       // examples — Flood-Net's four channels take 1.44 MHz, and 18 Bateson's
       // 151.425–151.5375 and 151.95–152.4625 take 960 kHz each.
       windows: [
-        { khz: 240, holds: 0.162, rel: 1 },
-        { khz: 960, holds: 0.74, rel: 3 },
-        { khz: 1200, holds: 0.93, rel: 3.7 },
-        { khz: 1440, holds: 1.12, rel: 4.1 },
-        { khz: 1920, holds: 1.51, rel: 5.1 },
-        { khz: 2400, holds: 1.89, rel: 6.3 },
+        { khz: 240, holds: 0.162, rel: 1, pi4: 0.06, basis: 'bench' },
+        { khz: 960, holds: 0.74, rel: 3, pi4: 0.22, basis: 'scaled' },
+        { khz: 1200, holds: 0.93, rel: 3.7, pi4: 0.27, basis: 'bench' },
+        { khz: 1440, holds: 1.12, rel: 4.1, pi4: 0.31, basis: 'bench' },
+        { khz: 1920, holds: 1.51, rel: 5.1, pi4: 0.39, basis: 'scaled' },
+        { khz: 2400, holds: 1.89, rel: 6.3, pi4: 0.48, basis: 'scaled' },
       ],
       margin: 0.05,
       maxPerStick: 8,
-      // Pi 4 cores: one channel in 240 kHz between bursts (the bench: two sticks
-      // of two channels took 0.49 of a core at 960 kHz, bursts and all); a
-      // burst's decode attempt; the screen dashboard (an estimate).
-      chCore240: 0.04,
-      burstCoreS: 1.0,
+      // One channel in a 240 kHz window between bursts: the unit for the part
+      // of a decoder's standing work that does not grow with the window
+      // (`contBase`, below). The same figure as the first window's `pi4`.
+      chCore240: 0.06,
+      // A busy computer. On the first base station's Pi 4, with every core
+      // working, each decoder took about 1.6 times its bench figure (the same
+      // lines of roadmap.md). That is documented for that one Pi 4 only — a PC
+      // running four decoders on four cores showed 1.13 to 1.22 (U2 §3.3) —
+      // so the page shows both ends: the bench alone, and 1.6 times it. Sums
+      // and verdicts use the high end.
+      loadFactor: [1, 1.6],
+      // ALERT2. Today every frame is tried as a legacy burst first and only
+      // then decoded as ALERT2 (each decoder's `a2S`, below). `a2DecodeS` is
+      // the ALERT2 decode alone: what a frame would cost once RPi ALERT skips
+      // the legacy try on a channel known to carry ALERT2 — planned in its
+      // roadmap, not shipped (U2 §5). Frames a minute on one channel:
+      //   today  the ALERT2 link heard in Brisbane, about 20 (U2 §3.4; Harris
+      //          County's 155 sites send about 31: R9 §5);
+      //   storm  half of a channel's half-second slots used — a judgement,
+      //          not a forecast (R9 §6.2);
+      //   full   every half-second slot used: the most the slots allow, and
+      //          the most one channel can ask of the software as shipped
+      //          (U2 §3.4, R9 §3.4).
+      a2DecodeS: 0.22,
+      a2Frames: { today: 20, storm: 60, full: 120 },
+      // The screen dashboard: RPi ALERT's notes call Chromium "half a Pi 4
+      // core on its own". At the first base station the load fell from 4.7 to
+      // 2.8 with the screen off, so this may be low.
       kioskCore: 0.5,
-      safe: 0.7,            // plan to use no more than 70% of the CPU
-      mbPerChannel: 30,
-      src: [RPI_HW],
+      safe: 0.7,            // the whole computer: plan to use no more than 70% of it
+      chSafe: 0.7,          // one channel: no more than 70% of one core — it has only the one
+      // Buying with headroom for ALERT2: at least four cores, each at least
+      // 2.5 times a Pi 4 core (U2 §5, R9 §6.3).
+      rule: { cores: 4, oneCore: 2.5 },
+      coresDefault: 4,      // when neither the platform entry nor the catalogue says how many
+      mbPerChannel: 43,     // measured on a PC, 1.44 MHz window (U2 §3.3); RPi ALERT's notes say about 40
+      mbAgent: 52,          // the agent with no decoders (the same measurement)
+      src: [RPI_HW, RPI_BENCH, REVIEW_U2, REVIEW_R9, OA_BENCH],
     },
 
-    // RPi ALERT's decoders (Flood-Net's alert-dsp.js, #259): `cont` scales the
-    // work between bursts with the window, `contBase` adds a part that does
-    // not grow with it, `burst` a burst's decode; `burstFilterS` is the seconds
-    // of a channel filtered per burst when filtering happens only around bursts
-    // — RPi ALERT 0.19's watch filters from 0.8 s before a burst to half a
-    // second after it, about 1.7 s with the burst, at lean's rate (0.75 of the
-    // full decoder's): 1.3. Asleep, a
-    // channel costs 0.003 of a core at 240 kHz and 960 kHz and 0.005 at
-    // 2.4 MHz on the bench where filtering always costs 0.011, 0.036 and
-    // 0.074 (RPi ALERT's own measurement, lib/devices/sdr-bench.js): about
-    // 0.18 + 0.02 × the window's cost, in the full decoder's 240 kHz units.
+    // RPi ALERT's decoders (Flood-Net's alert-dsp.js, #259), in Pi 4 cores:
+    //   cont          the share of the window's between-bursts figure (`pi4`)
+    //                 this decoder pays all the time;
+    //   contBase      a standing part that does not grow with the window, in
+    //                 240 kHz channels (`chCore240`);
+    //   burstS        seconds of a Pi 4 core to decode one legacy burst;
+    //   a2S           seconds for one ALERT2 frame: the legacy try, then the
+    //                 ALERT2 decode;
+    //   burstFilterS  when a channel is filtered only around bursts, the
+    //                 seconds of window filtered for each burst — from 0.8 s
+    //                 before it to half a second after it, about 1.7 s with
+    //                 the burst.
+    // Where they come from. Between bursts, the Pi 4's bench figures were
+    // taken on the Full decoder (agent 0.15); the Lean default measured within
+    // a tenth of it on a PC's bench (U2 §3.2), so both pay the whole figure.
+    // RPi ALERT's notes say "a second or so" for a Full burst on a Pi 4 and a
+    // third of that for Lean (33–34%, measured on the first base station's
+    // Pi 4); timed on a PC and scaled 4 to 5 times, a burst is about 1.2 s
+    // Full, 0.37 s Lean and 0.2 s Light, and an ALERT2 frame about 1.3 s,
+    // 0.6 s and 0.45 s (U2 §2.3 and §5; R9 §6.1). Asleep (filtering only
+    // around bursts) a channel costs 0.003 of a PC's core at 240 kHz and
+    // 0.006 at 2.4 MHz where filtering always costs 0.013 and 0.083 (U2
+    // §3.2): about 0.18 of a 240 kHz channel plus 0.04 of the window's cost.
     decoders: [
-      { id: 'today', short: 'Full decoder', name: 'Full decoder (RPi ALERT 0.15–0.16, or Decoder: Full)', cont: 1, burst: 1, status: 'current',
-        note: 'Every channel converts and copies the stick\'s whole window sample by sample, and a burst\'s decode re-filters it for each of 45 guesses.' },
-      { id: 'filter-once', short: 'Lean (0.17)', name: 'Lean — RPi ALERT 0.17\'s default', cont: 0.75, burst: 0.34, status: 'current',
-        note: 'A burst is filtered once per carrier guess and nudged after: at the first base station to compare, 14 of 11,628 live bursts read differently from the full decoder (0.12%), in 33–34% of its time. Between bursts the rings are filled a block at a time and only a stick\'s first channel works out the spectrum: a quarter to two fifths less, measured.' },
-      { id: 'lean', short: 'Around bursts (0.18)', name: 'Lean, filtering only around bursts — RPi ALERT 0.18, Between bursts', cont: 0.02, contBase: 0.18, burst: 0.34, burstFilterS: 1.3, status: 'checking',
-        note: 'Between bursts each channel keeps the stick\'s last 1.4 s as bytes and looks at its channel 25 times a second; it filters only from 0.8 s before something shows to half a second after, so the squelch and the decoder see the samples they always did. In Flood-Net\'s tests: the same readings and the same bursts, every time. Asleep, a channel costs a quarter of filtering always at 240 kHz and a fifteenth at 2.4 MHz. In RPi ALERT 0.18 behind a setting (default off) with a Check mode; 0.19 shortens its time awake a third. Its first live check (the first base station, November 2026) found it misses some of the weakest bursts: on one channel, readings just over the squelch that filtering always decoded. So it stays off by default and a Pi 4 keeps filtering always: count it as the way a small computer fits a site, at the cost of some weak bursts.' },
-      { id: 'light', short: 'Light, around bursts (0.19)', name: 'Light decoder, filtering only around bursts — RPi ALERT 0.19', cont: 0.02, contBase: 0.18, burst: 0.18, burstFilterS: 1.3, status: 'checking',
-        note: 'As Around bursts, and each burst filtered down to 48 kHz once before its nine carrier guesses: a burst\'s decode in about half of lean\'s time (65 ms against 122 on the bench), as many true readings in 600 synthesised bursts and the same on every real one. In RPi ALERT 0.19 as Decoder: Light, with Compare light to prove it at the first base station.' },
+      { id: 'today', short: 'Full decoder', name: 'Full decoder (RPi ALERT 0.15–0.16, or Decoder: Full)', cont: 1, burstS: 1.2, a2S: 1.3, status: 'current',
+        note: 'Every channel converts and copies the stick\'s whole window sample by sample, and a burst\'s decode re-filters it for each of 45 guesses: about 1.2 seconds of a Pi 4 core a burst.' },
+      { id: 'filter-once', short: 'Lean (0.17)', name: 'Lean — RPi ALERT\'s default since 0.17', cont: 1, burstS: 0.37, a2S: 0.6, status: 'current',
+        note: 'A burst is filtered once per carrier guess and nudged after: at the first base station to compare, 14 of 11,628 live bursts read differently from the full decoder (0.12%), in 33–34% of its time. RPi ALERT\'s notes also put the work between bursts a quarter lower since 0.17; a like-for-like run on a PC found the two within a tenth of each other and nobody has measured it on a Pi 4, so no saving is counted there.' },
+      { id: 'lean', short: 'Around bursts (0.18)', name: 'Lean, filtering only around bursts — RPi ALERT 0.18, Between bursts', cont: 0.04, contBase: 0.18, burstS: 0.37, a2S: 0.6, burstFilterS: 1.7, status: 'checking',
+        note: 'Between bursts each channel keeps the stick\'s last 1.4 s as bytes and looks at its channel 25 times a second; it filters only from 0.8 s before something shows to half a second after. Asleep, a channel costs four times less than filtering always at 240 kHz and 14 times less at 2.4 MHz (measured on a PC). In RPi ALERT since 0.18 behind a setting, off by default: its first live check (the first base station, November 2026) found it misses some of the weakest bursts — on one channel, readings just over the squelch that filtering always decoded — and that check has never compared ALERT2 frames. So a Pi 4 keeps filtering always, and no sizing should count on this: it is the way a small computer might fit a site, at the cost of some weak bursts. It saves much less in heavy traffic: at 20 bursts a minute a channel is awake for more than half of every minute (20 × 1.7 s).' },
+      { id: 'light', short: 'Light, around bursts (0.19)', name: 'Light decoder, filtering only around bursts — RPi ALERT 0.19', cont: 0.04, contBase: 0.18, burstS: 0.2, a2S: 0.45, burstFilterS: 1.7, status: 'checking',
+        note: 'As Around bursts, and each burst filtered down to 48 kHz once before its nine carrier guesses: a burst\'s decode in about half of lean\'s time (65 ms against 122 on a PC), as many true readings in 600 synthesised bursts and the same on every real one. In RPi ALERT since 0.19 as Decoder: Light, with Compare light to prove it at the first base station: not yet checked in the field.' },
     ],
 
     // Channels to offer. The first four are the ones Flood-Net's stations use
@@ -150,7 +222,7 @@
         id: 'rpi-3b-plus', ref: 'rpi-3b-plus', short: 'Pi 3B+', kind: 'board',
         aud: [64.79, 83.23], gst: true, lead: { d: [2, 7], text: 'in stock at Core Electronics (A$64.79) and Little Bird (A$83.23), November 2026' }, where: [LB, CORE],
         supply: '5v', usb: 4, m2: false, eth: 1, wifi: true, board: [85, 56], install: 'pi',
-        fit: 'Half a Pi 4, and since RPi ALERT 0.18–0.19 enough for a whole site: four or five channels on a busy day at under a fifth of its CPU, filtering only around bursts. 1 GB holds the decoders and the screen dashboard; leave the screen off on a heavy site. Micro-USB power: a good 2.5 A supply.',
+        fit: 'Half a Pi 4 (0.5), and each core half a Pi 4 core: the builder\'s sums put Flood-Net\'s four channels at 72–109% of it on a busy day, with one channel over a whole core, so it is at its limit on today\'s default decoder. Fine for a small legacy-ALERT site or the bench. 1 GB holds the decoders and the screen dashboard; leave the screen off. Micro-USB power: a good 2.5 A supply.',
         src: [RPI_HW], conf: 'medium',
       },
       {
@@ -177,48 +249,126 @@
         src: [['Revolution Pi Connect 5', 'https://revolutionpi.com/en/revpi-connect-5']], conf: 'low',
       },
       {
-        id: 'toradex-verdin-am62-mallow', ref: 'toradex-verdin-am62-mallow', short: 'AM62 Quad + Mallow', kind: 'module',
-        aud: [680.47, 680.47], gst: false,
-        lead: { d: [5, 91], text: '3–5 business days when element14 holds UK stock; 13 weeks from the factory when it doesn\'t' },
-        where: [E14, ['Toradex webshop (businesses only, about a third of the price)', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62']],
-        supply: 'wide', usb: 2, m2: 'b-key', eth: 1, wifi: true, board: [100, 72], install: 'verdin', parts: 'module 00761200 (element14 4852670) · Mallow 01611102 (element14 4759350) · heatsink 23111001 (Toradex or Mouser; element14 Australia doesn\'t stock it)',
-        fit: 'TI silicon on a Swiss module with availability to 2033+, on a carrier whose Altium files are published — the best base for an open custom carrier. But four Cortex-A53 cores are about half a Pi 4: it needs the faster decoder for more than a couple of channels.',
-        src: [['Toradex Verdin AM62 (prices, availability)', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], ['element14: Mallow carrier', 'https://au.element14.com/toradex/01611102/carrier-board-mallow/dp/4759350'], ['Mallow carrier board datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf']], conf: 'medium',
+        id: 'onlogic-cl260', ref: 'onlogic-cl260', short: 'OnLogic CL260', kind: 'box',
+        aud: [929, 929], gst: false, lead: { d: [14, 84], text: 'Not published: OnLogic sells direct from the US and the pages read show no lead time. Ask when you order. A wide guess' },
+        where: [['OnLogic (direct; no Australian distributor found)', 'https://www.onlogic.com/']],
+        supply: 'wide', usb: 6, m2: 'nvme', eth: 2, wifi: false, board: [170, 120], install: 'package',
+        parts: 'OnLogic Cabrio CL260, N150, 8 GB, 128 GB (from US$641); ask OnLogic for the price delivered to Australia',
+        fit: 'FIRST CHOICE for a 12 V or 24 V site. An N150 fanless PC: about three Pi 4s, each core about three Pi 4 cores, so it meets the ALERT2 buying rule on paper. 12–24 V DC on a terminal block runs from a site battery with no converter; a TPM 2.0; Ubuntu 24.04 offered by the maker; 0–50 °C. The price is the list price from the US in January 2026, converted at A$1 = US$0.69: check it with OnLogic.',
+        src: [['CNX Software: OnLogic CL260 (TPM 2.0, 12–24 V terminal block, 0–50 °C, from US$641)', 'https://www.cnx-software.com/2026/01/21/onlogic-cl260-fanless-intel-n150-n250-industrial-mini-pc-offers-rs232-rs485-terminal-block-12-24v-dc-input/'], REVIEW_R7], conf: 'low',
       },
       {
-        id: 'toradex-verdin-am62-dual-mallow', ref: 'toradex-verdin-am62-dual-mallow', short: 'AM62 Dual + Mallow', kind: 'module',
-        aud: [512.28, 534.15], gst: false,
-        lead: { d: [5, 91], text: '3–5 business days when element14 holds UK stock; 13 weeks from the factory when it doesn\'t' },
-        where: [E14, ['Toradex webshop (businesses only, about a third of the price)', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62']],
-        supply: 'wide', usb: 2, m2: 'b-key', eth: 1, wifi: false, board: [100, 72], install: 'verdin', parts: 'module 00741201 (element14 4759329, listed as 00741200) · Mallow 01611102 · heatsink 23111001',
-        fit: 'The cheaper AM62: half the Quad\'s CPU, no Wi-Fi. With RPi ALERT 0.17\'s lean decoder it carries Flood-Net\'s four channels on a busy day, at about two thirds of its CPU; a site that hears a whole region wants the Quad.',
-        src: [['Toradex Verdin AM62 (prices, availability)', 'https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62'], ['element14: Mallow carrier', 'https://au.element14.com/toradex/01611102/carrier-board-mallow/dp/4759350'], ['Mallow carrier board datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf']], conf: 'medium',
+        id: 'lenovo-thinkedge-se10n-gen2', ref: 'lenovo-thinkedge-se10n-gen2', short: 'ThinkEdge SE10n Gen2', kind: 'box',
+        aud: [null, null], gst: true, lead: { d: [14, 84], text: 'By quote: no Australian price or lead time found. A wide guess' },
+        where: [['Lenovo Australia, or a Lenovo partner: ask for a quote', 'https://www.lenovo.com/au/en/'], ['Lenovo specification sheet (PSREF)', 'https://psref.lenovo.com/syspool/Sys/PDF/ThinkEdge/ThinkEdge_SE10n_Gen2/ThinkEdge_SE10n_Gen2_Spec.pdf']],
+        supply: 'mains', usb: 6, m2: 'nvme', eth: 2, wifi: false, board: [170, 120], install: 'package',
+        parts: 'Lenovo ThinkEdge SE10n Gen2: the N150 model (0–50 °C) for a cabinet; ask for the 65 W 20 V adapter and the three-year on-site warranty',
+        fit: 'FIRST CHOICE where IT wants a brand it already buys. A fanless DIN-rail PC on the N150 (or an eight-core Core 3 N355), a discrete TPM 2.0 and Secure Boot, certified by the makers of Ubuntu and Red Hat, with a three-year on-site warranty option. Power is a 20 V adapter, so a 12 V site needs a converter. Two versions: 0–40 °C and 0–50 °C (needs 0.7 metres a second of air flow). The speed shown is the N150\'s; the N355 is faster.',
+        src: [['Lenovo ThinkEdge SE10n Gen2 specification sheet (PSREF, 22 October 2026)', 'https://psref.lenovo.com/syspool/Sys/PDF/ThinkEdge/ThinkEdge_SE10n_Gen2/ThinkEdge_SE10n_Gen2_Spec.pdf'], REVIEW_R7], conf: 'medium',
       },
       {
-        id: 'toradex-luna-sl1680', ref: 'toradex-luna-sl1680', short: 'Luna SL1680', kind: 'board',
-        aud: [210.14, 255], gst: false,
-        lead: { d: [7, 35], text: 'Toradex\'s webshop, by courier from abroad; it shows no stock or lead time and no Australian distributor lists it — an estimate' },
-        where: [['Toradex webshop (US$145 for one)', 'https://www.toradex.com/single-board-computers/luna-sl1680']],
-        supply: '5v5a', usb: 4, m2: false, eth: 1, wifi: true, board: [85, 56], install: 'luna', parts: 'Luna SBC SL1680 Quad 4GB Wi-Fi / Bluetooth ET, Toradex 0301 (03011000)',
-        mainsNote: 'A 5 V supply good for 5 A — Toradex\'s figure — on a USB-C lead, or 5 V into the 40-pin header. The Luna doesn\'t negotiate USB-PD (its datasheet), so a phone or Pi 5 charger may hold it to 3 A.', mainsAud: [45, 75],
-        fit: 'A Pi-sized Toradex board: four Cortex-A73 cores at 2.1 GHz — a little more than a Pi 4, about 1.1 times, scaled by clock (no benchmarks published yet) — 4 GB, 16 GB eMMC, a battery clock, four USB 3 ports, −25 to +85 °C, about US$145. New in 2026 and untested with RPi ALERT: it comes with Torizon OS, so RPi ALERT runs in a Debian container, as on the Verdin. 5 V only, like a Pi.',
-        src: [['Toradex: Luna SL1680', 'https://www.toradex.com/single-board-computers/luna-sl1680'], ['Luna SL1680 datasheet (preliminary)', 'https://docs.toradex.com/118084-luna_sl1680_datasheet.pdf'], ['Luna SL1680 getting started', 'https://docs.toradex.com/118333-luna_sl1680_sbc_getting_started.pdf']], conf: 'low',
+        id: 'protectli-vault-vp2430', ref: 'protectli-vault-vp2430', short: 'Protectli VP2430', kind: 'box',
+        aud: [null, null], gst: true, lead: { d: [14, 84], text: 'No Australian stockist found: ask Protectli for a price and a date delivered to Australia. A wide guess' },
+        where: [['Protectli (direct; no Australian stockist found)', 'https://ca.protectli.com/product/vp2430/']],
+        supply: 'mains', usb: 6, m2: 'nvme', eth: 4, wifi: false, board: [144, 143], install: 'package',
+        parts: 'Protectli Vault VP2430 (N150) with the optional TPM 2.0; the page lists C$649, which the site cannot convert',
+        fit: 'The pick if open start-up firmware matters most: a fanless N150 box (about three Pi 4s) running coreboot, Protectli\'s open-source start-up firmware, with an optional TPM 2.0, four 2.5 Gigabit Ethernet ports, −10 to +50 °C. 12 V on a power jack only, so a battery site needs a regulated supply. A small vendor, with no Australian stockist found.',
+        src: [['Protectli: Vault VP2430', 'https://ca.protectli.com/product/vp2430/'], REVIEW_R7], conf: 'medium',
       },
       {
         id: 'mini-pc-n150', ref: 'mini-pc-n150', short: 'N150 mini PC', kind: 'box',
-        aud: [230, 350], gst: true, lead: { d: [2, 10], text: 'Australian online retailers' },
+        aud: [230, 350], gst: true, lead: { d: [2, 10], text: 'Australian online retailers; stock not checked' },
         where: [['Mwave', 'https://www.mwave.com.au/'], ['Amazon Australia', 'https://www.amazon.com.au/']],
-        supply: 'mains', usb: 4, m2: 'nvme', eth: 1, wifi: true, board: [120, 115], install: 'debian',
-        fit: 'Three times a Pi 4 with an SSD, for the price of a Pi 5 kit. Office temperatures, a fan, and a model that changes every year — fine in a comms room or for the server edition.',
-        src: [], conf: 'low',
+        supply: 'mains', usb: 4, m2: 'nvme', eth: 1, wifi: true, board: [120, 115], install: 'package',
+        fit: 'THE CHEAPEST WAY TO START, for the bench and an air-conditioned room only: about three Pi 4s (range 2.4–4.5; the benchmarks disagree) with each core about three Pi 4 cores, so it meets the ALERT2 buying rule on paper. Consumer brands rated 0–35 or 40 °C, with a fan, a model that changes every year, and last in a reviewer\'s ranking for an IT review. Prove the package on it, then buy a fanless box with a TPM for the site.',
+        src: [REVIEW_R7, REVIEW_R8], conf: 'low',
+      },
+      {
+        id: 'lenovo-m920q-tiny-refurb', ref: 'lenovo-m920q-tiny-refurb', short: 'Refurbished M920q Tiny', kind: 'box',
+        aud: [320, 322], gst: true, lead: { d: [2, 10], text: 'Australian refurbishers (PB Tech, Reboot IT); stock not read' },
+        where: [['PB Tech Australia', 'https://www.pbtech.com/product/EXWKSLEN0091060/Lenovo-Think-Center-M920Q-Intel-Core-i5-8500T-Tiny'], ['Reboot IT', 'https://reboot-it.com.au/products/lenovo-m920q-tiny-i5-8500t-2-1ghz-8gb-256gb-ssd-w11p-pc-1yr-wty']],
+        supply: 'mains', usb: 6, m2: 'nvme', eth: 1, wifi: false, board: [179, 183], install: 'package',
+        fit: 'CHEAP, WITH A BRAND IT KNOWS: an ex-lease Core i5-8500T "tiny", about A$320 with 8 GB and an SSD. Six cores and the fastest here by memory only (about four Pi 4 cores a core: unverified). Has a fan, office temperatures, a one-year warranty at best. Also the easiest to explain to a reviewer who already buys Lenovo.',
+        src: [REVIEW_R7, REVIEW_R8], conf: 'low',
+      },
+      {
+        id: 'compulab-fitlet3', ref: 'compulab-fitlet3', short: 'CompuLab fitlet3', kind: 'box',
+        aud: [null, null], gst: true, lead: { d: [14, 84], text: 'By quote through Metromatics (Brisbane office); no lead time found. A wide guess' },
+        where: [['Metromatics (Brisbane office): ask for a quote', 'https://metromatics.com.au/product/fanless-industrial-pc-fitlet3/']],
+        supply: 'wide', usb: 6, m2: 'nvme', eth: 2, wifi: false, board: [133, 100], install: 'package',
+        fit: 'FOR HOT CABINETS: fanless, −40 to +85 °C, 7–42 V DC on a locking plug, Intel\'s built-in TPM and an optional TPM 2.0 chip. About 1.8 Pi 4s: fast enough for today\'s four channels, but each core is about 1.8 Pi 4 cores, short of the ALERT2 rule of 2.5. Elkhart Lake is an older Intel generation than the N150.',
+        src: [['Metromatics: fitlet3 (Australian seller; quote only)', 'https://metromatics.com.au/product/fanless-industrial-pc-fitlet3/'], REVIEW_R7, REVIEW_R8], conf: 'medium',
       },
       {
         id: 'fanless-industrial-x86', ref: 'fanless-industrial-x86', short: 'Fanless industrial x86', kind: 'box',
         aud: [900, 2500], gst: false, lead: { d: [10, 42], text: 'configured to order by OnLogic, Advantech or a distributor; an estimate' },
         where: [['OnLogic', 'https://www.onlogic.com/'], ['Advantech Australia', 'https://www.advantech.com/en-au']],
-        supply: 'wide', usb: 4, m2: 'nvme', eth: 2, wifi: false, board: [170, 120], install: 'debian',
-        fit: 'Sealed, wide DC input, industrial temperature, five years and more per model, nothing that says Raspberry Pi. Five to ten times the price of a Pi.',
-        src: [['OnLogic Karbon', 'https://www.onlogic.com/computers/industrial/karbon/']], conf: 'low',
+        supply: 'wide', usb: 4, m2: 'nvme', eth: 2, wifi: false, board: [170, 120], install: 'package',
+        fit: 'A mid-range fanless industrial PC of the OnLogic Karbon or Advantech ARK class: sealed, wide DC input, industrial temperature, five years and more per model, nothing that says Raspberry Pi. About two and a half Pi 4s and a core about 2.5 Pi 4 cores: it meets the ALERT2 rule. Five to ten times the price of a Pi. A general entry: the named boxes above have better sources.',
+        src: [['OnLogic Karbon', 'https://www.onlogic.com/computers/industrial/karbon/'], REVIEW_R7], conf: 'low',
+      },
+      {
+        id: 'moxa-uc-4400a', ref: 'moxa-uc-4400a', short: 'Moxa UC-4400A', kind: 'box',
+        aud: [null, null], gst: true, lead: { d: [14, 84], text: 'By quote through IP Trading or Colterlec; the secure model is made to order. No lead time found. A wide guess' },
+        where: [['IP Trading: request a quote (an authorised Moxa partner)', 'https://www.iptrading.com.au/products/moxa-uc-4410a-t-arm-cortex-a53-quad-core-1-6-ghz-industrial-computer-2-ethernet-2-serial-1-can-4-di-4-do-40-to-75-c-lte-5g-wi-fi-6e'], ['Colterlec (Moxa\'s accredited Australian distributor; 1300 36 26 26)', 'https://colterlec.com.au/']],
+        supply: 'wide', usb: 1, m2: false, eth: 2, wifi: false, board: [150, 105], install: 'package',
+        parts: 'Moxa UC-4400A ordered with Moxa Industrial Linux 4 Secure (the IEC 62443-4-2 Security Level 2 model, Moxa\'s statement), and a powered USB hub for a second stick',
+        fit: 'THE CERTIFIED INDUSTRIAL GATEWAY: a TPM, secure boot, Debian 13-based Moxa Industrial Linux 4 Secure patched to 2035 and a five-year warranty. About 0.65 of a Pi 4: a small legacy-ALERT site, not ALERT2 growth. ONE USB 2.0 port, so two sticks need a powered hub. Ask for the Secure model by name: the certified option is made to order.',
+        src: [['Moxa UC-4400A series', 'https://moxa.com/Products/INDUSTRIAL-COMPUTING/Arm-Based-Computers/UC-4400A-Series'], REVIEW_R6], conf: 'medium',
+      },
+      {
+        id: 'beagley-ai', ref: 'beagley-ai', short: 'BeagleY-AI', kind: 'board',
+        aud: [149.95, 155.88], gst: true, lead: { d: [7, 14], text: 'Pakronics, in stock: "ships in 7 to 10 days" (its page, 11 November 2026)' },
+        where: [['Pakronics', 'https://www.pakronics.com.au/products/beagley-ai-ss102991834'], ['Core Electronics', 'https://core-electronics.com.au/beagley-ai-open-source-development-board-4-tops.html']],
+        supply: '5v', usb: 4, m2: false, eth: 1, wifi: false, board: [85, 56], install: 'package',
+        fit: 'OPEN HARDWARE (OSHWA-certified) and in stock in Australia: four USB 3 ports, 4 GB, about half a Pi 4. microSD only, USB-C power, no industrial rating: a bench board and a small legacy-ALERT site, not ALERT2 growth. Runs BeagleBoard.org\'s own Debian. The hardest class to take through an IT review.',
+        src: [['Pakronics: BeagleY-AI', 'https://www.pakronics.com.au/products/beagley-ai-ss102991834'], REVIEW_R5], conf: 'medium',
+      },
+      {
+        id: 'beagleplay', ref: 'beagleplay', short: 'BeaglePlay', kind: 'board',
+        aud: [219.95, 266.95], gst: true, lead: { d: [7, 21], text: 'Little Bird: none in its Sydney stock, dispatch estimated 17–23 November 2026 (its page, 11 November)' },
+        where: [['Little Bird Electronics', 'https://littlebirdelectronics.com.au/products/beagleplay'], ['Core Electronics (price from a search listing; its page refuses automated reads)', 'https://core-electronics.com.au/beagleplay.html'], ['Robot Gear', 'https://www.robotgear.com.au/Product.aspx/Details/11382-BeaglePlay']],
+        supply: '5v', usb: 1, m2: false, eth: 1, wifi: false, board: [85, 56], install: 'package',
+        fit: 'OPEN HARDWARE with 16 GB of eMMC: the same TI AM62 chip as the Verdin, so about half a Pi 4. ONE USB host port, so more than one stick needs a powered hub. Its chip is the general-purpose kind and can never do secure boot. Runs BeagleBoard.org\'s own Debian.',
+        src: [['Little Bird: BeaglePlay', 'https://littlebirdelectronics.com.au/products/beagleplay'], REVIEW_R5], conf: 'medium',
+      },
+      {
+        id: 'toradex-verdin-imx95-mallow', ref: 'toradex-verdin-imx95-mallow', short: 'Verdin iMX95 + Mallow', kind: 'module',
+        aud: [655.87, 655.87], gst: false,
+        lead: { d: [7, 98], text: 'Toradex dispatches within 4 working days when it has stock, then express courier (freight and transit time are shown only after login). A distributor\'s factory lead time on a Verdin is 12–14 weeks' },
+        where: [['Toradex webshop (businesses only; US$452 a set)', 'https://www.toradex.cn/en/computer-on-modules/verdin-arm-family/nxp-imx95']],
+        supply: 'wide', usb: 2, m2: 'b-key', eth: 1, wifi: false, board: [100, 72], cores: 6, install: 'verdin',
+        parts: 'module Hexa 4GB ET, Toradex 0227 · Mallow 01611102 · heatsink 23111101',
+        fit: 'IF STAYING WITH TORADEX: the Verdin iMX95 Hexa, not the AM62. Six newer cores (about 1.1 Pi 4s, 0.75 of a Pi 4 core each: an estimate nobody has measured), USB 3 and PCIe on Mallow, supply to 2039 for the module. The datasheet is still preliminary and its power use is "TBD". Torizon OS with open-ALERT\'s container with no privileges. Still under the ALERT2 rule.',
+        src: [['Toradex Verdin iMX95 (Toradex\'s China-domain site, which allowed reading)', 'https://www.toradex.cn/en/computer-on-modules/verdin-arm-family/nxp-imx95'], REVIEW_R1, REVIEW_R8], conf: 'low',
+      },
+      {
+        id: 'toradex-verdin-am62-mallow', ref: 'toradex-verdin-am62-mallow', short: 'AM62 Quad + Mallow (not recommended)', kind: 'module',
+        aud: [610.22, 727], gst: false,
+        lead: { d: [7, 98], text: 'Toradex dispatches within 4 working days when it has stock, then express courier (freight and transit time are shown only after login). A distributor\'s factory lead time is 12–14 weeks (26 on one listing)' },
+        where: [['Toradex webshop (businesses only; US$421 a set)', 'https://www.toradex.cn/en/computer-on-modules/verdin-arm-family/ti-am62'], ['element14 Australia (its prices are stale and its listing mistitled: check with the seller)', 'https://au.element14.com/toradex/761200/com-2ghz-32gb-arm-cortex-a72-r5f/dp/4852670'], ['Arrow Australia (Toradex\'s listed distributor; no price found)', 'https://www.arrow.com/en/manufacturers/t/toradex-ag.html'], ['Mouser Australia', 'https://au.mouser.com/c/?m=Toradex']],
+        supply: 'wide', usb: 2, m2: 'b-key', eth: 1, wifi: true, board: [100, 72], install: 'verdin', parts: 'module 00761200 · Mallow 01611102 · heatsink 23111101 (the AM62\'s own: the old 23111001 does not fit it)',
+        fit: 'NOT RECOMMENDED. TI silicon on a Swiss module with supply to 2033 (seven years), but four Cortex-A53 cores are about half a Pi 4 (0.5, range 0.45–0.6, from published benchmarks): four channels on a busy day take 72–109% of it and one channel 109% of a core, so it fails both ways. With an AM62, Mallow\'s two USB sockets share one USB 2.0 bus and its M.2 slot has no PCIe. US$421 a set: about A$750–800 inc GST landed through a distributor. Secure boot is still early access.',
+        src: [['Toradex Verdin AM62: prices and 2033+ supply (Toradex\'s China-domain site, which allowed reading)', 'https://www.toradex.cn/en/computer-on-modules/verdin-arm-family/ti-am62'], ['Toradex Mallow carrier board datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf'], REVIEW_R1, REVIEW_R8], conf: 'medium',
+      },
+      {
+        id: 'toradex-verdin-am62-dual-mallow', ref: 'toradex-verdin-am62-dual-mallow', short: 'AM62 Dual + Mallow (not recommended)', kind: 'module',
+        aud: [465.65, 512], gst: false,
+        lead: { d: [7, 98], text: 'Toradex dispatches within 4 working days when it has stock, then express courier (freight and transit time are shown only after login). A distributor\'s factory lead time is 12–14 weeks' },
+        where: [['Toradex webshop (businesses only; US$321 a set)', 'https://www.toradex.cn/en/computer-on-modules/verdin-arm-family/ti-am62'], ['element14 Australia (its prices are stale: check with the seller)', 'https://au.element14.com/toradex/00741200/com-1-4ghz-1gb-arm-cortex-a53/dp/4759329']],
+        supply: 'wide', usb: 2, m2: 'b-key', eth: 1, wifi: false, board: [100, 72], install: 'verdin', parts: 'module 00741201 (element14 lists the previous revision, 00741200) · Mallow 01611102 · heatsink 23111101',
+        fit: 'NOT RECOMMENDED. Half the Quad\'s CPU and no Wi-Fi: the builder\'s sums put Flood-Net\'s four channels at 144–218% of it on a busy day. Overloaded, and no cheaper for the speed. For a small legacy-ALERT site a Pi 3B+ does the same for a fraction of the price.',
+        src: [['Toradex Verdin AM62: prices (Toradex\'s China-domain site)', 'https://www.toradex.cn/en/computer-on-modules/verdin-arm-family/ti-am62'], REVIEW_R1, REVIEW_R8], conf: 'medium',
+      },
+      {
+        id: 'toradex-luna-sl1680', ref: 'toradex-luna-sl1680', short: 'Luna SL1680 (comparison only)', kind: 'board',
+        aud: [210.14, 210.14], gst: false,
+        lead: { d: [7, 35], text: 'Toradex\'s webshop, by courier from abroad; it shows no stock or lead time and no Australian distributor lists it. An estimate' },
+        where: [['Toradex webshop (US$145 for one; businesses only)', 'https://www.toradex.cn/single-board-computers/luna-sl1680']],
+        supply: '5v5a', usb: 4, m2: false, eth: 1, wifi: true, board: [85, 56], install: 'luna', parts: 'Luna SBC SL1680 Quad 4GB Wi-Fi / Bluetooth ET, Toradex 0301 (03011000)',
+        mainsNote: 'A 5 V supply good for 5 A — Toradex\'s figure — on a USB-C lead, or 5 V into the 40-pin header. The Luna doesn\'t negotiate USB-PD (its datasheet), so a phone or Pi 5 charger may hold it to 3 A.', mainsAud: [45, 75],
+        fit: 'COMPARISON ONLY. A Pi-sized Toradex board on Synaptics\' SL1680: four Cortex-A73 cores at 2.1 GHz, about 1.2 Pi 4s (range 1.0–1.4; no benchmark of the chip exists), 4 GB, 16 GB eMMC, four USB 3 ports, about US$145. But a SAMPLE product "for evaluation / development" on the chip-maker\'s own kernel, with a five-year commitment, no secure boot from Toradex and no Australian stock. Torizon OS and open-ALERT\'s container.',
+        src: [['Toradex: Luna SL1680 (Toradex\'s China-domain site, which allowed reading)', 'https://www.toradex.cn/single-board-computers/luna-sl1680'], ['Luna SL1680 datasheet (preliminary)', 'https://docs.toradex.com/118084-luna_sl1680_datasheet.pdf'], REVIEW_R2], conf: 'low',
       },
     ],
 
@@ -345,7 +495,7 @@
     // ── the custom path ─────────────────────────────────────────────────────
     custom: [
       { id: 'decoder', name: 'Lighter decoder (filter once per guess, bursts-only front end)', aud: [0, 0], gst: true, where: [['RPi ALERT', 'https://github.com/cdomotor-g/RPi_ALERT'], ['Flood-Net', 'https://github.com/cdomotor-g/MegaNet']], lead: { d: [14, 56], text: 'open-source work in Flood-Net and RPi ALERT; an estimate' },
-        note: 'No hardware cost. Half done: RPi ALERT 0.17 decodes a burst in a third of the time and does a quarter less between bursts. Left: filtering each channel only around bursts, about a fortieth of the between-bursts work in a prototype.', src: [], conf: 'low' },
+        note: 'No hardware cost. Done: since 0.17 RPi ALERT decodes a burst in a third of the time. Built, but off by default: filtering each channel only around bursts, 4 to 14 times less work while nothing is on the air — its first live check missed some of the weakest bursts. Not built yet: reading a frame as ALERT2 straight away on a channel known to carry it, which takes a channel with every slot used from about 1.2 Pi 4 cores to about 0.4.', src: [], conf: 'low' },
       { id: 'm2card', name: 'M.2 RTL-SDR card: design and first boards', aud: [3000, 8000], gst: false, where: [['A PCB designer with RF experience', 'https://www.engineersaustralia.org.au/'], ['JLCPCB (prototype boards)', 'https://jlcpcb.com/']], lead: { d: [42, 84], text: 'a designer, prototypes, bring-up; an estimate' },
         note: 'Small, self-contained, testable on today\'s CM5 IO board or Mallow. Lifetime-buy the RTL2832U chips: mainstream distributors don\'t stock them.', src: [['DigiKey forum: no RTL2832U on DigiKey', 'https://forum.digikey.com/t/alternative-for-rtl-sdr-rtl2832u/29884']], conf: 'low' },
       { id: 'carrier', name: 'Custom carrier board (CM5 or Verdin)', aud: [15000, 40000], gst: false, where: [['Toradex design partners', 'https://www.toradex.com/support/partner-network/hardware/carrier-boards'], ['Raspberry Pi Approved Design Partners', 'https://www.raspberrypi.com/for-industry/design-partners/']], lead: { d: [90, 180], text: 'specification, layout, two board spins; an estimate' },

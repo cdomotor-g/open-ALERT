@@ -43,7 +43,6 @@
 #   --no-firewall               leave out part b
 #   --no-systemd                leave out part c
 #   --require-systemd           count it as a failure when part c cannot run
-#   --parallel                  run the systems side by side
 #   --log-dir DIR               where the logs go (default: dist/test-logs/deb)
 #
 # Exit status: 0 when every check that ran passed; 1 when one failed; 2 when
@@ -298,6 +297,14 @@ LIST
   oa_has "audit (standard): one privilege" "$T_LOG/audit-standard.txt" 'Privileges: one\.'
   oa_has_not "audit: nothing of RPi ALERT's Raspberry Pi installer is present" "$T_LOG/audit-standard.txt" '^ +PRESENT'
   oa_has "audit says what has not been tested" "$T_LOG/audit-standard.txt" 'has not been run with a real radio stick'
+  oa_has "audit: the Node.js it runs is the operating system's own package" "$T_LOG/audit-standard.txt" "Node\\.js +[0-9.]+ \\(/usr/bin/node\\), from the operating system's package nodejs"
+  if [ -f /usr/lib/open-alert-base/bench/open-alert-bench.js ]; then
+    if open-alert-base bench --help > "$T_LOG/bench-help.txt" 2>&1 && grep -q 'open-alert-bench' "$T_LOG/bench-help.txt"; then oa_ok "open-alert-base bench finds the benchmark built into the package (asked for its help only; the benchmark has its own checks)"
+    else oa_fail "open-alert-base bench --help — see $T_LOG/bench-help.txt"; fi
+  else
+    got=0; open-alert-base bench > "$T_LOG/bench-help.txt" 2>&1 || got=$?
+    oa_is "open-alert-base bench, with no benchmark in this package: says where to get it, and exit status 1" 1 "$got"
+  fi
   oa_check "open-alert-base status runs with the agent stopped" open-alert-base status
   oa_check "open-alert-base profile lists the profiles" bash -c 'open-alert-base profile | grep -q "^  enterprise$" && open-alert-base profile | grep -q "^  standard$"'
   oa_is "rpi-alert version (the agent's own command)" "$version" "$(rpi-alert version 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)"
@@ -348,6 +355,7 @@ LIST
   open-alert-base audit > "$T_LOG/audit-standard-running.txt" 2>&1 || true
   oa_has "standard: audit shows what listens" "$T_LOG/audit-standard-running.txt" 'TCP port 80 on every address'
   oa_has "standard: audit shows the running process's privileges, read from the kernel" "$T_LOG/audit-standard-running.txt" 'privileges in use +one: CAP_NET_BIND_SERVICE'
+  oa_has "standard: audit shows where the agent calls out to, and says so when it is not HTTPS (the stand-in is plain http)" "$T_LOG/audit-standard-running.txt" 'NOT ALL OVER HTTPS'
   f=$(stat -c '%U:%G %a' /etc/rpi-alert/config.json)
   oa_is "the settings file, after the agent has written it: still the agent's alone" "rpi-alert:rpi-alert 600" "$f"
   got=$(find /var/lib/rpi-alert -maxdepth 1 -type f \( -perm /077 -o ! -user rpi-alert \) | head -n 3)
@@ -399,12 +407,15 @@ LIST
     t_settings_are "enterprise: web.bind is still in the settings after the agent rewrote its file (it keeps a setting it does not know)" "name=Renamed base" web.bind=127.0.0.1
   else oa_fail "rpi-alert config set name … — see $T_LOG/config-set.txt"; fi
   got=$(oa_listening rpi-alert | sort -u | tr '\n' ';')
+  open-alert-base audit > "$T_LOG/audit-enterprise-running.txt" 2>&1 || true
   case "$got" in
     "8080 0100007F;"|"8080 00000000000000000000000001000000;"|"8080 0000000000000000FFFF00000100007F;")
-      oa_ok "enterprise: the agent listens on this computer's own address only ($got) — this agent takes notice of web.bind" ;;
+      oa_ok "enterprise: the agent listens on this computer's own address only ($got) — this agent takes notice of web.bind"
+      oa_has "enterprise: audit says so" "$T_LOG/audit-enterprise-running.txt" 'dashboard reach +this computer only — the agent listens' ;;
     "8080 00000000;"|"8080 00000000000000000000000000000000;")
       oa_ok "enterprise: one port, 8080"
-      oa_note "RPi ALERT $version takes no notice of web.bind and listens on every address ($got): until the pin moves to 0.24, the firewall rules are what keeps other computers out (part b)" ;;
+      oa_note "RPi ALERT $version takes no notice of web.bind and listens on every address ($got): until the pin moves to 0.24, the firewall rules are what keeps other computers out (part b)"
+      oa_has "enterprise: with the firewall lock not on (this container may not load it), audit says plainly that the dashboard is NOT kept to this computer" "$T_LOG/audit-enterprise-running.txt" 'dashboard reach +NOT KEPT TO THIS COMPUTER' ;;
     *) oa_fail "enterprise: the agent's user listens on: $got (wanted port 8080 only)" ;;
   esac
   t_stop_all
@@ -634,6 +645,12 @@ t_proxy_run() {
   if [ -n "$node_path" ]; then oa_has "$what: the start command told Node.js to read the proxy settings itself" "$alog" 'reads the proxy settings itself'
   else oa_has "$what: the start command loaded the start-up file" "$alog" 'proxy-preload\.js loaded first'; fi
   if [ -n "$pass" ]; then oa_has_not "$what: the proxy's password is not in the agent's log" "$alog" "$pass"; fi
+  open-alert-base audit > "$T_LOG/audit-proxy-$name.txt" 2>&1 || true
+  oa_has "$what: audit names the proxy and how it is handed to Node.js" "$T_LOG/audit-proxy-$name.txt" 'web proxy http://.*127\.0\.0\.1:3128 — '
+  oa_has "$what: audit shows where the agent calls out to" "$T_LOG/audit-proxy-$name.txt" 'calls out to +https://flood\.test \(readings\)'
+  oa_has_not "$what: … and has no complaint about it, every address being HTTPS" "$T_LOG/audit-proxy-$name.txt" 'NOT ALL OVER HTTPS'
+  if [ -n "$pass" ]; then oa_has_not "$what: … and does not print its password" "$T_LOG/audit-proxy-$name.txt" "$pass"; fi
+  if [ -n "$node_path" ]; then oa_has "$what: audit says this Node.js is not from an operating-system package" "$T_LOG/audit-proxy-$name.txt" 'NOT from an operating-system package'; fi
   t_stop_all
   cp -p "$SIM/env.pristine" /etc/open-alert-base/env
 }
@@ -683,6 +700,8 @@ inside_fw_setup() {
   t_stub_start "$T_LOG/fw-stub.log"
   oa_run_as_unit "$T_LOG/fw-agent.log" "${SIM_ENV[@]}"
   if oa_wait 40 oa_http_ok http://127.0.0.1:8080/; then oa_ok "the agent runs; the dashboard answers this computer on port 8080"; else oa_fail "the dashboard does not answer on 127.0.0.1:8080"; fi
+  open-alert-base audit > "$T_LOG/fw-audit-unlocked.txt" 2>&1 || true
+  oa_has "before the lock is on, audit says the dashboard is NOT kept to this computer" "$T_LOG/fw-audit-unlocked.txt" 'dashboard reach +NOT KEPT TO THIS COMPUTER'
   trap - ERR
 }
 
@@ -700,6 +719,8 @@ inside_fw_lock() {
   oa_has "the table is there, with the dashboard rule" "$T_LOG/fw-table.txt" 'tcp dport 8080 .*reject with tcp reset'
   oa_has "… and the rule that stops the agent's user accepting calls from other computers" "$T_LOG/fw-table.txt" "meta skuid $(id -u rpi-alert) .*drop"
   if oa_http_ok http://127.0.0.1:8080/; then oa_ok "with the lock on, this computer still reaches the dashboard"; else oa_fail "with the lock on, 127.0.0.1:8080 no longer answers"; fi
+  open-alert-base audit > "$T_LOG/fw-audit-locked.txt" 2>&1 || true
+  oa_has "with the lock on, audit says the dashboard is for this computer only" "$T_LOG/fw-audit-locked.txt" 'dashboard reach +this computer only — the firewall lock is on'
   if RPI_ALERT_PORT=8080 rpi-alert status > /dev/null 2>&1; then oa_ok "… and so does the rpi-alert command"; else oa_fail "rpi-alert status fails with the lock on"; fi
   if oa_wait 60 t_readings_arrived "$T_LOG/fw-stub.log"; then oa_ok "… and readings still go out"; else oa_fail "no readings reached the stand-in with the lock on"; fi
   # Two more listeners on every address: one as the agent's user (port 9999), one as root (port 9998).
@@ -914,7 +935,7 @@ inside_systemd() {
 # ═════════════════════════════════════════════════════════════════════════════
 
 WORK=''; LOGDIR=''; DEBDIR=''; DEB=''; TARBALL="${OA_AGENT_TARBALL:-}"; SIG="${OA_AGENT_SIG:-}"
-GIVEN_DEB=''; AGENT_TESTS=1; DO_FW=1; DO_SD=1; REQUIRE_SD=0; PARALLEL=0
+GIVEN_DEB=''; AGENT_TESTS=1; DO_FW=1; DO_SD=1; REQUIRE_SD=0
 NEW_NODE_DIRS=(); DISTROS=()
 
 image_of() {
@@ -1258,7 +1279,6 @@ main() {
       --no-firewall) DO_FW=0; shift ;;
       --no-systemd) DO_SD=0; shift ;;
       --require-systemd) REQUIRE_SD=1; shift ;;
-      --parallel) PARALLEL=1; shift ;;
       --log-dir) LOGDIR="${2:?--log-dir needs a folder}"; shift 2 ;;
       -h|--help) usage; exit 0 ;;
       -*) oa_die "unknown option $1 (try --help)" ;;
@@ -1294,16 +1314,10 @@ main() {
   script_checks
   build_checks || { oa_summary || true; exit 1; }
 
-  if [ "$PARALLEL" = 1 ]; then
-    for d in "${DISTROS[@]}"; do ( run_distro "$d" ) > "$LOGDIR/$d.results.txt" 2>&1 & done
-    wait
-    for d in "${DISTROS[@]}"; do cat "$LOGDIR/$d.results.txt"; oa_count_log "$LOGDIR/$d.results.txt"; done
-  else
-    for d in "${DISTROS[@]}"; do
-      ( run_distro "$d" ) 2>&1 | tee "$LOGDIR/$d.results.txt"
-      oa_count_log "$LOGDIR/$d.results.txt"
-    done
-  fi
+  for d in "${DISTROS[@]}"; do
+    ( run_distro "$d" ) 2>&1 | tee "$LOGDIR/$d.results.txt"
+    oa_count_log "$LOGDIR/$d.results.txt"
+  done
   oa_summary
 }
 

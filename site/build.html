@@ -129,7 +129,12 @@
     <div class="bld">
       <form id="controls" class="ctl" onsubmit="return false"></form>
       <div class="outs">
-        <div class="card-o"><h3>Can the computer keep up?</h3><div id="out-cpu"></div></div>
+        <div class="card-o"><h3>Can the computer keep up?</h3>
+          <p class="small dim">Two limits, and both have to hold: all the channels together against the whole computer, and each channel against one core — a channel is decoded on one core and cannot use more.</p>
+          <div id="out-cpu"></div>
+          <p class="small"><b>How far to trust these figures.</b> They come from RPi ALERT's own notes on <b>one Raspberry Pi 4</b>, measured while it was busy with eight channels and a screen, so they <b>may read high</b>. What a burst or an ALERT2 frame costs was timed on a PC and scaled to a Pi 4. No other computer here has run the decoder: each one's speed is an estimate set against a Raspberry Pi 4. The benchmark in <a href="https://github.com/cdomotor-g/open-ALERT/tree/main/firmware/bench" target="_blank" rel="noopener"><code>firmware/bench</code></a> runs RPi ALERT's own decoder on the computer in front of you: that is how to settle it on a real one.</p>
+          <details class="small"><summary>What the words in this box mean</summary><ul id="cpu-terms"><li>The list needs JavaScript.</li></ul></details>
+        </div>
         <div class="card-o"><h3>The sticks and their windows</h3><p class="small dim">Each stick takes the narrowest window that holds its channels; every channel's decoder works through the whole window, so keep each stick's channels close together.</p><div id="out-sticks"></div></div>
         <div class="card-o"><h3>In the box</h3><div id="out-box"></div></div>
         <div id="out-warn"></div>
@@ -137,7 +142,7 @@
     </div>
 
     <h3>Every computer, for this plan</h3>
-    <p class="small dim">The same channels and traffic on each computer, on each of RPi ALERT's decoders. The last two bars are RPi ALERT filtering only around bursts (0.18), and with the Light decoder too (0.19): built, and off by default until their checks at the first base station are done. A last bar under 70% is a computer that is usable once they are on.</p>
+    <p class="small dim">The same channels and traffic on each computer, on each of RPi ALERT's decoders. The last two bars are RPi ALERT filtering only around bursts (0.18), and with the Light decoder too (0.19): built, and off by default. The first missed some of the weakest bursts in its only check at the first base station and the second has not been checked in the field, so choose a computer on the first two bars, not the last two.</p>
     <div id="out-compare"></div>
 
     <h3>Bill of materials</h3>
@@ -156,7 +161,7 @@
     <p>Most of a Pi's bad name comes from SD cards, plug-pack supplies and sticks hanging off USB ports — not from the processor. A Compute Module or a Verdin module on a carrier fixes the first two today; a carrier of your own fixes the rest and carries no Raspberry Pi name. The order that keeps risk low:</p>
     <ol class="path">
       <li><b>Trial on an off-the-shelf carrier.</b> A CM5 on its IO board (nothing to port) or a Verdin AM62 on Mallow (the open carrier design), with sticks held as above.</li>
-      <li><b>Make the decoder lighter.</b> Measured on Flood-Net's own decoder: a burst's decode spends two thirds of its time re-filtering the window for each of 45 guesses — filtering once per carrier guess and nudging afterwards gives the same readings in 45% of the time. And between bursts, every channel filters the stick's whole window all the time — watching for bursts with a few FFTs a second and filtering a channel only when one arrives cut that work about 40-fold in a prototype. Both keep the box decoding exactly as the website does, and together they bring a busy site within reach of a dual-core module.</li>
+      <li><b>Make the decoder lighter.</b> Three changes, at three stages. <b>Done:</b> a burst's decode used to re-filter the window for each of 45 guesses; filtering once per carrier guess and nudging afterwards (RPi ALERT's default since 0.17) takes a third of the time — 33–34% on the first base station's Pi 4 — and 14 of 11,628 live bursts read differently (0.12%). <b>Built, but off:</b> between bursts every channel filters the stick's whole window all the time; filtering a channel only around a burst (0.18) costs 4 times less in the narrowest window and 14 times less in the widest while nothing is on the air (measured on a PC), but its first live check missed some of the weakest bursts, so it stays off by default and nothing here is sized on it. <b>Planned, not built:</b> reading a frame as ALERT2 straight away on a channel known to carry it, instead of trying it as an older burst first — worth more for ALERT2 than any hardware: a channel with every slot used falls from about 1.2 Pi 4 cores to about 0.4. None of this brings a busy site within reach of a small module: with today's defaults one channel in a 1.44 MHz window already takes about a whole core of a module half as fast as a Pi 4.</li>
       <li><b>Put the SDR on an M.2 card.</b> No one sells an RTL-SDR on M.2; a small card is a contained design job, testable in Mallow's B-key slot, and becomes the receiver block of the final carrier. Keep it swappable and write the software against a general SDR interface, so the RTL2832U — which mainstream distributors don't stock — can be replaced without a rewrite. Lifetime-buy the chips you'll need.</li>
       <li><b>Design the carrier.</b> From a published design: 9–36 V input with surge and reverse protection, a watchdog, a battery clock, the SDR on board or in M.2, a DIN-rail footprint. Then EMC testing and the RCM.</li>
     </ol>

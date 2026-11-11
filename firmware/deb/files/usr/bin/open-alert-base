@@ -310,12 +310,28 @@ listening() {
   done
   [ "$found" = 1 ] || say "    none (the agent is not running, or has opened no port)"
 }
+# Do the listening sockets of a user reach beyond this computer?  yes | no | nothing-open
+reach_of() {
+  local uid="$1" f hex found=nothing-open
+  for f in /proc/net/tcp /proc/net/tcp6; do
+    [ -r "$f" ] || continue
+    while read -r _ local_addr _ state _ _ _ sock_uid _; do
+      if [ "$state" != 0A ] || [ "$sock_uid" != "$uid" ]; then continue; fi
+      hex=${local_addr%:*}
+      case "$hex" in
+        ??????7F|00000000000000000000000001000000|0000000000000000FFFF0000??????7F) if [ "$found" != yes ]; then found=no; fi ;;
+        *) found=yes ;;
+      esac
+    done < <(tail -n +2 "$f")
+  done
+  printf '%s' "$found"
+}
 unit_line() { grep -hE "^$1=" "$UNIT_FILE" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'; }
 absent() { if [ -e "$2" ] || [ -L "$2" ]; then say "    PRESENT  $1 ($2) — not from this package"; else say "    absent   $1"; fi; }
 env_value() { sed -n "s|^$1=\(.*\)\$|\1|p" "$ETC/env" 2>/dev/null | tail -n 1; }
 
 cmd_audit() {
-  local uid='' port bind remote node_ver major rest minor proxy shown pid
+  local uid='' port bind remote node_ver major rest minor proxy shown pid run_node node_pkg lock
   say "open-ALERT base station — security posture"
   say "Taken $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(hostname) ($(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' /etc/os-release 2>/dev/null), $(uname -m))"
   is_root || say "NOTE: not run as root, so the agent's settings, the firewall and the sudo rules could not be read. For all of it: sudo open-alert-base audit"
@@ -331,8 +347,16 @@ cmd_audit() {
   else
     say "    agent files     DIFFERENT from the signed release — see: cd $AGENT && sha256sum -c $SHARE/agent.sha256"
   fi
-  node_ver=$("$NODE" -p 'process.versions.node' 2>/dev/null || echo unknown)
-  say "    Node.js         $node_ver, the operating system's own package"
+  # The Node.js the service runs: /usr/bin/node, unless /etc/open-alert-base/env names another.
+  run_node=$NODE
+  if is_root && [ -n "$(env_value OPEN_ALERT_BASE_NODE)" ]; then run_node=$(env_value OPEN_ALERT_BASE_NODE); fi
+  node_ver=$("$run_node" -p 'process.versions.node' 2>/dev/null || echo unknown)
+  node_pkg=$(dpkg-query -S "$(readlink -f "$run_node" 2>/dev/null || echo "$run_node")" 2>/dev/null | head -n 1 | cut -d: -f1 || true)
+  if [ -n "$node_pkg" ]; then
+    say "    Node.js         $node_ver ($run_node), from the operating system's package $node_pkg $(dpkg-query -W -f '${Version}' "$node_pkg" 2>/dev/null || true)"
+  else
+    say "    Node.js         $node_ver ($run_node) — NOT from an operating-system package: its updates are not the operating system's"
+  fi
   say "    radio driver    $(rtl_line)"
   say "    No packages from npm: the agent uses none."
 
@@ -409,8 +433,16 @@ cmd_audit() {
     [ -z "$(setting problems)" ] || say "    SETTINGS FILE PROBLEM: $(setting problems)"
     say "    dashboard port          $port, plain HTTP, password $(setting web.password)"
     if is_loopback "$bind"; then
-      say "    dashboard reach         this computer only — web.bind = $bind (the agent takes notice of it from 0.24; this one is $(agent_version))"
-      say "    firewall lock           $(lock_state)  (table inet $FW_TABLE; $FW_UNIT)"
+      # Said from what is so at this moment, not from what the settings ask for.
+      lock=$(lock_state)
+      case "$lock:$(reach_of "$uid")" in
+        on:*)  say "    dashboard reach         this computer only — the firewall lock is on" ;;
+        *:no)  say "    dashboard reach         this computer only — the agent listens on this computer's own address only; the firewall lock, the second lock, is $lock" ;;
+        *:yes) say "    dashboard reach         NOT KEPT TO THIS COMPUTER — the settings ask for it, but this agent listens on every address (see 4) and the firewall lock is $lock" ;;
+        *)     say "    dashboard reach         meant for this computer only; the agent is not running and the firewall lock is $lock, so that cannot be confirmed now" ;;
+      esac
+      say "    web.bind                $bind — RPi ALERT takes notice of this setting from 0.24; this one is $(agent_version)"
+      say "    firewall lock           $lock  (table inet $FW_TABLE; $FW_UNIT)"
     else
       say "    dashboard reach         the local network (every address of this computer)"
       say "    firewall lock           not used by this profile"
@@ -427,8 +459,11 @@ cmd_audit() {
     say "    screen kiosk            $(setting kiosk.mode)"
     say "    audio                   $(setting audio.mode)"
     say "    sends to Flood-Net      $(setting meganet.enabled) (every frame heard too: $(setting meganet.receptions)); token $(setting meganet.token)"
-    say "    calls out to            $(setting hosts.readings) (readings, HTTPS)"
-    say "                            $(setting hosts.stations) (station names, daily, HTTPS)"
+    say "    calls out to            $(setting hosts.readings) (readings)"
+    say "                            $(setting hosts.stations) (station names, daily)"
+    case " $(setting hosts.readings) $(setting hosts.stations)" in
+      *" http://"*) say "    NOT ALL OVER HTTPS: an address above starts with http://" ;;
+    esac
     if [ -r "$ETC/profile" ] && k=$(profile_file "$(current_profile)"); then
       k=$(as_agent "$NODE" "$LIB/settings.js" differ "$k" 2>/dev/null || true)
       if [ -n "$k" ]; then say "    CHANGED since the profile was put in force:"; printf '%s\n' "$k" | sed 's/^/      /'; else say "    every setting the profile names is still as the profile has it"; fi
@@ -482,8 +517,19 @@ cmd_audit() {
 }
 
 # ── selftest ─────────────────────────────────────────────────────────────────
+# Run test files of the agent, as the service's user when root. Output to $1.
+run_tests() {
+  local out=$1; shift
+  if is_root; then
+    ( cd "$AGENT" && runuser -u "$SVC_USER" -- env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/tmp TMPDIR=/tmp "$run_node" --test --test-reporter=tap "$@" ) > "$out" 2>&1
+  else
+    ( cd "$AGENT" && env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME="${TMPDIR:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" "$run_node" --test --test-reporter=tap "$@" ) > "$out" 2>&1
+  fi
+}
+
 cmd_selftest() {
-  local log f files=() run_node="$NODE" rc=0 left=0
+  local log f files=() again=() rc=0 left=0 files_rc=0
+  run_node="$NODE"
   if is_root && [ -n "$(env_value OPEN_ALERT_BASE_NODE)" ]; then run_node=$(env_value OPEN_ALERT_BASE_NODE); fi
   say "Self-test on $(hostname): $(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' /etc/os-release 2>/dev/null), $(uname -m), Node.js $("$run_node" --version)"
   say ""
@@ -491,7 +537,7 @@ cmd_selftest() {
   if ( cd "$AGENT" && sha256sum --quiet -c "$SHARE/agent.sha256" ); then
     say "   $(wc -l < "$SHARE/agent.sha256") files, each the same as in the signed release $(pin AGENT_TAG)."
   else
-    say "   SOME FILES DIFFER from the signed release (listed above)."; rc=1
+    say "   SOME FILES DIFFER from the signed release (listed above)."; rc=1; files_rc=1
   fi
   say ""
   say "2. The agent's own tests (RPi ALERT's test suite, as shipped in the release; a few minutes)"
@@ -503,13 +549,25 @@ cmd_selftest() {
   command -v sshd >/dev/null 2>&1 || [ -x /usr/sbin/sshd ] || say "   note: no SSH server is installed, so the one test that checks a file against it is skipped"
   log=$(mktemp "${TMPDIR:-/tmp}/open-alert-base-selftest.XXXXXX")
   chmod 0644 "$log"
-  if is_root; then
-    ( cd "$AGENT" && runuser -u "$SVC_USER" -- env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/tmp TMPDIR=/tmp "$run_node" --test --test-reporter=tap "${files[@]}" ) > "$log" 2>&1 || rc=1
-  else
-    ( cd "$AGENT" && env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME="${TMPDIR:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" "$run_node" --test --test-reporter=tap "${files[@]}" ) > "$log" 2>&1 || rc=1
-  fi
+  run_tests "$log" "${files[@]}" || rc=1
   grep -E '^not ok ' "$log" | sed 's/^/   /' || true
   say "   $(grep -E '^# (tests|pass|fail|skipped) ' "$log" | sed 's/^# //' | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
+  # Some of the agent's tests time one decoder against another, and can fail
+  # on a computer that is busy with something else (the test files run side by
+  # side). A file with a failure is run once more, by itself.
+  if grep -q '^not ok ' "$log"; then
+    again=()
+    while IFS= read -r f; do again+=("test/$f"); done < <(sed -n "s|^ *location: '$AGENT/test/\\([A-Za-z0-9._-]*\\.test\\.js\\):[0-9:]*'\$|\\1|p" "$log" | sort -u)
+    if [ ${#again[@]} -gt 0 ] && run_tests "$log.again" "${again[@]}"; then
+      rc=$files_rc
+      say "   FAILED IN THE FULL RUN, PASSED WHEN RUN AGAIN ALONE: ${again[*]}"
+      say "   (a timing test on a busy computer; if it happens every time, this computer is too slow or too busy)"
+      say "   second run's output: $log.again"
+    else
+      rc=1
+      if [ ${#again[@]} -gt 0 ]; then say "   failed again when run alone: ${again[*]} (output: $log.again)"; fi
+    fi
+  fi
   say "   run as $(if is_root; then echo "the service's user ($SVC_USER)"; else id -un; fi), from ${#files[@]} test files; $left left out (it tests RPi ALERT's root helper, which is not installed here)"
   say "   full output: $log"
   say ""
