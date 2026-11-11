@@ -1,0 +1,987 @@
+{
+  "schema": "open-alert-bench/1",
+  "tool": {
+    "name": "open-alert-bench",
+    "version": "1.0.0",
+    "peakMemoryMb": 355
+  },
+  "mode": "full",
+  "label": "Shared 4-core virtual machine (cloud sandbox), Linux 6.18",
+  "startedAt": "2026-11-11T09:45:53.386Z",
+  "tookSeconds": 237.8,
+  "machine": {
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "board": null,
+    "arch": "x64",
+    "cores": 4,
+    "threads": 4,
+    "logicalCpus": 4,
+    "physicalCores": 4,
+    "fastCores": 4,
+    "cpuLimitCores": null,
+    "cpuMHz": 2100,
+    "cpuMaxMHz": null,
+    "governor": null,
+    "virtualMachine": true,
+    "container": false,
+    "memMb": 16086,
+    "memAvailableMb": 15449,
+    "os": "Linux 6.18.44-fc-v378",
+    "distro": "Ubuntu 24.04.5 LTS",
+    "node": "v22.23.4",
+    "nodeMajor": 22,
+    "v8": "12.4.254.21-node.57",
+    "loadAvgAtStart": [
+      1.39,
+      0.68,
+      0.27
+    ],
+    "loadAvgAtEnd": [
+      1.95,
+      1.29,
+      0.61
+    ],
+    "tempCAtStart": null,
+    "tempCAtEnd": null,
+    "agentRunning": false,
+    "lowPriority": false
+  },
+  "agent": {
+    "dir": ".../RPi_ALERT/agent",
+    "version": "0.23.1",
+    "decoderCommit": "ed3ed3bf4d40c6c4dd4038ef069a04de5fee427c (2026-11-08)",
+    "decoders": [
+      "full",
+      "lean",
+      "light"
+    ],
+    "defaultDecoder": "lean",
+    "recordings": "the agent's own test/fixtures"
+  },
+  "warnings": [
+    "This computer was already busy when the run began (load 1.39), so the figures will come out worse than it really is. Run it again when the computer is idle."
+  ],
+  "errors": [],
+  "sectionSeconds": {
+    "burst": 23.8,
+    "alert2": 42.5,
+    "betweenBursts": 30.4,
+    "parallel": 8.5,
+    "memory": 5.4,
+    "traffic": 127.4
+  },
+  "burst": {
+    "unit": "milliseconds of one core to decode one burst (the middle of several runs; the least of them in `best`)",
+    "realRecordings": true,
+    "recordings": [
+      {
+        "recording": "binary_151.500_1957.iq8",
+        "short": "a strong burst, recorded off the air",
+        "what": "a strong legacy ALERT burst recorded off the air (ALERT Binary, about 16 dB over the noise)",
+        "format": "BINARY",
+        "windowSeconds": 1.25,
+        "ms": {
+          "full": 258.6,
+          "lean": 96.3,
+          "light": 44.9
+        },
+        "best": {
+          "full": 237.1,
+          "lean": 79.2,
+          "light": 42
+        },
+        "read": {
+          "full": "1957=29",
+          "lean": "1957=29",
+          "light": "1957=29"
+        },
+        "expected": "1957=29",
+        "readCorrectly": true
+      },
+      {
+        "recording": "binary_151.500_5304_weak.iq8",
+        "short": "a weak burst, recorded off the air",
+        "what": "a weak legacy ALERT burst recorded off the air (ALERT Binary, about 9 dB over the noise)",
+        "format": "BINARY",
+        "windowSeconds": 1.25,
+        "ms": {
+          "full": 301.3,
+          "lean": 89.8,
+          "light": 46.5
+        },
+        "best": {
+          "full": 261.2,
+          "lean": 83.7,
+          "light": 44.8
+        },
+        "read": {
+          "full": "5304=41",
+          "lean": "5304=41",
+          "light": "5304=41"
+        },
+        "expected": "5304=41",
+        "readCorrectly": true
+      },
+      {
+        "recording": "testrig_burst_240k.iq8",
+        "short": "a test-rig burst (a three-second recording)",
+        "what": "a test-rig burst, a three-second recording (Enhanced iFLOWS, two readings)",
+        "format": "ENHANCED_IFLOWS",
+        "windowSeconds": 3,
+        "ms": {
+          "full": 269.7,
+          "lean": 107.4,
+          "light": 51.3
+        },
+        "best": {
+          "full": 225.3,
+          "lean": 87.5,
+          "light": 47.6
+        },
+        "read": {
+          "full": "4079=420 4080=121",
+          "lean": "4079=420 4080=121",
+          "light": "4080=121 4079=420"
+        },
+        "expected": "4079=420 4080=121",
+        "readCorrectly": true
+      }
+    ],
+    "typicalMs": {
+      "full": 280,
+      "lean": 93.1,
+      "light": 45.7
+    },
+    "typicalBestMs": {
+      "full": 249.2,
+      "lean": 81.5,
+      "light": 43.4
+    },
+    "typicalNote": "the mean of the two ALERT Binary recordings"
+  },
+  "alert2": {
+    "measured": true,
+    "unit": "milliseconds of one core for one burst",
+    "note": "A burst the legacy decoder reads nothing in is then tried as ALERT2, so an ALERT2 burst costs the legacy try plus the ALERT2 decode.",
+    "bursts": [
+      {
+        "burst": "alert2_151.5375_3pdus.iq8",
+        "short": "a real frame of 74 bytes, recorded off the air",
+        "what": "a real ALERT2 frame of 74 bytes recorded off the air",
+        "real": true,
+        "windowSeconds": 1.35,
+        "legacyTryMs": {
+          "full": 290.9,
+          "lean": 91.1,
+          "light": 51
+        },
+        "alert2Ms": 73.2,
+        "totalMs": {
+          "full": 364.1,
+          "lean": 164.3,
+          "light": 124.2
+        },
+        "frames": [
+          "ok, 74 bytes"
+        ],
+        "readCorrectly": true
+      },
+      {
+        "burst": "alert2_151.5375_2pdus.iq8",
+        "short": "a real frame of 33 bytes, recorded off the air",
+        "what": "a real ALERT2 frame of 33 bytes recorded off the air",
+        "real": true,
+        "windowSeconds": 1.25,
+        "legacyTryMs": {
+          "full": 220.4,
+          "lean": 76.4,
+          "light": 43.9
+        },
+        "alert2Ms": 47.4,
+        "totalMs": {
+          "full": 267.8,
+          "lean": 123.8,
+          "light": 91.3
+        },
+        "frames": [
+          "ok, 33 bytes"
+        ],
+        "readCorrectly": true
+      },
+      {
+        "burst": "made_up_54_bytes",
+        "short": "a made-up frame of 54 bytes (0.32 s on the air)",
+        "what": "made up with the agent's own test transmitter: one frame of 54 bytes, 0.32 s on the air",
+        "real": false,
+        "windowSeconds": 1.22,
+        "legacyTryMs": {
+          "full": 317.1,
+          "lean": 80,
+          "light": 47.9
+        },
+        "alert2Ms": 44.8,
+        "totalMs": {
+          "full": 361.9,
+          "lean": 124.8,
+          "light": 92.7
+        },
+        "frames": [
+          "ok, 54 bytes"
+        ],
+        "readCorrectly": true
+      },
+      {
+        "burst": "made_up_150_bytes",
+        "short": "a made-up frame of 150 bytes (0.8 s on the air)",
+        "what": "made up with the agent's own test transmitter: one frame of 150 bytes, 0.8 s on the air",
+        "real": false,
+        "windowSeconds": 1.7,
+        "legacyTryMs": {
+          "full": 395.3,
+          "lean": 128.8,
+          "light": 62.3
+        },
+        "alert2Ms": 68.6,
+        "totalMs": {
+          "full": 463.9,
+          "lean": 197.4,
+          "light": 130.9
+        },
+        "frames": [
+          "ok, 150 bytes"
+        ],
+        "readCorrectly": true
+      },
+      {
+        "burst": "made_up_350_bytes",
+        "short": "a made-up frame of 350 bytes (1.84 s on the air)",
+        "what": "made up with the agent's own test transmitter: one frame of 350 bytes, 1.84 s on the air",
+        "real": false,
+        "windowSeconds": 2.74,
+        "legacyTryMs": {
+          "full": 707.5,
+          "lean": 195.1,
+          "light": 104.4
+        },
+        "alert2Ms": 118.1,
+        "totalMs": {
+          "full": 825.6,
+          "lean": 313.2,
+          "light": 222.5
+        },
+        "frames": [
+          "ok, 350 bytes"
+        ],
+        "readCorrectly": true
+      },
+      {
+        "burst": "made_up_500_bytes",
+        "short": "a made-up frame of 500 bytes (2.55 s on the air)",
+        "what": "made up with the agent's own test transmitter: one frame of 500 bytes, 2.55 s on the air",
+        "real": false,
+        "windowSeconds": 3.45,
+        "legacyTryMs": {
+          "full": 927.6,
+          "lean": 259.7,
+          "light": 137.9
+        },
+        "alert2Ms": 142.6,
+        "totalMs": {
+          "full": 1070.2,
+          "lean": 402.3,
+          "light": 280.5
+        },
+        "frames": [
+          "ok, 502 bytes"
+        ],
+        "readCorrectly": true
+      }
+    ],
+    "typicalNote": "the mean of the real recordings",
+    "typicalMs": {
+      "full": 316,
+      "lean": 144.1,
+      "light": 107.8
+    },
+    "alert2DecodeAloneMs": 60.3,
+    "againstALegacyBurst": {
+      "full": 1.13,
+      "lean": 1.55,
+      "light": 2.36
+    }
+  },
+  "betweenBursts": {
+    "unit": "cores one channel takes while nothing is on the air (0.05 is 5 % of one core)",
+    "windowsHz": [
+      240000,
+      960000,
+      1200000,
+      1440000,
+      2400000
+    ],
+    "windowNotes": {
+      "1200000": "measured because it is one of the three windows a Raspberry Pi 4 figure exists for",
+      "1440000": "the window Flood-Net's four channels need"
+    },
+    "agentOwnMeasure": {
+      "measured": true,
+      "note": "the agent's own measurement (lib/devices/sdr-bench.js), as its settings page shows it, rounded to 0.001 of a core",
+      "filterEverySample": {
+        "240000": 0.015,
+        "960000": 0.049,
+        "1200000": 0.053,
+        "1440000": 0.061,
+        "2400000": 0.096
+      },
+      "filterOnlyAroundBursts": {
+        "240000": 0.003,
+        "960000": 0.004,
+        "1200000": 0.004,
+        "1440000": 0.004,
+        "2400000": 0.011
+      }
+    },
+    "asAgentMeasures": {
+      "240000": 0.0146,
+      "960000": 0.0468,
+      "1200000": 0.0516,
+      "1440000": 0.0587,
+      "2400000": 0.093,
+      "note": "the same loop as the agent's own measurement, unrounded: what the Raspberry Pi 4 figures are compared with"
+    },
+    "asDecoderThreadFirstChannel": {
+      "240000": 0.0079,
+      "960000": 0.0389,
+      "1200000": 0.0471,
+      "1440000": 0.0563,
+      "2400000": 0.0909,
+      "note": "with the settings the decoder threads really run with since agent 0.19, spectrum on: a stick's first channel"
+    },
+    "asDecoderThreadOtherChannels": {
+      "240000": 0.0068,
+      "960000": 0.0404,
+      "1200000": 0.0467,
+      "1440000": 0.0545,
+      "2400000": 0.0838,
+      "note": "the same with the spectrum off: a stick's other channels"
+    },
+    "aChannel": {
+      "240000": 0.0079,
+      "960000": 0.0404,
+      "1200000": 0.0471,
+      "1440000": 0.0563,
+      "2400000": 0.0909
+    },
+    "relativeTo240k": {
+      "240000": 1,
+      "960000": 3.2,
+      "1200000": 3.52,
+      "1440000": 4.01,
+      "2400000": 6.36
+    }
+  },
+  "parallel": {
+    "measured": true,
+    "note": "the between-bursts loop at 1.44 MHz (set up as a decoder thread is) in 4 threads started together and run for the same 1000 ms, against one alone; 3 runs together and 4 alone, the least of each. 1.0 means a channel costs the same with every core busy. A ratio under 1 can only be something else disturbing the runs alone, so the slowdown is never put under 1.",
+    "threads": 4,
+    "aloneCores": 0.0539,
+    "togetherCoresEach": [
+      0.0605,
+      0.0567,
+      0.0659,
+      0.0598
+    ],
+    "ratio": 1.12,
+    "slowdown": 1.12
+  },
+  "memory": {
+    "note": "memory each of 4 real decoder threads adds on a 1.44 MHz window after six seconds of samples (the middle of three runs), with nothing queued. A decoder that falls behind may queue up to 20 s of samples on top (lib/devices/sdr.js, lines 70-81).",
+    "threads": 4,
+    "mbPerChannel": 49.2,
+    "mbAgentWithoutDecoders": 52
+  },
+  "traffic": {
+    "note": "One channel in a 240 kHz window through the agent's real decoder thread (lib/devices/sdr-worker.js): 32 s of made-up signal a scenario, 20-25 dB over the noise, fed as fast as the thread takes it after an untimed warm-up of ten seconds of the same kind of traffic. measuredCores = the time it took / the seconds of signal. The stream starts and ends with a quiet stretch, so it holds a little under the rate named: msABurst is what each burst added over a quiet channel, and cores = the quiet channel + the bursts a minute named x msABurst — the share of one core at that rate. 1 or more means the thread could not keep up with a real radio.",
+    "secondsOfSignal": 32,
+    "decoders": [
+      "lean",
+      "full",
+      "light"
+    ],
+    "scenarios": [
+      {
+        "scenario": "legacy-busy",
+        "short": "legacy ALERT, 8 bursts a minute",
+        "what": "legacy ALERT, 8 bursts a minute (a busy day)",
+        "kind": "legacy",
+        "burstsAMinute": 8,
+        "sent": 4,
+        "measuredCores": {
+          "lean": 0.0212,
+          "full": 0.0444,
+          "light": 0.0173
+        },
+        "msABurst": {
+          "lean": 74.4,
+          "full": 259.8,
+          "light": 43
+        },
+        "cores": {
+          "lean": 0.0218,
+          "full": 0.0466,
+          "light": 0.0177
+        },
+        "read": {
+          "lean": 4,
+          "full": 4,
+          "light": 4
+        },
+        "allRead": true,
+        "keepsUp": true
+      },
+      {
+        "scenario": "legacy-heavy",
+        "short": "legacy ALERT, 20 bursts a minute",
+        "what": "legacy ALERT, 20 bursts a minute (a storm)",
+        "kind": "legacy",
+        "burstsAMinute": 20,
+        "sent": 10,
+        "measuredCores": {
+          "lean": 0.0355,
+          "full": 0.0813,
+          "light": 0.0273
+        },
+        "msABurst": {
+          "lean": 75.4,
+          "full": 222,
+          "light": 49.2
+        },
+        "cores": {
+          "lean": 0.037,
+          "full": 0.0859,
+          "light": 0.0283
+        },
+        "read": {
+          "lean": 10,
+          "full": 10,
+          "light": 10
+        },
+        "allRead": true,
+        "keepsUp": true
+      },
+      {
+        "scenario": "alert2-today",
+        "short": "ALERT2, 20 frames a minute",
+        "what": "ALERT2, 20 frames a minute of 74 bytes (about what one ALERT2 link carries today)",
+        "kind": "alert2",
+        "burstsAMinute": 20,
+        "sent": 10,
+        "measuredCores": {
+          "lean": 0.0655,
+          "full": 0.1128,
+          "light": 0.0453
+        },
+        "msABurst": {
+          "lean": 171.4,
+          "full": 322.9,
+          "light": 106.8
+        },
+        "cores": {
+          "lean": 0.069,
+          "full": 0.1196,
+          "light": 0.0475
+        },
+        "read": {
+          "lean": 10,
+          "full": 10,
+          "light": 10
+        },
+        "allRead": true,
+        "keepsUp": true
+      },
+      {
+        "scenario": "alert2-every-slot",
+        "short": "ALERT2, every half-second slot used",
+        "what": "ALERT2 with every half-second slot used: 120 frames a minute of 54 bytes (the most the protocol allows)",
+        "kind": "alert2",
+        "burstsAMinute": 120,
+        "sent": 57,
+        "measuredCores": {
+          "lean": 0.3288,
+          "full": 0.7021,
+          "light": 0.2267
+        },
+        "msABurst": {
+          "lean": 177.9,
+          "full": 387.5,
+          "light": 120.6
+        },
+        "cores": {
+          "lean": 0.3677,
+          "full": 0.7869,
+          "light": 0.2531
+        },
+        "read": {
+          "lean": 57,
+          "full": 57,
+          "light": 57
+        },
+        "allRead": true,
+        "keepsUp": true
+      },
+      {
+        "scenario": "alert2-long-frames",
+        "short": "ALERT2, long frames, 24 a minute",
+        "what": "ALERT2, a 350-byte frame every 2.5 s: 24 a minute, on the air three quarters of the time",
+        "kind": "alert2",
+        "burstsAMinute": 24,
+        "sent": 12,
+        "measuredCores": {
+          "lean": 0.153,
+          "full": 0.3502,
+          "light": 0.1079
+        },
+        "msABurst": {
+          "lean": 376.2,
+          "full": 902.2,
+          "light": 256
+        },
+        "cores": {
+          "lean": 0.1624,
+          "full": 0.3728,
+          "light": 0.1143
+        },
+        "read": {
+          "lean": 12,
+          "full": 12,
+          "light": 12
+        },
+        "allRead": true,
+        "keepsUp": true
+      }
+    ],
+    "quietCores": 0.0119
+  },
+  "timesARaspberryPi4": {
+    "standing": "Nobody has run this tool on a Raspberry Pi 4 yet. The comparison rests on three figures taken on a busy Pi 4 with an older agent, and one round figure from a sentence. Treat it as a rough guide.",
+    "perCore": 4.84,
+    "perCoreByMeasure": [
+      4.11,
+      5.28
+    ],
+    "perCoreLowestOfAll": 3.6,
+    "perCoreHighestOfAll": 5.28,
+    "usableCores": 3.57,
+    "wholeComputer": 4.32,
+    "pi4CoresInAll": 17.3,
+    "how": "perCore: the geometric mean of (a Pi 4's cores a channel) / (this computer's cores a channel) between bursts, at the windows a Pi 4 figure exists for. wholeComputer: perCore x the cores this computer really has with all of them busy (4 / 1.12) / a Pi 4's 4 cores.",
+    "likeForLike": false,
+    "likeForLikeNote": "The Pi 4 figures were taken with agent 0.15 and this is agent 0.23.1: not strictly like for like.",
+    "betweenBursts": {
+      "reference": "the share of one core a channel takes between bursts, by the agent's own built-in measurement, on the Raspberry Pi 4 of the first base station",
+      "source": "RPi ALERT docs/roadmap.md, lines 112-113: \"the bench says 240 kHz 6%, 1.2 MHz 27%, 1.44 MHz 31% a channel\"",
+      "byWindow": {
+        "240000": {
+          "pi4Cores": 0.06,
+          "thisCores": 0.0146,
+          "timesAPi4Core": 4.11
+        },
+        "960000": {
+          "pi4Cores": null,
+          "thisCores": 0.0468,
+          "timesAPi4Core": null,
+          "note": "no Raspberry Pi 4 figure: docs/hardware.md, lines 66-73, gives only \"3x a 240 kHz channel\""
+        },
+        "1200000": {
+          "pi4Cores": 0.27,
+          "thisCores": 0.0516,
+          "timesAPi4Core": 5.23
+        },
+        "1440000": {
+          "pi4Cores": 0.31,
+          "thisCores": 0.0587,
+          "timesAPi4Core": 5.28
+        },
+        "2400000": {
+          "pi4Cores": null,
+          "thisCores": 0.093,
+          "timesAPi4Core": null,
+          "note": "no Raspberry Pi 4 figure: docs/hardware.md, lines 66-73, gives only \"6.3x a 240 kHz channel\""
+        }
+      },
+      "caveats": [
+        "Taken in October 2026 with agent 0.15, older than the agent measured here. Agent 0.17 says it cut the work between bursts by about a quarter (docs/roadmap.md, lines 78-80); the same Pi 4 has not been measured since.",
+        "The agent takes this measurement by itself a minute and a half after it starts (lib/agent.js, lines 50-52), while its channels are already decoding. That Pi 4 was a working base station with eight channels and its screen dashboard on (docs/hardware.md, lines 101-106). A measurement that has to share the processor reads high, which makes a Pi 4 look slower than it is and any other computer look faster against it."
+      ]
+    },
+    "burstFull": {
+      "reference": "one burst's decode with the Full decoder: about 1000 ms",
+      "source": "RPi ALERT docs/hardware.md, lines 76-77: \"A burst's decode — a second or so on a Pi 4\"",
+      "thisMs": 280,
+      "timesAPi4Core": 3.6,
+      "approximate": true,
+      "caveat": "A round figure in a sentence, for no named recording: a rough ratio only."
+    },
+    "burstLean": {
+      "reference": "the Lean decoder took 33-34 % of the Full decoder's time on that Pi 4, over 11,628 live bursts",
+      "source": "RPi ALERT docs/roadmap.md, lines 76-78",
+      "pi4Ms": null,
+      "pi4ShareOfFull": 0.335,
+      "thisShareOfFull": 0.332,
+      "caveat": "A share of the Full decoder's time, not milliseconds: there is no Raspberry Pi 4 figure in milliseconds for Lean."
+    },
+    "burstLight": {
+      "source": "RPi ALERT docs/configuration.md, lines 130-134 (figures from a PC)",
+      "pi4Ms": null,
+      "thisMs": 45.7,
+      "caveat": "No Raspberry Pi 4 figure for the Light decoder."
+    },
+    "alert2": {
+      "source": "RPi ALERT docs/configuration.md, lines 119-120: \"a few tenths of a second on a Pi 4\"",
+      "pi4Ms": null,
+      "thisMs": 60.3,
+      "caveat": "Words only: no figure to divide by."
+    },
+    "underLoad": {
+      "factor": 1.6,
+      "source": "RPi ALERT docs/roadmap.md, lines 113-114: \"under load each decoder's busy share ran about 1.6 times that\"",
+      "caveat": "Seen on that one Pi 4 only. Used here as a safety margin on every computer."
+    },
+    "readAt": "RPi ALERT commit 37fee8b (10 November 2026)"
+  },
+  "capacity": {
+    "how": "For each channel: 1.6 x its between-bursts cores (the margin a loaded Raspberry Pi 4 needed) + its burst work at the traffic named. \"comfortably\" keeps the total under 50 % of the cores this computer has with all of them busy, and each channel under 70 % of one core. \"atTheVeryMost\" uses all of it: do not plan to it. Memory: half of it, less the agent, over a channel's memory and the most it may queue.",
+    "decoder": "lean",
+    "betweenBursts": "filtering every sample (the setting the agent ships with)",
+    "usableCores": 3.57,
+    "underLoadFactor": 1.6,
+    "shareKept": 0.5,
+    "oneThreadLimit": 0.7,
+    "maxChannelsAStick": 8,
+    "trafficLevels": {
+      "busy": {
+        "what": "legacy ALERT, 8 bursts a minute on every channel (a busy day)",
+        "burstWorkCores": 0.0099
+      },
+      "storm": {
+        "what": "legacy ALERT, 20 bursts a minute on every channel (a storm)",
+        "burstWorkCores": 0.0251
+      },
+      "alert2Today": {
+        "what": "ALERT2 on every channel at 20 frames a minute (what one ALERT2 link carries today)",
+        "burstWorkCores": 0.0571
+      }
+    },
+    "byWindow": [
+      {
+        "windowHz": 240000,
+        "coresAChannel": {
+          "busy": 0.0225,
+          "storm": 0.0377,
+          "alert2Today": 0.0697
+        },
+        "comfortably": {
+          "busy": 79,
+          "storm": 47,
+          "alert2Today": 25
+        },
+        "atTheVeryMost": {
+          "busy": 158,
+          "storm": 94,
+          "alert2Today": 51
+        },
+        "oneThreadOk": {
+          "busy": true,
+          "storm": true,
+          "alert2Today": true
+        },
+        "memoryAllows": 136
+      },
+      {
+        "windowHz": 960000,
+        "coresAChannel": {
+          "busy": 0.0745,
+          "storm": 0.0897,
+          "alert2Today": 0.1217
+        },
+        "comfortably": {
+          "busy": 23,
+          "storm": 19,
+          "alert2Today": 14
+        },
+        "atTheVeryMost": {
+          "busy": 47,
+          "storm": 39,
+          "alert2Today": 29
+        },
+        "oneThreadOk": {
+          "busy": true,
+          "storm": true,
+          "alert2Today": true
+        },
+        "memoryAllows": 93
+      },
+      {
+        "windowHz": 1440000,
+        "coresAChannel": {
+          "busy": 0.1,
+          "storm": 0.1152,
+          "alert2Today": 0.1472
+        },
+        "comfortably": {
+          "busy": 17,
+          "storm": 15,
+          "alert2Today": 12
+        },
+        "atTheVeryMost": {
+          "busy": 35,
+          "storm": 31,
+          "alert2Today": 24
+        },
+        "oneThreadOk": {
+          "busy": true,
+          "storm": true,
+          "alert2Today": true
+        },
+        "memoryAllows": 76
+      },
+      {
+        "windowHz": 2400000,
+        "coresAChannel": {
+          "busy": 0.1553,
+          "storm": 0.1705,
+          "alert2Today": 0.2025
+        },
+        "comfortably": {
+          "busy": 11,
+          "storm": 10,
+          "alert2Today": 8
+        },
+        "atTheVeryMost": {
+          "busy": 22,
+          "storm": 20,
+          "alert2Today": 17
+        },
+        "oneThreadOk": {
+          "busy": true,
+          "storm": true,
+          "alert2Today": true
+        },
+        "memoryAllows": 56
+      }
+    ],
+    "channelsToday": {
+      "channels": 12,
+      "atTheVeryMost": 24,
+      "windowHz": 1440000,
+      "traffic": "a storm on every channel: 20 bursts a minute, legacy ALERT or ALERT2, whichever costs more",
+      "limitedBy": "processor",
+      "sticksNeeded": 2
+    },
+    "notMeasured": "The radio sticks, USB, the rtl_sdr program, the agent's own main thread and the screen dashboard are not in these figures."
+  },
+  "alert2Headroom": {
+    "rule": "at least 4 cores, each at least 2.5 times a Raspberry Pi 4 core",
+    "why": "Each channel is decoded on one core and can never use more than one. An ALERT2 channel with every half-second slot used is more work than one Raspberry Pi 4 core can do, however many cores there are.",
+    "minCores": 4,
+    "minTimesAPi4Core": 2.5,
+    "cores": 4,
+    "coresOk": true,
+    "timesAPi4Core": 4.84,
+    "timesAPi4CoreLowest": 3.6,
+    "timesAPi4CoreHighest": 5.28,
+    "pass": true,
+    "verdict": "pass",
+    "verdictNote": null,
+    "directCheck": {
+      "measured": true,
+      "what": "one channel in a 1.44 MHz window with every half-second ALERT2 slot used",
+      "formula": "1.6 x between-bursts cores at 1.44 MHz + (alert2-every-slot - quiet)",
+      "ofOneCore": 0.45,
+      "limit": 0.7,
+      "ok": true
+    }
+  },
+  "sizing": {
+    "decoder": "lean",
+    "checks": [
+      {
+        "check": "four channels on one stick in a 1.44 MHz window (Flood-Net's four), a storm of legacy ALERT on every one",
+        "formula": "4 x (1.6 x between-bursts cores at 1.44 MHz + (legacy-heavy - quiet))",
+        "cores": 0.46,
+        "ofThisComputer": 0.13,
+        "limit": 0.5,
+        "ok": true
+      },
+      {
+        "check": "eight channels on two sticks in 960 kHz windows, ALERT2 on every one at today's rate",
+        "formula": "8 x (1.6 x between-bursts cores at 960 kHz + (alert2-today - quiet))",
+        "cores": 0.97,
+        "ofThisComputer": 0.27,
+        "limit": 0.5,
+        "ok": true
+      },
+      {
+        "check": "one ALERT2 channel with every half-second slot used, in a 1.44 MHz window",
+        "formula": "1.6 x between-bursts cores at 1.44 MHz + (alert2-every-slot - quiet)",
+        "ofOneCore": 0.45,
+        "limit": 0.7,
+        "ok": true
+      }
+    ]
+  },
+  "selfCheck": {
+    "ok": true,
+    "problems": [],
+    "note": "Every recording and every made-up burst has a known right answer. A computer that reads one wrongly should not be used until that is understood."
+  },
+  "summary": {
+    "timesAPi4Core": 4.84,
+    "timesAPi4Whole": 4.32,
+    "channelsToday": 12,
+    "channelsAtTheVeryMost": 24,
+    "alert2Headroom": "pass",
+    "decoderCheck": true,
+    "text": [
+      "open-ALERT base station benchmark 1.0.0 — full run, took 3 min 58 s",
+      "",
+      "  Computer   Intel(R) Xeon(R) Processor @ 2.10GHz",
+      "             4 cores, 15.7 GB memory, x86-64 (Intel or AMD), a virtual machine",
+      "  System     Ubuntu 24.04.5 LTS, Node v22.23.4",
+      "  Agent      RPi ALERT 0.23.1 in .../RPi_ALERT/agent",
+      "  Label      Shared 4-core virtual machine (cloud sandbox), Linux 6.18",
+      "",
+      "  NOTE: This computer was already busy when the run began (load 1.39), so the figures will come out",
+      "  worse than it really is. Run it again when the computer is idle.",
+      "",
+      "IN SHORT",
+      "  One core of this computer     about 4.8 times a Raspberry Pi 4 core (3.6 to 5.3, depending on the measure)",
+      "  The whole computer            about 4.3 Raspberry Pi 4s",
+      "  Channels it carries today     12 comfortably, 24 at the very most (in a 1.44 MHz window, a storm on every channel)",
+      "  ALERT2 headroom rule          PASSES — 4 cores (4 needed), each about 4.8 times a Pi 4 core (2.5 needed)",
+      "  Decoder check                 every recording and test burst was read correctly on this computer",
+      "",
+      "  The two Raspberry Pi 4 lines rest on very few Pi 4 figures, taken on a busy Pi 4: read \"How far to",
+      "  trust the Raspberry Pi 4 comparison\" below. The channel count does not use them.",
+      "  This measures decoding only. The radio sticks, USB and the screen dashboard are not in it, and",
+      "  nothing here has been run with a real radio stick on a computer that is not a Raspberry Pi.",
+      "",
+      "WHAT WAS MEASURED ON THIS COMPUTER",
+      "  All with the agent's own decoder code. A \"core\" is one of the processor's cores: each channel is",
+      "  decoded on one of them. \"Legacy ALERT\" is the older protocol most stations still send; ALERT2 is",
+      "  its successor.",
+      "",
+      "  Decoding one burst — milliseconds of one core, on real recordings off the air",
+      "                                                            Full    Lean   Light",
+      "    a strong burst, recorded off the air                     259      96      45",
+      "    a weak burst, recorded off the air                       301      90      47",
+      "    a test-rig burst (a three-second recording)              270     107      51",
+      "    Lean is the decoder the agent uses unless it is told otherwise.",
+      "",
+      "  An ALERT2 burst — milliseconds of one core (Lean decoder)",
+      "    a real frame of 74 bytes, recorded off the air           164   (91 tried as a legacy burst first, then 73 as ALERT2)",
+      "    a real frame of 33 bytes, recorded off the air           124   (76 tried as a legacy burst first, then 47 as ALERT2)",
+      "    a made-up frame of 54 bytes (0.32 s on the air)          125   (80 tried as a legacy burst first, then 45 as ALERT2)",
+      "    a made-up frame of 150 bytes (0.8 s on the air)          197   (129 tried as a legacy burst first, then 69 as ALERT2)",
+      "    a made-up frame of 350 bytes (1.84 s on the air)         313   (195 tried as a legacy burst first, then 118 as ALERT2)",
+      "    a made-up frame of 500 bytes (2.55 s on the air)         402   (260 tried as a legacy burst first, then 143 as ALERT2)",
+      "    A typical ALERT2 burst costs 1.6 times a legacy burst, because it is tried as one first.",
+      "",
+      "  A channel while nothing is on the air — share of one core",
+      "    The \"window\" is the slice of the band a radio stick listens to at once; a wider one holds",
+      "    channels further apart and costs more.",
+      "    240 kHz window                                         0.8 %",
+      "    960 kHz window                                         4.0 %",
+      "    1.2 MHz window                                         4.7 %",
+      "    1.44 MHz window                                        5.6 %   (the window Flood-Net's four channels need)",
+      "    2.4 MHz window                                         9.1 %",
+      "    With all 4 cores busy at once, a channel costs 1.12 times as much as on its own.",
+      "",
+      "  Memory — 49 MB for each channel, on top of 52 MB for the agent itself.",
+      "",
+      "  One channel under traffic, through the agent's real decoder thread — share of one core (Lean decoder, 240 kHz window)",
+      "    nothing on the air                                     1.2 %",
+      "    legacy ALERT, 8 bursts a minute                        2.2 %   4 of 4 read",
+      "    legacy ALERT, 20 bursts a minute                       3.7 %   10 of 10 read",
+      "    ALERT2, 20 frames a minute                             6.9 %   10 of 10 read",
+      "    ALERT2, every half-second slot used                   36.8 %   57 of 57 read",
+      "    ALERT2, long frames, 24 a minute                      16.2 %   12 of 12 read",
+      "    8 legacy bursts a minute is a busy day and 20 a storm. 20 ALERT2 frames a minute is about what",
+      "    one ALERT2 link carries today; every half-second slot used (120 a minute) is the most the",
+      "    protocol allows.",
+      "",
+      "HOW MANY CHANNELS",
+      "  Worked out from this computer's own figures above, not from the Raspberry Pi 4 comparison. Each",
+      "  channel is counted as 1.6 times its share while nothing is on the air (the margin a loaded",
+      "  Raspberry Pi 4 needed) plus its traffic. \"Comfortably\" keeps half the computer free for a storm,",
+      "  the radio sticks' own work, the web page and a screen dashboard. \"At the very most\" leaves",
+      "  nothing: do not plan to it.",
+      "",
+      "    Channels: comfortably / at the very most            busy day           storm    ALERT2 today",
+      "    in a 240 kHz window                                 79 / 158         47 / 94         25 / 51",
+      "    in a 960 kHz window                                  23 / 47         19 / 39         14 / 29",
+      "    in a 1.44 MHz window                                 17 / 35         15 / 31         12 / 24",
+      "    in a 2.4 MHz window                                  11 / 22         10 / 20          8 / 17",
+      "    busy day: legacy ALERT, 8 bursts a minute on every channel. storm: 20 a minute. ALERT2 today:",
+      "    every channel an ALERT2 link at 20 frames a minute.",
+      "    Memory is enough for 76 channels in a 1.44 MHz window.",
+      "    A radio stick carries at most 8 channels, and only channels close enough together to fit its",
+      "    window, so 12 channels need at least 2 sticks.",
+      "",
+      "  Three set layouts, checked the same way:",
+      "    fits      four channels on one stick in a 1.44 MHz window (Flood-Net's four), a storm of legacy",
+      "              ALERT on every one: 13 % of this computer (the limit is 50 %)",
+      "    fits      eight channels on two sticks in 960 kHz windows, ALERT2 on every one at today's rate:",
+      "              27 % of this computer (the limit is 50 %)",
+      "    fits      one ALERT2 channel with every half-second slot used, in a 1.44 MHz window: 45 % of one",
+      "              core (the limit is 70 %)",
+      "",
+      "THE ALERT2 HEADROOM RULE: PASSES",
+      "  The rule: at least 4 cores, each at least 2.5 times a Raspberry Pi 4 core.",
+      "  Why: Each channel is decoded on one core and can never use more than one. An ALERT2 channel with",
+      "  every half-second slot used is more work than one Raspberry Pi 4 core can do, however many cores",
+      "  there are.",
+      "  This computer: 4 cores; one core is about 4.8 times a Raspberry Pi 4 core (between 3.6 and 5.3,",
+      "  measure by measure).",
+      "  The same question asked of this computer's own figures, without the Raspberry Pi 4 ones: one",
+      "  channel in a 1.44 MHz window with every half-second ALERT2 slot used would take 45 % of the one",
+      "  core it runs on (the limit is 70 %): it fits.",
+      "",
+      "HOW FAR TO TRUST THE RASPBERRY PI 4 COMPARISON",
+      "  Nobody has run this tool on a Raspberry Pi 4 yet. The comparison rests on three figures taken on a",
+      "  busy Pi 4 with an older agent, and one round figure from a sentence. Treat it as a rough guide.",
+      "  - RPi ALERT docs/roadmap.md, lines 112-113: \"the bench says 240 kHz 6%, 1.2 MHz 27%, 1.44 MHz 31%",
+      "    a channel\". These are the share of one core a channel takes between bursts, by the agent's own",
+      "    built-in measurement, on the Raspberry Pi 4 of the first base station. Taken in October 2026",
+      "    with agent 0.15, older than the agent measured here. Agent 0.17 says it cut the work between",
+      "    bursts by about a quarter (docs/roadmap.md, lines 78-80); the same Pi 4 has not been measured",
+      "    since. The agent takes this measurement by itself a minute and a half after it starts",
+      "    (lib/agent.js, lines 50-52), while its channels are already decoding. That Pi 4 was a working",
+      "    base station with eight channels and its screen dashboard on (docs/hardware.md, lines 101-106).",
+      "    A measurement that has to share the processor reads high, which makes a Pi 4 look slower than it",
+      "    is and any other computer look faster against it.",
+      "  - RPi ALERT docs/hardware.md, lines 76-77: \"A burst's decode — a second or so on a Pi 4\". A round",
+      "    figure in a sentence, for no named recording: a rough ratio only.",
+      "  - RPi ALERT docs/roadmap.md, lines 113-114: \"under load each decoder's busy share ran about 1.6",
+      "    times that\". Seen on that one Pi 4 only. Used here as a safety margin on every computer.",
+      "  There is no Raspberry Pi 4 figure at all for a 960 kHz or 2.4 MHz window, for the Lean or Light",
+      "  decoders in milliseconds, or for ALERT2. (Line numbers are those of RPi ALERT commit 37fee8b (10",
+      "  November 2026).)",
+      "  Measure by measure, a core of this computer came out at: 240 kHz 4.1, 1.2 MHz 5.2, 1.44 MHz 5.3;",
+      "  and by the round \"a second or so\" for a Full decode, about 3.6 times a Raspberry Pi 4 core. The Pi",
+      "  4 figures were taken with agent 0.15 and this is agent 0.23.1: not strictly like for like.",
+      "",
+      "NOT MEASURED",
+      "  - The radio sticks themselves, USB, the rtl_sdr program that reads them, the agent's main thread",
+      "    and web page, and the screen dashboard (a browser: about half a Raspberry Pi 4 core by itself).",
+      "  - Heat. This run lasts minutes; a fanless computer in a hot cabinet may slow down after hours.",
+      "  - Real radio. Nothing here has been run with a real radio stick on a computer that is not a",
+      "    Raspberry Pi.",
+      "",
+      "TO SHARE THIS RESULT",
+      "  Run it again with --out=result.json (the full run, on an idle computer) and send that file:",
+      "  firmware/bench/results/README.md in the open-ALERT repository says how. The file holds these",
+      "  figures and a description of the computer — no names, addresses or serial numbers."
+    ]
+  }
+}

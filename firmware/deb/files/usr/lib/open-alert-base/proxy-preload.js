@@ -29,7 +29,17 @@
     return;
   }
   let viaProxy;
-  try { viaProxy = new undici.ProxyAgent(proxy); }
+  try {
+    // A user name and password in the proxy's address are handed over as the
+    // header a proxy expects ("Proxy-Authorization: Basic …"). An older undici
+    // (5.26, Ubuntu 24.04's) does not take them from the address by itself.
+    const url = new URL(proxy);
+    const opts = { uri: url.protocol + '//' + url.host };
+    if (url.username || url.password) {
+      opts.token = 'Basic ' + Buffer.from(decodeURIComponent(url.username) + ':' + decodeURIComponent(url.password)).toString('base64');
+    }
+    viaProxy = new undici.ProxyAgent(opts);
+  }
   catch (e) {
     note('the web proxy could not be set up (' + e.message + '). Readings are kept on disk and not sent until this is put right.');
     return;

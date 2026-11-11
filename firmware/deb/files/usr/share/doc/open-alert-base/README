@@ -13,6 +13,11 @@ NOT YET TESTED WITH A REAL RADIO STICK on a computer that is not a Raspberry
 Pi. Everything below was tested with stand-ins for the sticks. Try it on your
 own hardware before you rely on it, and run "open-alert-base selftest".
 
+Made for Debian 13 and Ubuntu 24.04, on an ordinary 64-bit PC or a 64-bit ARM
+computer. On Debian 12 it installs and runs, but that system's rtl-sdr package
+does not know the RTL-SDR Blog V4 stick (V3 and generic sticks only);
+"open-alert-base version" says which sticks this computer's rtl-sdr knows.
+
 
 First steps
 -----------
@@ -74,6 +79,17 @@ for that; from 0.24 it has one (web.bind), which the enterprise profile already
 sets, and the firewall rules stay as a second lock.
 
 To turn remote management off altogether:   rpi-alert remote off
+
+In both profiles the audio and the agent's "self-recovery" are off: the
+service is allowed no sound card, and with no program to run as root it could
+not restart networking or the computer anyway.
+
+If you change the dashboard's port yourself (rpi-alert config set web.port …),
+run "sudo open-alert-base sync" afterwards. A port below 1024 needs one
+privilege (CAP_NET_BIND_SERVICE), which "sync" and "profile" give the service
+in a small file of its own, /etc/systemd/system/open-alert-base.service.d/
+10-low-port.conf, and take away again for any other port. Without it the
+agent cannot open a low port and falls back to port 8080.
 
 
 What is where

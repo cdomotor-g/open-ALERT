@@ -147,7 +147,7 @@ each('machine', ['virtualMachine', 'container', 'agentRunning'], 'boolean');
 need('machine.loadAvgAtStart.[]', 'number'); need('machine.loadAvgAtEnd.[]', 'number');
 
 need('agent.dir', 'string'); need('agent.version', 'string'); need('agent.decoderCommit', 'string|null');
-need('agent.decoders.[]', 'string'); need('agent.defaultDecoder', 'string'); need('agent.recordingsDir', 'string');
+need('agent.decoders.[]', 'string'); need('agent.defaultDecoder', 'string'); need('agent.recordings', 'string');
 need('warnings', 'array'); need('errors', 'array');
 each('sectionSeconds', ['burst', 'alert2', 'betweenBursts', 'parallel', 'memory', 'traffic'], 'number');
 

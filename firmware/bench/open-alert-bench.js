@@ -1089,7 +1089,7 @@ function findAgent(given) {
     const d = path.resolve(given);
     if (isAgentDir(d)) return d;
     if (isAgentDir(path.join(d, 'agent'))) return path.join(d, 'agent');     // a release unpacked, or a checkout
-    throw new Error(d + ' is not an RPi ALERT agent folder (it has no lib/meganet-codecs.js). Give the folder that holds bin, lib, vendor and test.');
+    throw new Error(d + ' is not an RPi ALERT agent directory (it has no lib/meganet-codecs.js). Give the directory that holds bin, lib, vendor and test.');
   }
   for (const d of DEFAULT_AGENT_DIRS) if (isAgentDir(d)) return d;
   throw new Error('No RPi ALERT agent found in ' + DEFAULT_AGENT_DIRS.join(' or ') + '. Give its folder: node open-alert-bench.js /path/to/agent');

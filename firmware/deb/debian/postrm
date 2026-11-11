@@ -31,13 +31,20 @@ case "${1:-}" in
     rm -f "$DROPIN_DIR/10-low-port.conf" /etc/open-alert-base/profile
     rmdir "$DROPIN_DIR" 2>/dev/null || true
     rmdir /etc/open-alert-base 2>/dev/null || true
-    # Settings (with the Flood-Net token) and data.
-    rm -rf /etc/rpi-alert /var/lib/rpi-alert
-    # The agent's user, if it is the one this package uses.
-    if getent passwd "$SVC_USER" >/dev/null && [ "$(getent passwd "$SVC_USER" | cut -d: -f6)" = /var/lib/rpi-alert ]; then
-      if command -v deluser >/dev/null 2>&1; then deluser --system --quiet "$SVC_USER" >/dev/null 2>&1 || true
-      else userdel "$SVC_USER" >/dev/null 2>&1 || true; fi
-      if getent group "$SVC_USER" >/dev/null; then groupdel "$SVC_USER" >/dev/null 2>&1 || true; fi
+    if [ -e /opt/rpi-alert ] || [ -e /etc/systemd/system/rpi-alert.service ]; then
+      # RPi ALERT's own installer has been used on this computer since this
+      # package was removed: the settings, the data and the user are its now.
+      echo "open-alert-base: RPi ALERT's own install is on this computer, and uses the same settings, data and user:"
+      echo "                 /etc/rpi-alert, /var/lib/rpi-alert and the user $SVC_USER were left as they are."
+    else
+      # Settings (with the Flood-Net token) and data.
+      rm -rf /etc/rpi-alert /var/lib/rpi-alert
+      # The agent's user, if it is the one this package uses.
+      if getent passwd "$SVC_USER" >/dev/null && [ "$(getent passwd "$SVC_USER" | cut -d: -f6)" = /var/lib/rpi-alert ]; then
+        if command -v deluser >/dev/null 2>&1; then deluser --system --quiet "$SVC_USER" >/dev/null 2>&1 || true
+        else userdel "$SVC_USER" >/dev/null 2>&1 || true; fi
+        if getent group "$SVC_USER" >/dev/null; then groupdel "$SVC_USER" >/dev/null 2>&1 || true; fi
+      fi
     fi
     if [ -d /run/systemd/system ]; then systemctl --system daemon-reload >/dev/null || true; fi
     ;;

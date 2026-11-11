@@ -90,6 +90,19 @@ inside_begin() {
 
 t_apt() { apt-get -y -o Dpkg::Use-Pty=0 "$@"; }
 
+# Container images tell the package tool to leave out every package's
+# documentation (to stay small). A real computer has no such rule: taken away,
+# so that the install puts the package's README in place here as it does there.
+t_keep_documentation() {
+  local f
+  for f in /etc/dpkg/dpkg.cfg.d/docker /etc/dpkg/dpkg.cfg.d/excludes; do
+    if [ -f "$f" ] && grep -q '^path-exclude' "$f"; then
+      rm -f "$f"
+      oa_note "removed the container image's $f (it leaves out every package's documentation; a real computer has none)"
+    fi
+  done
+}
+
 t_apt_update() {
   local try
   for try in 1 2 3; do
@@ -179,6 +192,7 @@ inside_install() {
 
   oa_section "$OA_DISTRO: a clean install with apt"
   if ! t_apt_update; then oa_fail "apt-get update (see $T_LOG/apt-update.log)"; exit 1; fi
+  t_keep_documentation
   if t_apt install "$OA_DEB" > "$T_LOG/apt-install.log" 2>&1; then
     oa_ok "apt-get install ./$(basename "$OA_DEB") — what it needs came from the system's own packages"
   else
@@ -425,7 +439,7 @@ LIST
   oa_check "remove: the agent's user is kept" id rpi-alert
   oa_check "remove: /etc/open-alert-base/env is kept" test -f /etc/open-alert-base/env
   if t_apt install "$OA_DEB" > "$T_LOG/apt-reinstall.log" 2>&1; then oa_ok "install again"; else oa_fail "install again — see $T_LOG/apt-reinstall.log"; fi
-  oa_has "reinstall: it says the settings file was left as it is" "$T_LOG/apt-reinstall.log" 'a settings file is already here .* and was left as it is'
+  oa_has_not "reinstall: no profile was applied over the settings that were kept" "$T_LOG/apt-reinstall.log" 'Settings file .* made|Settings changed'
   after=$(sha256sum /etc/rpi-alert/config.json | awk '{print $1}')
   oa_is "reinstall: the settings file is byte for byte what it was" "$before" "$after"
   oa_check "reinstall: the service is set to start with the computer again" test -L "$WANTS/open-alert-base.service"
@@ -596,6 +610,9 @@ t_proxy_run() {
       echo "NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/oa-test-authority.crt"
     fi
   } >> /etc/open-alert-base/env
+  # The agent fetches the station list once a day and keeps a copy: without
+  # the copy it fetches it five seconds after it starts.
+  rm -f /var/lib/rpi-alert/stations-index.json
   t_stub_start "$slog"
   node "$SIM/tls-front.js" 443 "$SIM/tls/srv.key" "$SIM/tls/srv.crt" 8098 > "$flog" 2>&1 < /dev/null &
   FRONT_PID=$!
@@ -704,8 +721,37 @@ inside_fw_unlock() {
 
 # ── part c: under a real systemd ─────────────────────────────────────────────
 
-# Run a command in the service's own view of the mounted file systems.
-t_in_service() { nsenter -t "$1" -m -- "${@:2}"; }
+# What the service itself can and cannot do: a short list of attempts, made by
+# the service (the same user, inside the same sandbox) just before it starts
+# the agent, and written where it may write. Nothing is looked at from outside.
+#   t_probe_install     adds the attempts to the service, for this check only
+#   t_probe NAME        what an attempt gave: "ok", or the refusal's own words
+T_PROBE_OUT=/var/lib/rpi-alert/oa-probe.txt
+t_probe_install() {
+  cat > "$SIM/probe.sh" <<'PROBE'
+#!/bin/sh
+out=/var/lib/rpi-alert/oa-probe.txt
+try() { n=$1; shift; if m=$("$@" 2>&1); then echo "$n: ok"; else echo "$n: $m"; fi; }
+{
+  echo "user: $(id -un)"
+  try write-usr touch /usr/oa-probe
+  try write-etc touch /etc/oa-probe
+  try write-var touch /var/oa-probe
+  try write-settings sh -c 'touch /etc/rpi-alert/.oa-probe && rm /etc/rpi-alert/.oa-probe'
+  try write-data sh -c 'touch /var/lib/rpi-alert/.oa-probe && rm /var/lib/rpi-alert/.oa-probe'
+  try see-outside-tmp test -e /tmp/oa-test-outside
+  try read-env-file cat /etc/open-alert-base/env
+  echo "home: $(ls -A /home /root 2>&1 | tr '\n' ' ')"
+  echo "others: $(ls /proc | grep -c '^[0-9]') processes in sight"
+} > "$out" 2>&1
+exit 0
+PROBE
+  chmod 0755 "$SIM/probe.sh"
+  mkdir -p /etc/systemd/system/open-alert-base.service.d
+  printf '# For this check only: the service says what it can and cannot do.\n[Service]\nExecStartPre=/bin/sh %s\n' "$SIM/probe.sh" \
+    > /etc/systemd/system/open-alert-base.service.d/91-oa-probe.conf
+}
+t_probe() { sed -n "s/^$1: //p" "$T_PROBE_OUT" 2>/dev/null | head -n 1; }
 # The service runs again, as another process than the one given.
 t_restarted() {
   local p
@@ -715,7 +761,7 @@ t_restarted() {
 
 inside_systemd() {
   inside_begin
-  local version pid got f score cg n
+  local version pid got f score cg n before
   oa_section "$OA_DISTRO: installed and started by a real systemd ($(systemctl --version | awk 'NR == 1 {print $2}'))"
   if ! t_apt_update; then oa_fail "apt-get update"; exit 1; fi
   # Container images carry a file that forbids packages to start services while
@@ -739,24 +785,34 @@ inside_systemd() {
   oa_is "… the system-call filter is on" "2" "$(oa_proc_status "$pid" Seccomp)"
   oa_note "system-call filters on the process: $(oa_proc_status "$pid" Seccomp_filters)"
 
-  oa_section "$OA_DISTRO: the sandbox, as the service's own process sees the computer"
-  if [ "$(readlink "/proc/$pid/ns/mnt")" != "$(readlink /proc/1/ns/mnt)" ]; then
-    oa_ok "systemd gave the service its own view of the file systems"
-    if t_in_service "$pid" sh -c 'touch /usr/oa-test-write' 2> "$T_LOG/sd-ro.txt"; then oa_fail "inside the service's view, /usr can be written"; rm -f /usr/oa-test-write
-    elif grep -q 'Read-only file system' "$T_LOG/sd-ro.txt"; then oa_ok "… in it the system is read-only (even root is refused: \"Read-only file system\")"
-    else oa_fail "writing /usr inside the service's view: $(cat "$T_LOG/sd-ro.txt")"; fi
-    if t_in_service "$pid" sh -c 'touch /etc/oa-test-write' 2> "$T_LOG/sd-ro2.txt"; then oa_fail "inside the service's view, /etc can be written"; rm -f /etc/oa-test-write
-    else oa_ok "… /etc is read-only"; fi
-    if t_in_service "$pid" sh -c 'touch /etc/rpi-alert/.oa-test && rm /etc/rpi-alert/.oa-test && touch /var/lib/rpi-alert/.oa-test && rm /var/lib/rpi-alert/.oa-test'; then
-      oa_ok "… but for its two folders, /etc/rpi-alert and /var/lib/rpi-alert"
-    else oa_fail "the service's two folders cannot be written inside its view"; fi
-    touch /tmp/oa-test-outside
-    if t_in_service "$pid" test -e /tmp/oa-test-outside; then oa_fail "the service sees the computer's own /tmp"; else oa_ok "… it has a /tmp of its own"; fi
-    rm -f /tmp/oa-test-outside
-    if t_in_service "$pid" sh -c 'ls /home /root 2>/dev/null | grep -q .'; then oa_note "the service's view of /home and /root is not empty"; else oa_ok "… /home and /root are empty to it"; fi
+  oa_section "$OA_DISTRO: the sandbox, tried by the service itself (the same user, inside the same limits, just before it starts the agent)"
+  mkdir -p "$SIM"
+  t_probe_install
+  touch /tmp/oa-test-outside
+  systemctl daemon-reload
+  systemctl restart open-alert-base.service
+  if oa_wait 30 test -s "$T_PROBE_OUT"; then
+    cp "$T_PROBE_OUT" "$T_LOG/sd-probe.txt"
+    oa_is "the attempts were made as the user rpi-alert" "rpi-alert" "$(t_probe user)"
+    for f in usr etc var; do
+      case "$(t_probe "write-$f")" in
+        *"Read-only file system"*) oa_ok "it cannot write in /$f: the whole system is read-only to it (\"Read-only file system\")" ;;
+        *) oa_fail "writing in /$f from inside the service: $(t_probe "write-$f")" ;;
+      esac
+    done
+    oa_is "but it can write in its settings folder, /etc/rpi-alert" "ok" "$(t_probe write-settings)"
+    oa_is "… and in its data folder, /var/lib/rpi-alert" "ok" "$(t_probe write-data)"
+    if [ "$(t_probe see-outside-tmp)" = ok ]; then oa_fail "the service sees the computer's own /tmp"; else oa_ok "it has a /tmp of its own: a file put in the computer's /tmp is not there for it"; fi
+    case "$(t_probe read-env-file)" in *"Permission denied"*) oa_ok "it cannot read /etc/open-alert-base/env (where a proxy's password would be): root only" ;; *) oa_fail "reading /etc/open-alert-base/env from inside the service: $(t_probe read-env-file)" ;; esac
+    oa_is "/home and /root are empty or closed to it" "" "$(t_probe home | sed "s#ls: cannot open directory '[^']*': Permission denied##g; s#/home:##; s#/root:##" | tr -d ' ')"
+    oa_note "other programs: $(t_probe others) from inside the service (its own only; the computer has $(find /proc -maxdepth 1 -name '[0-9]*' | wc -l))"
   else
-    oa_skip "the read-only file system, the private /tmp — this container may not make the private mounts they need, so systemd left them out (its other limits are on)"
+    oa_fail "the service did not make its attempts (no $T_PROBE_OUT) — see: journalctl -u open-alert-base"
+    journalctl -u open-alert-base --no-pager -n 20 || true
   fi
+  rm -f /tmp/oa-test-outside /etc/systemd/system/open-alert-base.service.d/91-oa-probe.conf
+  systemctl daemon-reload
+  pid=$(systemctl show -p MainPID --value open-alert-base.service)
   got=$(systemctl show -p DevicePolicy --value open-alert-base.service)
   oa_is "systemd holds the device list: policy" "closed" "$got"
   cg=$(sed -n 's/^[0-9]*:devices:\(.*\)$/\1/p' "/proc/$pid/cgroup" | head -n 1)
@@ -778,10 +834,10 @@ inside_systemd() {
     echo "[Service]"
     for f in "${SIM_ENV[@]}"; do printf 'Environment="%s"\n' "$(printf '%s' "$f" | sed 's/\\/\\\\/g; s/"/\\"/g')"; done
   } > /etc/systemd/system/open-alert-base.service.d/90-oa-test.conf
+  systemctl daemon-reload
   systemctl stop open-alert-base.service
   t_apply "$SIM_SETTINGS"
   t_stub_start "$T_LOG/sd-stub-standard.log"
-  systemctl daemon-reload
   systemctl start open-alert-base.service
   t_run_checks "standard, under systemd" 80 "$T_LOG/sd-stub-standard.log"
   got=$(systemctl show -p WatchdogUSec --value open-alert-base.service)
@@ -825,6 +881,18 @@ inside_systemd() {
   if [ "${n:-0}" = 0 ]; then oa_ok "nothing in the agent's log says the sandbox refused it something it needed"
   else oa_fail "the agent's log has $n line(s) about something refused — see $T_LOG/sd-journal.txt: $(grep -Ei 'operation not permitted|EPERM|permission denied|EACCES|bad system call' "$T_LOG/sd-journal.txt" | head -n 3)"; fi
 
+  oa_section "$OA_DISTRO: the package installed again over itself, as an update is (under systemd)"
+  before=$(sha256sum /etc/rpi-alert/config.json | awk '{print $1}')
+  pid=$(systemctl show -p MainPID --value open-alert-base.service)
+  if t_apt install --reinstall "$OA_DEB" > "$T_LOG/sd-apt-update.log" 2>&1; then oa_ok "apt-get install --reinstall ./$(basename "$OA_DEB")"
+  else oa_fail "apt-get install --reinstall — see $T_LOG/sd-apt-update.log"; fi
+  if oa_wait 30 t_restarted "$pid"; then oa_ok "the service was restarted by the update and is running"; else oa_fail "the service is not running anew after the update"; fi
+  oa_is "the settings file is byte for byte what it was" "$before" "$(sha256sum /etc/rpi-alert/config.json | awk '{print $1}')"
+  oa_is "the profile in force is still" "enterprise" "$(cat /etc/open-alert-base/profile)"
+  oa_check "the firewall lock is still on" nft list table inet open_alert_base
+  oa_check_not "and still no privilege was given" test -e "$DROPIN"
+  if oa_wait 40 oa_http_ok http://127.0.0.1:8080/; then oa_ok "the dashboard answers again on port 8080"; else oa_fail "the dashboard does not answer after the update"; fi
+
   oa_section "$OA_DISTRO: remove and purge, under systemd"
   if t_apt remove open-alert-base > "$T_LOG/sd-apt-remove.log" 2>&1; then oa_ok "apt-get remove"; else oa_fail "apt-get remove — see $T_LOG/sd-apt-remove.log"; fi
   got=$(systemctl is-active open-alert-base.service 2>&1 || true)
@@ -835,7 +903,7 @@ inside_systemd() {
   if t_apt purge open-alert-base > "$T_LOG/sd-apt-purge.log" 2>&1; then oa_ok "apt-get purge"; else oa_fail "apt-get purge — see $T_LOG/sd-apt-purge.log"; fi
   got=$(ls -d /etc/rpi-alert /var/lib/rpi-alert /etc/open-alert-base /etc/systemd/system/open-alert-base.service.d /etc/systemd/system/open-alert-base.service /etc/systemd/system/open-alert-base-firewall.service 2>/dev/null || true)
   oa_is "purge: nothing of it is left under /etc or /var/lib" "" "$got"
-  got=$(systemctl list-unit-files 'open-alert-base*' --no-legend --no-pager 2>/dev/null | head -n 3)
+  got=$(systemctl list-unit-files 'open-alert-base*' --no-legend --no-pager 2>/dev/null | head -n 3 || true)
   oa_is "purge: systemd knows no such service any more" "" "$got"
   t_stop_all
   trap - ERR
