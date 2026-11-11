@@ -1,0 +1,16 @@
+#!/bin/bash
+# open-alert-base, before its files are removed: stop the service. (On an
+# upgrade it keeps running, and the new version restarts it.)
+set -euo pipefail
+
+case "${1:-}" in
+  remove|deconfigure)
+    if [ -d /run/systemd/system ]; then
+      for u in open-alert-base.service open-alert-base-firewall.service; do
+        if command -v deb-systemd-invoke >/dev/null 2>&1; then deb-systemd-invoke stop "$u" >/dev/null 2>&1 || true
+        else systemctl stop "$u" >/dev/null 2>&1 || true; fi
+      done
+    fi
+    ;;
+esac
+exit 0

@@ -1,0 +1,96 @@
+#!/bin/bash
+# open-alert-base, once its files are in place.
+set -euo pipefail
+
+SVC_USER=rpi-alert
+UNIT=open-alert-base.service
+
+case "${1:-}" in
+  configure)
+    first_install=1; if [ -n "${2:-}" ]; then first_install=0; fi
+
+    # ── the agent's user: a system account nobody can log in to ──────────────
+    if ! getent passwd "$SVC_USER" >/dev/null; then
+      adduser --system --group --quiet --home /var/lib/rpi-alert --no-create-home --shell /usr/sbin/nologin "$SVC_USER"
+      usermod -c "open-ALERT base station (RPi ALERT agent)" "$SVC_USER" >/dev/null 2>&1 || true
+    fi
+    # plugdev: the RTL-SDR sticks. dialout: USB serial receivers.
+    for g in plugdev dialout; do
+      getent group "$g" >/dev/null || addgroup --system --quiet "$g"
+      if ! id -nG "$SVC_USER" | tr ' ' '\n' | grep -qx "$g"; then adduser --quiet "$SVC_USER" "$g"; fi
+    done
+
+    # ── its two folders, owned by it, as the agent expects ───────────────────
+    install -d -o "$SVC_USER" -g "$SVC_USER" -m 0750 /etc/rpi-alert /var/lib/rpi-alert
+
+    if [ -d /run/systemd/system ]; then systemctl --system daemon-reload >/dev/null || true; fi
+
+    # ── settings: a profile only when there is no settings file yet ──────────
+    if [ ! -e /etc/rpi-alert/config.json ] && [ ! -L /etc/rpi-alert/config.json ]; then
+      # The profile to start with: OPEN_ALERT_BASE_PROFILE in the environment
+      # of the install, else a name already written in /etc/open-alert-base/profile,
+      # else "standard".
+      profile="${OPEN_ALERT_BASE_PROFILE:-}"
+      if [ -z "$profile" ] && [ -r /etc/open-alert-base/profile ]; then profile=$(head -n 1 /etc/open-alert-base/profile); fi
+      [ -n "$profile" ] || profile=standard
+      rc=0
+      open-alert-base profile "$profile" || rc=$?
+      # 3: the settings are in force but the firewall lock could not be put on
+      # (said plainly above); anything else stops the install.
+      if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then exit "$rc"; fi
+    else
+      if [ "$first_install" = 1 ]; then
+        echo "open-alert-base: a settings file is already here (/etc/rpi-alert/config.json) and was left as it is."
+        echo "                 To put a profile in force: sudo open-alert-base profile standard   (or: enterprise)"
+      fi
+      open-alert-base sync || true
+    fi
+
+    # ── device rules: sticks and serial receivers the agent's user may open ──
+    if command -v udevadm >/dev/null 2>&1 && [ -S /run/udev/control ]; then
+      udevadm control --reload-rules >/dev/null 2>&1 || true
+      udevadm trigger --subsystem-match=usb --subsystem-match=tty >/dev/null 2>&1 || true
+    fi
+    # A stick plugged in already may be held by the kernel's TV driver: let it
+    # go now (the block list keeps the driver away from the next start-up on).
+    if [ -d /run/systemd/system ] && [ -r /proc/modules ] && command -v modprobe >/dev/null 2>&1; then
+      for m in dvb_usb_rtl28xxu rtl2832_sdr rtl2832 rtl2830 r820t; do
+        if grep -q "^$m " /proc/modules; then modprobe -r "$m" >/dev/null 2>&1 || true; fi
+      done
+    fi
+
+    # ── the service: on at start-up; started now where systemd is running ────
+    if command -v deb-systemd-helper >/dev/null 2>&1; then
+      deb-systemd-helper unmask "$UNIT" >/dev/null || true
+      if deb-systemd-helper --quiet was-enabled "$UNIT"; then
+        deb-systemd-helper enable "$UNIT" >/dev/null || true
+      else
+        deb-systemd-helper update-state "$UNIT" >/dev/null || true
+      fi
+    fi
+    if [ -d /run/systemd/system ]; then
+      systemctl --system daemon-reload >/dev/null || true
+      if [ "$first_install" = 1 ]; then action=start; else action=restart; fi
+      if command -v deb-systemd-invoke >/dev/null 2>&1; then
+        deb-systemd-invoke "$action" "$UNIT" >/dev/null || true
+      else
+        systemctl "$action" "$UNIT" >/dev/null || true
+      fi
+    fi
+
+    if [ "$first_install" = 1 ]; then
+      cat <<MSG
+
+open-alert-base is installed.
+    Set it up:        rpi-alert setup          (the Flood-Net token, a name, where it is)
+    How it is:        open-alert-base status
+    For a reviewer:   sudo open-alert-base audit
+    Profiles:         open-alert-base profile  (standard, or the locked-down enterprise)
+Not yet tested with a real radio stick on a computer that is not a Raspberry Pi:
+see /usr/share/doc/open-alert-base/README.
+
+MSG
+    fi
+    ;;
+esac
+exit 0

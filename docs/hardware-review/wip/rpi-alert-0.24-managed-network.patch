@@ -1,0 +1,1842 @@
+diff --git a/agent/README.md b/agent/README.md
+index e6dd10f..07a570d 100644
+--- a/agent/README.md
++++ b/agent/README.md
+@@ -30,7 +30,7 @@ lib/state.js               receiver ids, what each port was, and every RTL-SDR s
+ lib/stations.js            MegaNet's register, for names — and the frequencies its stations use, to offer a stick
+ lib/recorder.js            recordings: every burst on chosen channels kept as 240 ksps IQ (.iq8 + .json), newest first
+ lib/audio.js               live SDR audio, re-synthesised bursts, beeps — via aplay
+-lib/bootconf.js            /boot/firmware/rpi-alert.conf
++lib/bootconf.js            /boot/firmware/rpi-alert.conf (off a Pi: /etc/rpi-alert/rpi-alert.conf)
+ lib/web/server.js, web/    the dashboard, API and SSE; web/qr.js draws QR codes (page and CLI); web/channels.js reads
+                            and writes channel lists ("151.5, 152.4 EIF": page, CLI and the boot-partition file);
+                            web/sdr-plan.js picks a stick's window and where to tune (DC spike, mirror images) for
+diff --git a/agent/bin/rpi-alert b/agent/bin/rpi-alert
+index 75cb454..ef774d7 100755
+--- a/agent/bin/rpi-alert
++++ b/agent/bin/rpi-alert
+@@ -12,7 +12,10 @@
+ //                                    terminal with a light background)
+ //   rpi-alert token [mgn_…]          set (or check) the MegaNet ingest token by hand
+ //   rpi-alert config get [key]       print settings (e.g. receivers.sdr.freqHz)
+-//   rpi-alert config set key value   change one (value as JSON, or plain text)
++//   rpi-alert config set key value   change one (value as JSON, or plain text). On a managed
++//                                    network: web.bind 127.0.0.1 (the dashboard off the network),
++//                                    web.hosts bs01.council.example (a name it answers to),
++//                                    web.behindProxy true, web.requireLogin all
+ //   rpi-alert sdr                    the RTL-SDR sticks: number, name, channels, USB port, state
+ //   rpi-alert sdr <stick> <setting> <value>
+ //                                    a stick's own setting: freq (the channels it hears, MHz:
+@@ -274,6 +277,8 @@ async function config(sub, key, value) {
+     if (!key) throw new Error('rpi-alert config set <key> <value>');
+     let v = value;
+     try { v = JSON.parse(value); } catch (_) {}
++    // The dashboard's names, as they are typed: one, or several with commas; none for none.
++    if (key === 'web.hosts' && typeof v === 'string') v = /^(none|)$/i.test(v.trim()) ? [] : v.toLowerCase().split(/[\s,;]+/).filter(Boolean);
+     const r = await post('/api/config', { config: patchFor(key, v) });
+     console.log(r.changed.length ? 'Saved: ' + r.changed.join(', ') : 'Unchanged.');
+     return;
+diff --git a/agent/lib/bootconf.js b/agent/lib/bootconf.js
+index 6f97311..853c427 100644
+--- a/agent/lib/bootconf.js
++++ b/agent/lib/bootconf.js
+@@ -27,6 +27,12 @@
+ //   audio_volume = 80
+ //   kiosk = auto                      auto | on | off
+ //   web_password = …                  stored hashed; removed from the card
++//   web_bind = 127.0.0.1              the address the dashboard listens on (absent: every interface;
++//                                     127.0.0.1 keeps it off the network — rpi-alert still reaches it)
++//   web_hosts = bs01.council.example  more names the dashboard answers to: its name in your DNS
++//   web_behind_proxy = no             yes: a reverse proxy on this machine publishes it over HTTPS
++//   web_require_login = settings      all: nothing is read without the password (settings: only
++//                                     the settings need it)
+ //   timezone = Australia/Brisbane
+ //   hostname = rpi-alert
+ //   wifi_ssid = …                     a Wi-Fi network to join (Raspberry Pi Imager can do this too)
+@@ -61,16 +67,27 @@
+ // Once applied the file is renamed rpi-alert.conf.applied with the secrets
+ // blanked out, and what happened is appended to rpi-alert-boot.log beside it.
+ // To change something later, write a new rpi-alert.conf.
++//
++// A computer that is not a Raspberry Pi has no such partition: there the same
++// file is /etc/rpi-alert/rpi-alert.conf, looked for when no boot partition
++// holds one. The agent owns that directory and this runs as root, so the file
++// is applied only if it is root's own (ETC_CONF, below).
+ 
+ const fs = require('node:fs');
+ const path = require('node:path');
+ const { execFileSync } = require('node:child_process');
+-const { Config, hashPassword } = require('./config');
++const { Config, hashPassword, bindOk, hostsOk } = require('./config');
+ const { readNoFollow, writeAtomic } = require('./safe-fs');
+ const Channels = require('../web/channels');
+ 
+-const BOOT_DIRS = ['/boot/firmware', '/boot'];
++const BOOT_DIRS = (process.env.RPI_ALERT_BOOT_DIRS || '/boot/firmware:/boot').split(':');
+ const NAMES = ['rpi-alert.conf', 'rpi-alert.txt', 'rpi-alert.conf.txt'];
++// The same file where there is no boot partition (0.24). It can give the alert
++// account a key or a password, and the agent — the part that faces the
++// network — owns this directory: so it is read only if root wrote it (not a
++// link, not a file of the agent's, not one others may write), and its applied
++// copy and log go to the agent's user, which no later boot takes for root's.
++const ETC_CONF = process.env.RPI_ALERT_ETC_CONF || '/etc/rpi-alert/rpi-alert.conf';
+ // Every key that carries a secret, under every spelling the parser accepts
+ // (see the `case` list below) — redactText matches the exact normalised key, so
+ // an alias left out here would leave its value in plain text on the card
+@@ -172,6 +189,29 @@ function toPatch(kv) {
+       case 'kiosk': case 'display': set('kiosk.mode', no(v) ? 'off' : yes(v) ? 'on' : String(v).trim().toLowerCase()); break;
+       case 'timezone': case 'time_zone': set('system.timezone', v.trim()); system.timezone = v.trim(); break;
+       case 'web_password': case 'password': set('web.passwordHash', hashPassword(v)); break;
++      // 0.24, the dashboard on a managed network: where it listens, the names
++      // it answers to, a proxy in front of it, a login for everything. One
++      // that cannot be read is left as it was, like any other.
++      case 'web_bind': case 'web_listen': {
++        const b = v.trim().toLowerCase().replace(/^\[(.*)\]$/, '$1');
++        const addr = /^(all|any|every|\*|0\.0\.0\.0|::)?$/.test(b) ? '' : /^(local|localhost|loopback)$/.test(b) ? '127.0.0.1' : b;
++        if (addr === '' || bindOk(addr)) set('web.bind', addr);
++        else notes.push(k + ': one of this computer\'s addresses, such as 127.0.0.1 (or all) — not changed');
++        break;
++      }
++      case 'web_hosts': case 'web_host': {
++        const list = no(v) || /^none$/i.test(v.trim()) ? [] : v.toLowerCase().split(/[\s,;]+/).filter(Boolean);
++        if (hostsOk(list)) set('web.hosts', list); else notes.push(k + ': host names with commas between them, such as bs01.council.example — not changed');
++        break;
++      }
++      case 'web_behind_proxy': case 'behind_proxy':
++        if (yes(v) || no(v)) set('web.behindProxy', yes(v)); else notes.push(k + ': yes or no — not changed');
++        break;
++      case 'web_require_login': case 'require_login': {
++        const m = yes(v) ? 'all' : no(v) ? 'settings' : String(v).trim().toLowerCase();
++        if (m === 'all' || m === 'settings') set('web.requireLogin', m); else notes.push(k + ': all or settings — not changed');
++        break;
++      }
+       case 'hostname': system.hostname = v.trim().toLowerCase(); break;
+       case 'wifi_ssid': case 'wifi': system.wifiSsid = v; break;
+       case 'wifi_password': case 'wifi_psk': system.wifiPassword = v; break;
+@@ -277,15 +317,7 @@ function applySystem(s, log) {
+     const r = sh('timedatectl', ['set-timezone', s.timezone]);
+     log(r.ok ? 'time zone ' + s.timezone : 'could not set time zone ' + s.timezone + ': ' + r.out);
+   }
+-  if (s.wifiSsid) {
+-    const name = 'rpi-alert-wifi';
+-    sh('nmcli', ['connection', 'delete', name]);
+-    const args = ['connection', 'add', 'type', 'wifi', 'con-name', name, 'ifname', 'wlan0', 'ssid', s.wifiSsid, 'connection.autoconnect', 'yes'];
+-    if (s.wifiPassword) args.push('wifi-sec.key-mgmt', 'wpa-psk', 'wifi-sec.psk', s.wifiPassword);
+-    const r = sh('nmcli', args);
+-    if (r.ok) { sh('nmcli', ['radio', 'wifi', 'on']); sh('nmcli', ['connection', 'up', name]); }
+-    log(r.ok ? 'Wi-Fi network "' + s.wifiSsid + '" added (joins when in range)' : 'could not add Wi-Fi "' + s.wifiSsid + '": ' + r.out);
+-  }
++  if (s.wifiSsid) applyWifi(s, log);
+   if (s.btGps) applyBtGps(s.btGps, log);
+   if (s.access) applyAccess(s.access, log);
+   if (s.ssh) applySsh(s.ssh, log);
+@@ -300,6 +332,21 @@ function applySystem(s, log) {
+   }
+ }
+ 
++// A Wi-Fi network to join. The connection names no device ("*"): NetworkManager
++// puts it on the Wi-Fi device the computer has — wlan0 on a Raspberry Pi, as
++// before 0.24 named it; wlp2s0 and the like on other computers, where a
++// connection made for wlan0 never came up.
++function applyWifi(s, log, opt) {
++  const run = (opt && opt.run) || sh;
++  const name = 'rpi-alert-wifi';
++  run('nmcli', ['connection', 'delete', name]);
++  const args = ['connection', 'add', 'type', 'wifi', 'con-name', name, 'ifname', '*', 'ssid', s.wifiSsid, 'connection.autoconnect', 'yes'];
++  if (s.wifiPassword) args.push('wifi-sec.key-mgmt', 'wpa-psk', 'wifi-sec.psk', s.wifiPassword);
++  const r = run('nmcli', args);
++  if (r.ok) { run('nmcli', ['radio', 'wifi', 'on']); run('nmcli', ['connection', 'up', name]); }
++  log(r.ok ? 'Wi-Fi network "' + s.wifiSsid + '" added (joins when in range)' : 'could not add Wi-Fi "' + s.wifiSsid + '": ' + r.out);
++}
++
+ // SSH on or off. On a card's first boot this runs before the host keys exist:
+ // Raspberry Pi OS makes them later in the boot (cloud-init's ssh module, or
+ // regenerate_ssh_host_keys, ordered only Before=ssh.service), and sshd will
+@@ -442,12 +489,23 @@ function main(args) {
+   if (!file) {
+     for (const d of BOOT_DIRS) for (const n of NAMES) { const f = path.join(d, n); if (!file && fs.existsSync(f)) file = f; }
+   }
+-  if (!file) { console.log('no rpi-alert.conf on the boot partition — nothing to apply'); return; }
++  // No boot partition, or nothing on it: the file in /etc/rpi-alert, if root put one there.
++  let etc = false;
++  if (!file) { try { fs.lstatSync(ETC_CONF); file = ETC_CONF; etc = true; } catch (_) {} }
++  if (!file) { console.log('no rpi-alert.conf on the boot partition or at ' + ETC_CONF + ' — nothing to apply'); return; }
+   const dir = path.dirname(file);
+   const logLines = [];
+   const log = (s) => { logLines.push(s); console.log(s); };
++  let text;
++  if (etc) {
++    try { text = readNoFollow(file, 256 * 1024, { rootsOwn: true }); }
++    catch (e) {
++      console.log(e.message + '. A settings file in ' + dir + ' is applied only when it is root\'s own: sudo install -m 600 -o root -g root <your file> ' + file);
++      return;
++    }
++  }
+   log('— ' + new Date().toISOString() + ' applying ' + file);
+-  const text = fs.readFileSync(file, 'utf8');
++  if (!etc) text = fs.readFileSync(file, 'utf8');
+   const { patch, system, notes } = toPatch(parse(text));
+   notes.forEach(n => log('note: ' + n));
+   const cfg = new Config().load();
+@@ -479,11 +537,26 @@ function main(args) {
+       log('site survey "' + system.survey.name + '" starts at this power-up');
+     } catch (e) { log('could not start the survey: ' + e.message); }
+   } else if (system.survey) log('note: survey_hours / survey_readings without survey = <name> — no survey started');
++  const applied = '# Applied ' + new Date().toISOString() + ' — see rpi-alert-boot.log\n' + redactText(text);
++  const logFile = path.join(dir, 'rpi-alert-boot.log');
++  if (etc) {
++    // In the agent's own directory: never through a link, and given to its
++    // user, so neither file can be put back as root's settings.
++    const mine = { mode: 0o600, owner: 'dir' };
++    try {
++      writeAtomic(path.join(dir, 'rpi-alert.conf.applied'), applied, mine);
++      fs.unlinkSync(file);
++    } catch (e) { log('could not rename ' + file + ': ' + e.message); }
++    let before = '';
++    try { before = readNoFollow(logFile, 4 * 1024 * 1024).slice(-64 * 1024); } catch (_) {}
++    try { writeAtomic(logFile, before + logLines.join('\n') + '\n', mine); } catch (_) {}
++    return;
++  }
+   try {
+-    fs.writeFileSync(path.join(dir, 'rpi-alert.conf.applied'), '# Applied ' + new Date().toISOString() + ' — see rpi-alert-boot.log\n' + redactText(text));
++    fs.writeFileSync(path.join(dir, 'rpi-alert.conf.applied'), applied);
+     fs.unlinkSync(file);
+   } catch (e) { log('could not rename ' + file + ': ' + e.message); }
+-  try { fs.appendFileSync(path.join(dir, 'rpi-alert-boot.log'), logLines.join('\r\n') + '\r\n'); } catch (_) {}
++  try { fs.appendFileSync(logFile, logLines.join('\r\n') + '\r\n'); } catch (_) {}
+ }
+ 
+-module.exports = { parse, toPatch, redactText, withBtGpsPort, applySsh, main, moveBtGpsConf, BT_GPS_PORT, BT_GPS_CONF, MULTI };
++module.exports = { parse, toPatch, redactText, withBtGpsPort, applySsh, applyWifi, main, moveBtGpsConf, BT_GPS_PORT, BT_GPS_CONF, ETC_CONF, MULTI };
+diff --git a/agent/lib/clock.js b/agent/lib/clock.js
+index 751d577..48e130f 100644
+--- a/agent/lib/clock.js
++++ b/agent/lib/clock.js
+@@ -44,6 +44,9 @@ const { EventEmitter } = require('node:events');
+ 
+ const GPS_FRESH_MS = 60 * 60 * 1000;
+ const RTC_DIR = process.env.RPI_ALERT_RTC || '/sys/class/rtc/rtc0';
++// systemd's own directory under /run. `system` is in it while systemd runs
++// this computer — the test systemd's own tools make (sd_booted).
++const SYSTEMD_RUN = '/run/systemd';
+ const RTC_TRUST_DAYS = 60, RTC_AGREE_MS = 2000, KEEP_MS = 10 * 60 * 1000;
+ const GPS_FLOOR_MS = Date.UTC(2025, 0, 1);            // the root helper's floor too
+ const GPS_BACK_MS = 120e3;                            // slack below the last good time
+@@ -71,6 +74,8 @@ class Clock extends EventEmitter {
+     this.setter = opts && opts.setSystemTime;   // async (ms) => …, may be absent
+     this.syncRtc = opts && opts.syncRtc;        // async () => …: write the system time to the RTC
+     this.rtcDir = (opts && opts.rtcDir) || RTC_DIR;
++    this.systemdRun = (opts && opts.systemdRun) || SYSTEMD_RUN;
++    this.timedatectl = (opts && opts.timedatectl) || 'timedatectl';
+     this.file = opts && opts.dataDir ? path.join(opts.dataDir, 'clock.json') : null;
+     this.memory = { lastGood: 0, rtcVerifiedAt: 0 };
+     this.rtc = null;           // { offset } while the RTC is what the time is trusted on
+@@ -161,8 +166,13 @@ class Clock extends EventEmitter {
+     if (this.assume) return;
+     // systemd-timesyncd marks a sync here; timedatectl answers for chrony and
+     // anything else that sets the kernel's sync flag.
+-    if (fs.existsSync('/run/systemd/timesync/synchronized')) { this.setNtp(true); return again(600000); }
+-    execFile('timedatectl', ['show', '-p', 'NTPSynchronized', '--value'], { timeout: 5000 }, (err, out) => {
++    if (fs.existsSync(path.join(this.systemdRun, 'timesync', 'synchronized'))) { this.setNtp(true); return again(600000); }
++    // systemd's tools are installed but systemd does not run this computer (a
++    // container, 0.24): timedatectl is there and can only fail, for ever, and
++    // every reading would be held for a clock nobody will vouch for. As with
++    // no systemd at all, below: whatever does run it keeps its time.
++    if (!fs.existsSync(path.join(this.systemdRun, 'system'))) { this.setNtp(true); return; }
++    execFile(this.timedatectl, ['show', '-p', 'NTPSynchronized', '--value'], { timeout: 5000 }, (err, out) => {
+       if (err) {
+         // No systemd (a development machine): trust the clock, as every PC does.
+         if (err.code === 'ENOENT') { this.setNtp(true); return; }
+diff --git a/agent/lib/config.js b/agent/lib/config.js
+index 13a0fe0..f28e86d 100644
+--- a/agent/lib/config.js
++++ b/agent/lib/config.js
+@@ -7,6 +7,7 @@
+ // replaces it with its first and last few characters.
+ 
+ const crypto = require('node:crypto');
++const net = require('node:net');
+ const { EventEmitter } = require('node:events');
+ const { readNoFollow, writeAtomic } = require('./safe-fs');
+ const { MAX_CHANNELS, MAX_SPAN_HZ, RATES } = require('../web/sdr-plan');
+@@ -50,6 +51,11 @@ const LOC_SOURCES = ['none', 'manual', 'station', 'gps'];
+ const REMOTE_MODES = ['manage', 'report', 'off'];
+ const HOTSPOT_MODES = ['auto', 'on', 'off'];
+ const RECOVER_MODES = ['full', 'network', 'off'];
++const LOGIN_MODES = ['settings', 'all'];
++// A name the dashboard may be asked for by (web.hosts): a DNS name, as a
++// browser sends it in Host.
++const HOST_NAME = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
++const MAX_WEB_HOSTS = 16;
+ const HOTSPOT_SSID = /^[A-Za-z0-9._ -]{1,32}$/, HOTSPOT_PASSWORD = /^[\x21-\x7e]{8,63}$/;
+ 
+ function defaults() {
+@@ -161,7 +167,22 @@ function defaults() {
+       device: 'default',
+       volume: 80,
+     },
+-    web: { port: 80, passwordHash: '' },
++    // The dashboard. The four after the password are for a base station on a
++    // managed network (0.24); each is as before 0.24 until it is set, and each
++    // is set on the base station itself — never from another computer's
++    // browser, and never from MegaNet:
++    //   bind          the address it listens on. '': every interface. An address:
++    //                 that one, and this machine's own 127.0.0.1 beside it, which
++    //                 the rpi-alert command and the screen use — so 127.0.0.1
++    //                 alone keeps it off the network.
++    //   hosts         more names it answers to (its name in an organisation's
++    //                 DNS), beside its addresses, its host name and *.local.
++    //   behindProxy   a reverse proxy on this machine publishes it (HTTPS): a
++    //                 request the proxy forwarded is never the machine's own,
++    //                 and its caller's address is the one the proxy saw.
++    //   requireLogin  settings: looking needs no password, the settings do.
++    //                 all: nothing is read without one.
++    web: { port: 80, passwordHash: '', bind: '', hosts: [], behindProxy: false, requireLogin: 'settings' },
+     kiosk: { mode: 'auto' },
+     system: { timezone: '' },
+     // MegaNet's Base Stations tab (lib/remote.js). The base station checks in
+@@ -341,7 +362,12 @@ function validate(c) {
+   need(AUDIO_MODES.includes(a.mode), 'audio.mode: one of ' + AUDIO_MODES.join(', '));
+   need(typeof a.device === 'string' && /^[\w:,=.-]+$/.test(a.device), 'audio.device: an ALSA device name such as default or plughw:CARD=Headphones');
+   need(num(a.volume, 0, 100) !== undefined, 'audio.volume: 0–100');
+-  need(num((c.web || {}).port, 1, 65535) !== undefined, 'web.port: 1–65535');
++  const w = c.web || {};
++  need(num(w.port, 1, 65535) !== undefined, 'web.port: 1–65535');
++  need(w.bind === '' || bindOk(w.bind), 'web.bind: one of this machine\'s addresses, such as 127.0.0.1 (the dashboard off the network), or empty for every interface');
++  need(hostsOk(w.hosts), 'web.hosts: a list of up to ' + MAX_WEB_HOSTS + ' host names, such as ["bs01.council.example"]');
++  need(typeof w.behindProxy === 'boolean', 'web.behindProxy: true or false');
++  need(LOGIN_MODES.includes(w.requireLogin), 'web.requireLogin: one of ' + LOGIN_MODES.join(', '));
+   need(KIOSK_MODES.includes((c.kiosk || {}).mode), 'kiosk.mode: one of ' + KIOSK_MODES.join(', '));
+   const tz = (c.system || {}).timezone;
+   need(tz === '' || /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(tz), 'system.timezone: e.g. Australia/Brisbane');
+@@ -352,6 +378,17 @@ function validate(c) {
+   return errs;
+ }
+ 
++// An address the dashboard can be told to listen on: one address. "Every
++// interface" is the empty setting, not 0.0.0.0 or :: — beside an address the
++// agent also listens on 127.0.0.1, and those two would take it for themselves.
++function bindOk(v) {
++  return typeof v === 'string' && net.isIP(v) !== 0 && v !== '0.0.0.0' && !/^[0:]+$/.test(v);
++}
++// More names for the dashboard: names only — an address needs no listing.
++function hostsOk(list) {
++  return Array.isArray(list) && list.length <= MAX_WEB_HOSTS && list.every(h => typeof h === 'string' && HOST_NAME.test(h) && !net.isIP(h));
++}
++
+ // A stick's channels, its own first: [{ freqHz, format }], each more channel
+ // in the stick's format unless it names one. own: the stick's entry in
+ // receivers.sdrDevices, or null for what every stick shares.
+@@ -457,7 +494,10 @@ class Config extends EventEmitter {
+         // Lists replace rather than merge, and a missing endpoint list means the default.
+         if (!Array.isArray(merged.meganet.endpoints) || !merged.meganet.endpoints.length) merged.meganet.endpoints = MEGANET_ENDPOINTS.slice();
+         const errs = validate(merged);
+-        if (errs.length) this.loadError = 'settings file has problems (defaults used for them): ' + errs.join('; ');
++        if (errs.length) {
++          this.loadError = 'settings file has problems (defaults used for them' + (errs.some(e => /^web\.(bind|behindProxy|requireLogin)/.test(e))
++            ? '; for the dashboard\'s own, the cautious value: this machine only, a proxy in front, a login for everything' : '') + '): ' + errs.join('; ');
++        }
+         this.data = errs.length ? repair(merged) : merged;
+         const ch = channelErrors(this.data);
+         if (ch.length) this.loadError = (this.loadError ? this.loadError + '; ' : '') + 'channels one stick cannot hear together (only those that fit are decoded): ' + ch.join('; ');
+@@ -503,6 +543,11 @@ class Config extends EventEmitter {
+   }
+ }
+ 
++// A dashboard setting that is there but cannot be read — a slip of the hand
++// in config.json — must not open what it was written to close: it becomes the
++// cautious value, not the default. (One that is absent is the default.)
++const CAUTIOUS = { 'web.bind': '127.0.0.1', 'web.behindProxy': true, 'web.requireLogin': 'all' };
++
+ // Fields that fail validation go back to their defaults, one by one.
+ function repair(c) {
+   const d = defaults();
+@@ -521,7 +566,7 @@ function repair(c) {
+     setPath(trial, p, getPath(out, p));
+     return validate(trial).length === 0;
+   };
+-  for (const p of leafPaths(d)) if (!probe(p)) setPath(out, p, getPath(d, p));
++  for (const p of leafPaths(d)) if (!probe(p)) setPath(out, p, p in CAUTIOUS ? CAUTIOUS[p] : getPath(d, p));
+   return validate(out).length ? d : out;
+ }
+ function leafPaths(o, pre) {
+@@ -546,4 +591,5 @@ function changedPaths(a, b) {
+ module.exports = {
+   Config, defaults, validate, stickErrors, channelsOf, channelErrors, merge, maskToken, hashPassword, checkPassword, getPath, setPath,
+   CONFIG_PATH, DECODERS, WATCHES, MEGANET_ENDPOINTS, MEGANET_APIKEY, ALERT_CHANNELS_HZ, SDR_FORMATS, FORMAT_NAMES, STICK_FIELDS, PORT_TYPES, AUDIO_MODES, KIOSK_MODES, LOC_SOURCES, REMOTE_MODES,
++  LOGIN_MODES, bindOk, hostsOk,
+ };
+diff --git a/agent/lib/remote.js b/agent/lib/remote.js
+index b80591c..89defa5 100644
+--- a/agent/lib/remote.js
++++ b/agent/lib/remote.js
+@@ -57,7 +57,7 @@ const MAX_RX_IN_BEAT = 12;
+ 
+ // Of the settings, these are this base station's alone.
+ const LOCAL_ONLY = {
+-  web: 'the web page\'s password and port',
++  web: 'the web page\'s password and port, where it listens and who it lets in',
+   hotspot: 'its own Wi-Fi network and its password',
+   remote: 'what MegaNet may do',
+   version: null,
+diff --git a/agent/lib/safe-fs.js b/agent/lib/safe-fs.js
+index fa33dcf..508ddb2 100644
+--- a/agent/lib/safe-fs.js
++++ b/agent/lib/safe-fs.js
+@@ -8,7 +8,10 @@
+ // and root following it would read or overwrite whatever it points at. So:
+ //
+ //   readNoFollow   refuses a link, a device or a FIFO, and a file with a second
+-//                  name (a hard link), and reads at most maxBytes.
++//                  name (a hard link), and reads at most maxBytes. Asked for
++//                  root's own ({ rootsOwn: true }), it also refuses a file
++//                  that is somebody else's or that others may write — for a
++//                  file root will act on the word of.
+ //   writeAtomic    writes a new file under a name nobody can have planted
+ //                  (random, created exclusively, never through a link), sets
+ //                  its mode and — as root, when asked — its owner on the open
+@@ -29,7 +32,7 @@ function refuse(file, why) {
+   return e;
+ }
+ 
+-function readNoFollow(file, maxBytes) {
++function readNoFollow(file, maxBytes, opts) {
+   const max = maxBytes || 1024 * 1024;
+   let fd;
+   try { fd = fs.openSync(file, C.O_RDONLY | NOFOLLOW | NONBLOCK); }
+@@ -39,6 +42,12 @@ function readNoFollow(file, maxBytes) {
+     if (!st.isFile()) throw refuse(file, 'is not a plain file');
+     if (st.nlink > 1) throw refuse(file, 'has more than one name (a hard link)');
+     if (st.size > max) throw refuse(file, 'is larger than ' + max + ' bytes');
++    if (opts && opts.rootsOwn) {
++      // Root's — or, run by hand as somebody else, that somebody's own.
++      const me = typeof process.getuid === 'function' ? process.getuid() : 0;
++      if (st.uid !== 0 && st.uid !== me) throw refuse(file, 'is not root\'s file');
++      if (st.mode & 0o022) throw refuse(file, 'can be written by others');
++    }
+     const buf = Buffer.alloc(Math.min(st.size, max));
+     let got = 0;
+     while (got < buf.length) {
+diff --git a/agent/lib/web/server.js b/agent/lib/web/server.js
+index 5b56bd1..c345ad2 100644
+--- a/agent/lib/web/server.js
++++ b/agent/lib/web/server.js
+@@ -11,10 +11,18 @@
+ // The ingest token is never sent back out, whoever asks: only a masked form.
+ // Mutations must be JSON, which a cross-site form cannot send, and sessions
+ // are SameSite=Strict cookies.
++//
++// On a managed network (0.24; each as before until set, and set on this
++// machine only): web.bind — the address it listens on; web.hosts — more names
++// it answers to; web.behindProxy — a reverse proxy on this machine publishes
++// it, so "from this machine" no longer means "this Pi itself"; and
++// web.requireLogin "all" — nothing is read without a login. Every login
++// attempt is logged with the caller's address.
+ 
+ const fs = require('node:fs');
+ const path = require('node:path');
+ const http = require('node:http');
++const net = require('node:net');
+ const crypto = require('node:crypto');
+ const { execFile } = require('node:child_process');
+ const logm = require('../log');
+@@ -28,9 +36,94 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
+   '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
+ const SESSION_MS = 7 * 24 * 3600 * 1000;
+ 
+-function isLocal(req) {
+-  const a = req.socket.remoteAddress || '';
+-  return (a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1') && !req.headers['x-forwarded-for'];
++// ── who is asking ───────────────────────────────────────────────────────────
++
++// This machine's own address, as a caller's: IPv4, IPv6, and IPv4 arriving on
++// an IPv6 socket.
++const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
++function fromLoopback(req) { return LOOPBACK.has((req.socket && req.socket.remoteAddress) || ''); }
++
++// The headers a reverse proxy adds to say whom it is asking for. Nothing on
++// this machine sends one — not the rpi-alert command, not the screen's browser.
++const FORWARDED = /^(forwarded|via|x-forwarded.*|x-original-forwarded-for|x-real-ip|x-client-ip|x-cluster-client-ip|true-client-ip|cf-connecting-ip)$/i;
++// Is one there? By name alone, as the caller spelt it: Node drops a repeat of
++// some headers and reads an empty one as none, so its tidied list is not asked.
++function forwarded(req) {
++  const raw = req.rawHeaders || [];
++  for (let i = 0; i < raw.length; i += 2) if (FORWARDED.test(raw[i])) return true;
++  return Object.keys(req.headers || {}).some(k => FORWARDED.test(k));
++}
++
++// A Host header, as the name alone: no port, no brackets, lower case.
++function hostName(raw) {
++  return String(raw || '').trim().replace(/:\d+$/, '').toLowerCase().replace(/^\[/, '').replace(/\]$/, '').replace(/\.$/, '');
++}
++const thisMachine = (h) => h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h);
++// The names this machine's own callers ask for it by: the rpi-alert command
++// asks 127.0.0.1, the screen's browser localhost — once, and only once. And
++// what a browser says of the page that sent it (Origin, Referer): the
++// screen's page is this machine's too; the page of a browser on the far side
++// of a proxy has the proxy's name.
++function asksThisMachine(req) {
++  const raw = req.rawHeaders || [];
++  let hosts = 0;
++  for (let i = 0; i < raw.length; i += 2) if (/^host$/i.test(raw[i])) hosts++;
++  if (hosts > 1 || !thisMachine(hostName(req.headers.host))) return false;
++  for (const h of ['origin', 'referer']) {
++    if (req.headers[h] === undefined) continue;
++    let page;
++    try { page = new URL(req.headers[h]).hostname; } catch (_) { return false; }
++    if (!thisMachine(page.toLowerCase().replace(/^\[/, '').replace(/\]$/, ''))) return false;
++  }
++  return true;
++}
++
++// Is this the Pi itself — its screen, or the rpi-alert command?
++//
++// As before 0.24: a caller from this machine's own address, with no
++// X-Forwarded-For.
++//
++// Behind a reverse proxy on this machine (web.behindProxy) every outside
++// caller comes from that address too, so more is asked. A request is the
++// machine's own only if it carries none of the headers a proxy adds — under
++// any spelling, repeated or empty; if its connection has never carried one
++// (a proxy sends many callers down one connection, and a request hidden in
++// another's body rides behind it); and if it asks for this machine by its own
++// name, as the command and the screen do, and a browser on the far side of a
++// proxy does not.
++//
++// That is as far as the agent can see. A proxy that adds none of its headers
++// and asks for 127.0.0.1 by name sends what the rpi-alert command sends: the
++// proxy has to do its part, and docs/configuration.md says what that is and
++// how to check it.
++function isLocal(req, web) {
++  if (!fromLoopback(req)) return false;
++  if (!(web && web.behindProxy)) return !req.headers['x-forwarded-for'];
++  if ((req.socket && req.socket.rpaProxy) || forwarded(req)) return false;
++  return asksThisMachine(req);
++}
++
++// A caller's address without the IPv6 wrapping of an IPv4 one.
++function plainAddress(a) {
++  a = String(a || '');
++  return a.startsWith('::ffff:') && net.isIPv4(a.slice(7)) ? a.slice(7) : a;
++}
++
++// The caller's address, for the log and the limits: the other end of the
++// connection. Behind a proxy on this machine (web.behindProxy) that end is
++// the proxy, so it is the last address in X-Forwarded-For — the one the proxy
++// itself saw and added; anything before it is what the caller chose to send —
++// and that header is believed only because the request came from this
++// machine. Sent straight from the network, it is ignored.
++function callerAddress(req, web) {
++  const peer = plainAddress(req.socket && req.socket.remoteAddress) || '?';
++  if (!(web && web.behindProxy) || !fromLoopback(req)) return peer;
++  const xff = req.headers['x-forwarded-for'];
++  if (xff === undefined) return peer;
++  const last = String(xff).split(',').pop().trim();
++  const m = /^\[([0-9a-f:.]+)\](?::\d+)?$/i.exec(last) || /^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/.exec(last);
++  const ip = plainAddress(m ? m[1] : last);
++  return net.isIP(ip) ? ip : peer;
+ }
+ 
+ // Reject a Host the Pi is not known by, so a website the operator visits cannot
+@@ -40,13 +133,18 @@ function isLocal(req) {
+ // with the attacker's own domain in Host, which none of those match. Reaching
+ // the Pi by a bare IP is not a rebinding vector (the attacker cannot serve their
+ // page from it), so IP literals are allowed.
+-function hostAllowed(req) {
++//
++// more (web.hosts, 0.24): names the Pi is also known by — the one a council's
++// DNS gives it. Each is a name its owner chose on the Pi itself, which is what
++// a rebinding attacker's domain can never be.
++function hostAllowed(req, more) {
+   const raw = String(req.headers.host || '');
+   if (!raw) return true;
+   let host = raw.replace(/:\d+$/, '').toLowerCase().replace(/^\[/, '').replace(/\]$/, '');
+   if (host === 'localhost' || host.endsWith('.local')) return true;
+   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':')) return true;  // IPv4/IPv6 literal
+   if (host === require('node:os').hostname().toLowerCase()) return true;
++  if (Array.isArray(more) && more.some(h => typeof h === 'string' && h.toLowerCase().replace(/\.$/, '') === host.replace(/\.$/, ''))) return true;
+   return false;
+ }
+ 
+@@ -54,6 +152,12 @@ function hostAllowed(req) {
+ // socket and starve a small Pi of memory and file descriptors (appraisal M-7).
+ const MAX_SSE = 24;
+ const MAX_SSE_PER_IP = 6;
++// An address web.bind names that the machine does not have: asked for again this often.
++const BIND_RETRY_MS = 30000;
++// A proxy that seems not to say whom it forwards for: said in the log this often at most.
++const PROXY_DOUBT_MS = 10 * 60 * 1000;
++// Tries from a locked-out address are not checked, and are logged as a count this often.
++const LOCKED_NOTE_MS = 60000;
+ 
+ function cookies(req) {
+   const out = {};
+@@ -73,29 +177,98 @@ class WebServer {
+     this.clients = new Set();
+     this.server = null;
+     this.port = null;
++    this.also = null;            // web.bind's own address, beside 127.0.0.1
++    this.bindError = null;
++    this.bindTimer = null;
++    this.bindRetryMs = BIND_RETRY_MS;
++    this.lockedNoteMs = LOCKED_NOTE_MS;
++    this.proxyDoubtAt = 0;
++    this.stopped = false;
+   }
+ 
+   start() {
+-    const want = this.agent.config.get().web.port;
+-    this.server = http.createServer((req, res) => this.handle(req, res).catch(e => {
++    const web = this.agent.config.get().web;
++    const want = web.port;
++    // web.bind (0.24). Empty: every interface, as before. An address: this
++    // machine's own 127.0.0.1 first — where the rpi-alert command and the
++    // screen ask, whatever the address — then the address itself (alsoOn).
++    const bind = web.bind || '';
++    const listen = (port, cb) => (bind ? this.server.listen(port, '127.0.0.1', cb) : this.server.listen(port, cb));
++    const onRequest = (req, res) => this.handle(req, res).catch(e => {
+       this.log.error(e.stack || e);
+       if (!res.headersSent) this.json(res, 500, { error: 'internal error: ' + e.message });
+       else res.end();
+-    }));
++    });
++    this.server = http.createServer(onRequest);
+     this.server.on('error', (e) => {
+       if ((e.code === 'EACCES' || e.code === 'EADDRINUSE') && this.port !== 8080 && want !== 8080) {
+         this.log.warn('cannot listen on port ' + want + ' (' + e.code + ') — using 8080 instead');
+         this.port = 8080;
+-        this.server.listen(8080);
++        listen(8080);
+       } else this.log.error('web server: ' + e.message);
+     });
+     this.port = want;
+-    this.server.listen(want, () => this.log.info('dashboard on http://' + require('node:os').hostname() + '.local' + (this.port === 80 ? '' : ':' + this.port) + '/'));
++    listen(want, () => {
++      const at = (h) => 'http://' + h + (this.port === 80 ? '' : ':' + this.port) + '/';
++      if (!bind) return this.log.info('dashboard on ' + at(require('node:os').hostname() + '.local'));
++      this.log.info('dashboard on ' + at('127.0.0.1') + ' — this machine' + (bind === '127.0.0.1' ? ' only' : ', and ' + bind) + ' (web.bind)');
++      if (bind !== '127.0.0.1') this.alsoOn(onRequest, bind);
++    });
+     this.wire();
+     return this;
+   }
+ 
+-  stop() { for (const c of this.clients) c.end(); if (this.server) this.server.close(); }
++  // Behind a proxy, a request from this machine with none of a proxy's headers
++  // that is not the command's or the screen's either — it asks for another
++  // name, or a browser sent it from a page with another name: most likely the
++  // proxy, not saying whom it forwards for. It is treated as a visitor; and it
++  // is said, because a caller who asked for 127.0.0.1 by name through such a
++  // proxy would be taken for this machine itself. Now and then, not each time:
++  // anyone can send one.
++  proxyDoubt(req) {
++    if (Date.now() - this.proxyDoubtAt < PROXY_DOUBT_MS) return;
++    this.proxyDoubtAt = Date.now();
++    this.log.warn('a request from this machine itself, asking for ' + JSON.stringify(hostName(req.headers.host).slice(0, 80)) + ', carried none of a reverse proxy\'s headers. '
++      + 'web.behindProxy is on: if it came through the proxy, the proxy is not adding X-Forwarded-For, and must on every route (docs/configuration.md). Treated as a visitor');
++  }
++
++  // The address web.bind names, beside 127.0.0.1. One the machine does not
++  // have — yet (an address from DHCP comes after the agent starts) or ever (a
++  // slip in the setting) — costs the network its dashboard and the agent
++  // nothing: it goes on receiving and sending, with the dashboard on this
++  // machine alone, says so, and asks for the address again every half minute.
++  // Never the other way: an address that cannot be had is not a reason to
++  // listen on every interface.
++  alsoOn(onRequest, addr) {
++    if (this.stopped) return;
++    const s = http.createServer(onRequest);
++    const url = 'http://' + (addr.includes(':') ? '[' + addr + ']' : addr) + (this.port === 80 ? '' : ':' + this.port) + '/';
++    s.on('error', (e) => {
++      if (s.listening) return this.log.error('web server (' + addr + '): ' + e.message);
++      const why = e.code || e.message;
++      if (why !== this.bindError) {
++        this.log.warn('cannot listen on ' + url + ' (' + why + (why === 'EADDRNOTAVAIL' ? ': this machine does not have that address' : '')
++          + ') — the dashboard is on this machine only (127.0.0.1) until it can; asking again every ' + Math.round(this.bindRetryMs / 1000) + ' s (web.bind)');
++      }
++      this.bindError = why;
++      this.bindTimer = setTimeout(() => this.alsoOn(onRequest, addr), this.bindRetryMs);
++      this.bindTimer.unref?.();
++    });
++    s.listen(this.port, addr, () => {
++      this.also = s;
++      this.bindError = null;
++      this.log.info('dashboard on ' + url + ' (web.bind)');
++    });
++  }
++
++  stop() {
++    this.stopped = true;
++    clearTimeout(this.bindTimer);
++    clearInterval(this.keepAlive);
++    for (const c of this.clients) c.end();
++    if (this.server) this.server.close();
++    if (this.also) this.also.close();
++  }
+ 
+   // ── live events ─────────────────────────────────────────────────────────
+ 
+@@ -111,7 +284,17 @@ class WebServer {
+     let devTimer = null;
+     a.on('devices', () => { if (!devTimer) devTimer = setTimeout(() => { devTimer = null; this.broadcast('devices', {}); }, 500); });
+     logm.on((line) => this.broadcast('log', line, true));
+-    setInterval(() => { for (const c of this.clients) c.write(': keep-alive\n\n'); }, 25000).unref();
++    a.on('config', (changed) => { if ((changed || []).includes('web.requireLogin')) this.sweep(); });
++    this.keepAlive = setInterval(() => { this.sweep(); for (const c of this.clients) c.write(': keep-alive\n\n'); }, 25000);
++    this.keepAlive.unref();
++  }
++
++  // With a login for everything (web.requireLogin "all") a live stream lasts
++  // as long as the login it was opened with: logged out, a new password, or
++  // seven days, and it ends. This machine's own are never ended.
++  sweep() {
++    if (this.agent.config.get().web.requireLogin !== 'all') return;
++    for (const c of this.clients) if (!c._local && !(c._session && this.sessions.get(c._session) > Date.now())) c.end();
+   }
+ 
+   broadcast(type, data, needAuth) {
+@@ -127,14 +310,35 @@ class WebServer {
+     res.end(s);
+   }
+ 
++  local(req) { return isLocal(req, this.agent.config.get().web); }
++
+   authed(req) {
+-    if (isLocal(req)) return true;
+-    if (!this.agent.config.get().web.passwordHash) return true;
++    const web = this.agent.config.get().web;
++    if (isLocal(req, web)) return true;
++    // No password: anyone, as at first-time set-up — unless everything needs
++    // a login (web.requireLogin "all"): then there is none to give, and only
++    // this machine itself is let in.
++    if (!web.passwordHash) return web.requireLogin !== 'all';
++    return !!this.session(req);
++  }
++
++  // The caller's login, while it lasts: its id, or null.
++  session(req) {
+     const id = cookies(req).rpa_session;
+     const exp = id && this.sessions.get(id);
+-    if (exp && exp > Date.now()) return true;
++    if (exp && exp > Date.now()) return id;
+     if (exp) this.sessions.delete(id);
+-    return false;
++    return null;
++  }
++
++  // A new login, and the cookie that carries it. Behind a proxy that says the
++  // caller came over HTTPS (X-Forwarded-Proto), the cookie is for HTTPS only.
++  newSession(req) {
++    const web = this.agent.config.get().web;
++    const id = crypto.randomBytes(24).toString('hex');
++    this.sessions.set(id, Date.now() + SESSION_MS);
++    const https = web.behindProxy && fromLoopback(req) && /^https$/i.test(String(req.headers['x-forwarded-proto'] || '').split(',').pop().trim());
++    return 'rpa_session=' + id + '; Path=/; Max-Age=' + SESSION_MS / 1000 + '; HttpOnly; SameSite=Strict' + (https ? '; Secure' : '');
+   }
+ 
+   body(req) {
+@@ -159,28 +363,47 @@ class WebServer {
+   async handle(req, res) {
+     const url = new URL(req.url, 'http://x');
+     const p = url.pathname;
++    const a = this.agent;
++    const web = a.config.get().web;
++    // A connection that has carried one forwarded request is the proxy's for
++    // good: nothing that follows on it is this machine's own (isLocal).
++    if (web.behindProxy && forwarded(req)) req.socket.rpaProxy = true;
++    const local = isLocal(req, web);
++    if (web.behindProxy && !local && fromLoopback(req) && !req.socket.rpaProxy) this.proxyDoubt(req);
+     // DNS-rebinding guard (H-5). Local requests (the kiosk, the CLI) are exempt.
+-    if (!isLocal(req) && !hostAllowed(req)) {
++    if (!local && !hostAllowed(req, web.hosts)) {
+       res.writeHead(403, { 'Content-Type': 'text/plain' });
+       return res.end('unrecognised Host header');
+     }
+     if (!p.startsWith('/api/')) return this.static(p, res);
+-    const a = this.agent;
+     const authed = this.authed(req);
+     const mutate = req.method !== 'GET' && req.method !== 'HEAD';
+     if (mutate && !this.sameOrigin(req)) return this.json(res, 403, { error: 'cross-site request refused' });
+-    const needAuth = () => { if (authed) return false; this.json(res, 401, { error: 'log in first', login: true }); return true; };
++    const all = web.requireLogin === 'all';
++    const needAuth = () => { if (authed) return false; this.json(res, 401, Object.assign({ error: 'log in first', login: true }, all ? { all: true } : {})); return true; };
+     let body = {};
+     if (mutate) {
+       try { body = await this.body(req); } catch (e) { return this.json(res, e.status || 400, { error: e.message }); }
+     }
+ 
++    if (p === '/api/login' && req.method === 'POST') return this.login(req, res, body);
++    if (p === '/api/logout' && req.method === 'POST') {
++      const id = cookies(req).rpa_session; if (id) this.sessions.delete(id);
++      this.sweep();
++      return this.json(res, 200, { ok: true }, { 'Set-Cookie': 'rpa_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict' });
++    }
++    // web.requireLogin "all" (0.24): nothing is read without a login — not the
++    // status, the readings, the graphs, the live stream or the station search
++    // just below, which answer anyone otherwise. (The page itself is no
++    // secret: it is the same in every copy of RPi ALERT, and holds no data.)
++    if (all && needAuth()) return;
++
+     if (p === '/api/status' && req.method === 'GET') {
+       const s = await a.status();
+-      s.auth = { authed, local: isLocal(req), passwordSet: !!a.config.get().web.passwordHash };
++      s.auth = { authed, local, passwordSet: !!web.passwordHash };
+       // The auto-generated password is shown only to a local caller — the kiosk
+       // screen or the CLI over the loopback — never over the network (H-4).
+-      if (isLocal(req)) { const pw = webpw.initial(a.config); if (pw) s.auth.initialPassword = pw; }
++      if (local) { const pw = webpw.initial(a.config); if (pw) s.auth.initialPassword = pw; }
+       if (!authed) redactPlace(s);
+       return this.json(res, 200, s);
+     }
+@@ -192,11 +415,6 @@ class WebServer {
+     }
+     if (p === '/api/history' && req.method === 'GET') return this.json(res, 200, a.history.get(url.searchParams.get('since')));
+     if (p === '/api/events') return this.sse(req, res, authed);
+-    if (p === '/api/login' && req.method === 'POST') return this.login(req, res, body);
+-    if (p === '/api/logout' && req.method === 'POST') {
+-      const id = cookies(req).rpa_session; if (id) this.sessions.delete(id);
+-      return this.json(res, 200, { ok: true }, { 'Set-Cookie': 'rpa_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict' });
+-    }
+     if (p === '/api/stations/search') return this.json(res, 200, { stations: a.stations.search(url.searchParams.get('q'), 12), register: a.stations.status() });
+ 
+     // Everything below needs to be allowed in.
+@@ -360,7 +578,8 @@ class WebServer {
+     // a chosen host, so the network must not be able to do it even once signed
+     // in (security appraisal H-4). Only an actual change is refused; a form
+     // echoing the current values saves as before.
+-    if (patch.meganet && !isLocal(req)) {
++    const local = this.local(req);
++    if (patch.meganet && !local) {
+       const cur = this.agent.config.get().meganet;
+       const changes = (k) => k in patch.meganet && JSON.stringify(patch.meganet[k]) !== JSON.stringify(cur[k]);
+       if (changes('endpoints') || changes('apikey')) {
+@@ -373,6 +592,17 @@ class WebServer {
+       if (!t || t.includes('…')) delete patch.meganet.token; else patch.meganet.token = t;
+       if (body.clearToken) patch.meganet.token = '';
+     }
++    // Where the dashboard listens, the names it answers to, the proxy in front
++    // of it and whether looking needs a login (0.24) are this machine's to
++    // say, like the endpoints: a login from the network must not be a way to
++    // open what its owner closed. Only an actual change is refused.
++    if (patch.web && typeof patch.web === 'object' && !local) {
++      const cur = this.agent.config.get().web;
++      const k = ['bind', 'hosts', 'behindProxy', 'requireLogin'].find(x => x in patch.web && JSON.stringify(patch.web[x]) !== JSON.stringify(cur[x]));
++      if (k) {
++        return this.json(res, 403, { error: 'web.' + k + ' can only be changed on the base station itself — rpi-alert config set over SSH, or its settings file' });
++      }
++    }
+     if (patch.web) delete patch.web.passwordHash;
+     const r = this.agent.config.update(patch);
+     if (!r.ok) return this.json(res, 400, { error: 'Not saved: ' + r.errors.join('; '), errors: r.errors });
+@@ -383,42 +613,75 @@ class WebServer {
+     const cfg = this.agent.config;
+     const pw = String(body.password || '');
+     if (body.remove) {
+-      if (!isLocal(req)) return this.json(res, 403, { error: 'the password can only be removed from the Pi itself (its screen, or rpi-alert over SSH)' });
++      if (!this.local(req)) return this.json(res, 403, { error: 'the password can only be removed from the Pi itself (its screen, or rpi-alert over SSH)' });
+       cfg.update({ web: { passwordHash: '' } });
+       webpw.forget();
+       this.sessions.clear();
++      this.sweep();
+       return this.json(res, 200, { ok: true });
+     }
+     if (pw.length < 6) return this.json(res, 400, { error: 'at least 6 characters' });
+     cfg.update({ web: { passwordHash: hashPassword(pw) } });
+     webpw.forget();   // a human chose this one; the auto-generated plaintext is no longer in force
+     this.sessions.clear();
+-    const id = crypto.randomBytes(24).toString('hex');
+-    this.sessions.set(id, Date.now() + SESSION_MS);
+-    return this.json(res, 200, { ok: true }, { 'Set-Cookie': 'rpa_session=' + id + '; Path=/; Max-Age=' + SESSION_MS / 1000 + '; HttpOnly; SameSite=Strict' });
++    this.sweep();
++    return this.json(res, 200, { ok: true }, { 'Set-Cookie': this.newSession(req) });
+   }
+ 
++  // Logging in. Wrong passwords are counted for each address: the first four
++  // cost nothing; from the fifth, each locks that address out for 30 s longer
++  // than the one before (30 s, 60 s, 90 s, …) until a right password from it
++  // or a restart of the agent. A locked-out address's tries are not checked
++  // at all — the right password is refused too. There is no limit across
++  // addresses.
++  //
++  // Every attempt is logged (0.24) — accepted or refused, with the caller's
++  // address, never anything that was typed — at the level of the other things
++  // asked of the web page that matter to its owner (a reboot, SSH access).
++  // Tries from a locked-out address would let anyone fill the log, so the
++  // first of them is a line and the rest a count, once a minute.
+   login(req, res, body) {
+-    const ip = req.socket.remoteAddress || '?';
++    const web = this.agent.config.get().web;
++    const ip = callerAddress(req, web);
++    const from = ip + (web.behindProxy && fromLoopback(req) && forwarded(req) ? ' (through the proxy)' : '');
+     const f = this.fails.get(ip);
+-    if (f && f.until > Date.now()) return this.json(res, 429, { error: 'too many tries — wait ' + Math.ceil((f.until - Date.now()) / 1000) + ' s' });
+-    const hash = this.agent.config.get().web.passwordHash;
++    if (f && f.until > Date.now()) {
++      const wait = Math.ceil((f.until - Date.now()) / 1000);
++      f.more = (f.more || 0) + 1;
++      if (!f.timer) {
++        this.log.warn('login refused from ' + from + ': locked out for another ' + wait + ' s after ' + f.n + ' wrong passwords — not checked');
++        f.more = 0;
++        f.timer = setTimeout(() => {
++          f.timer = null;
++          if (f.more) this.log.warn('login refused from ' + from + ': ' + f.more + ' more ' + (f.more === 1 ? 'try' : 'tries') + ' while locked out — not checked');
++          f.more = 0;
++        }, this.lockedNoteMs);
++        f.timer.unref?.();
++      }
++      return this.json(res, 429, { error: 'too many tries — wait ' + wait + ' s' });
++    }
++    const hash = web.passwordHash;
+     if (!hash || !checkPassword(String(body.password || ''), hash)) {
+       const n = (f ? f.n : 0) + 1;
+-      this.fails.set(ip, { n, until: n >= 5 ? Date.now() + 30000 * (n - 4) : 0 });
++      const lock = n >= 5 ? 30000 * (n - 4) : 0;
++      this.fails.set(ip, Object.assign(f || {}, { n, until: lock ? Date.now() + lock : 0 }));
++      this.log.warn('login refused from ' + from + ': ' + (hash ? 'wrong password' : 'no password is set') + ' (' + n + ' in a row'
++        + (lock ? '; locked out for ' + lock / 1000 + ' s' : '') + ')');
+       return this.json(res, 401, { error: 'wrong password' });
+     }
++    if (f) clearTimeout(f.timer);
+     this.fails.delete(ip);
+-    const id = crypto.randomBytes(24).toString('hex');
+-    this.sessions.set(id, Date.now() + SESSION_MS);
+-    return this.json(res, 200, { ok: true }, { 'Set-Cookie': 'rpa_session=' + id + '; Path=/; Max-Age=' + SESSION_MS / 1000 + '; HttpOnly; SameSite=Strict' });
++    this.log.warn('login accepted from ' + from);
++    return this.json(res, 200, { ok: true }, { 'Set-Cookie': this.newSession(req) });
+   }
+ 
+   sse(req, res, authed) {
+     // Bounded so a flood of connections cannot exhaust the Pi (M-7). Local
+     // clients (the kiosk) are never refused.
+-    const ip = req.socket.remoteAddress || '?';
+-    if (!isLocal(req)) {
++    const web = this.agent.config.get().web;
++    const local = isLocal(req, web);
++    const ip = callerAddress(req, web);
++    if (!local) {
+       let perIp = 0;
+       for (const c of this.clients) if (c._ip === ip) perIp++;
+       if (this.clients.size >= MAX_SSE || perIp >= MAX_SSE_PER_IP) {
+@@ -430,6 +693,8 @@ class WebServer {
+     res.write('retry: 3000\n\n');
+     res.authed = authed;
+     res._ip = ip;
++    res._local = local;
++    res._session = local ? null : this.session(req);
+     this.clients.add(res);
+     req.on('close', () => this.clients.delete(res));
+   }
+@@ -488,4 +753,4 @@ function parseWifi(text) {
+   return [...seen.values()].sort((a, b) => b.signal - a.signal);
+ }
+ 
+-module.exports = { WebServer, isLocal, hostAllowed, parseWifi };
++module.exports = { WebServer, isLocal, hostAllowed, forwarded, callerAddress, parseWifi };
+diff --git a/agent/test/clock.test.js b/agent/test/clock.test.js
+index 5e2623a..941f27a 100644
+--- a/agent/test/clock.test.js
++++ b/agent/test/clock.test.js
+@@ -195,3 +195,67 @@ test('while NTP has the time, a GPS far from it is noted and never moves the clo
+   assert.ok(Math.abs(c.now() - Date.now()) < 100);
+   c.stop();
+ });
++
++// ── is anybody keeping the time? (0.24) ──────────────────────────────────────
++
++const wait = (ms) => new Promise(r => setTimeout(r, ms));
++async function until(fn, ms) { const t0 = Date.now(); while (Date.now() - t0 < (ms || 5000)) { if (await fn()) return true; await wait(20); } return false; }
++
++test('clock: systemd\'s tools installed but systemd not running (a container) is as no systemd — the clock is trusted', async () => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rpa-clock-'));
++  const tool = (name, script) => { const f = path.join(dir, name); fs.writeFileSync(f, '#!/bin/sh\n' + script + '\n', { mode: 0o755 }); return f; };
++  // timedatectl as it answers in a container: "System has not been booted with systemd as init system".
++  const down = tool('timedatectl-down', 'echo "System has not been booted with systemd as init system (PID 1). Can\'t operate." >&2; exit 1');
++  const mk = (run, timedatectl) => new Clock({ log: quiet, dataDir: fs.mkdtempSync(path.join(dir, 'data-')), rtcDir: path.join(dir, 'no-rtc'), systemdRun: run, timedatectl });
++  const prev = process.env.RPI_ALERT_ASSUME_CLOCK; delete process.env.RPI_ALERT_ASSUME_CLOCK;
++  try {
++    // /run/systemd is there (its tools made it) but systemd does not run this computer: no "system" in it.
++    const notBooted = path.join(dir, 'run-container'); fs.mkdirSync(path.join(notBooted, 'journal'), { recursive: true });
++    const a = mk(notBooted, down);
++    let fired = 0; a.on('trusted', () => fired++);
++    a.check();
++    assert.deepEqual([a.trusted(), a.status().source, fired], [true, 'ntp', 1], 'trusted at once, as with no timedatectl at all');
++    assert.equal(a.timer, null, 'and not asked again');
++    a.stop();
++    // No /run/systemd at all, and no timedatectl: as before.
++    const none = mk(path.join(dir, 'run-none'), path.join(dir, 'no-such-timedatectl'));
++    none.check();
++    assert.equal(none.trusted(), true);
++    none.stop();
++
++    // systemd runs this computer (a Raspberry Pi, any server): as before — its answer decides.
++    const booted = path.join(dir, 'run-pi'); fs.mkdirSync(path.join(booted, 'system'), { recursive: true });
++    const no = mk(booted, tool('timedatectl-no', 'echo no'));
++    no.check();
++    await wait(300);
++    assert.equal(no.trusted(), false, 'not synchronised yet: readings are held');
++    no.stop();
++    const yes = mk(booted, tool('timedatectl-yes', 'echo yes'));
++    yes.check();
++    assert.ok(await until(() => yes.trusted(), 3000));
++    yes.stop();
++    const failing = mk(booted, down);
++    failing.check();
++    await wait(300);
++    assert.equal(failing.trusted(), false, 'systemd is running and its tool fails: asked again, not assumed');
++    assert.ok(failing.timer, 'in half a minute');
++    failing.stop();
++    // systemd-timesyncd's own mark still answers first.
++    fs.mkdirSync(path.join(booted, 'timesync')); fs.writeFileSync(path.join(booted, 'timesync', 'synchronized'), '');
++    const marked = mk(booted, down);
++    marked.check();
++    assert.equal(marked.trusted(), true);
++    marked.stop();
++  } finally { if (prev !== undefined) process.env.RPI_ALERT_ASSUME_CLOCK = prev; }
++});
++
++// RPI_ALERT_ASSUME_CLOCK stays, for a container whose host keeps the time some other way.
++test('clock: RPI_ALERT_ASSUME_CLOCK=1 still trusts the clock without asking anything', () => {
++  const prev = process.env.RPI_ALERT_ASSUME_CLOCK;
++  process.env.RPI_ALERT_ASSUME_CLOCK = '1';
++  try {
++    const c = new Clock({ systemdRun: path.join(os.tmpdir(), 'rpa-nowhere'), timedatectl: path.join(os.tmpdir(), 'rpa-nothing') });
++    c.check();
++    assert.deepEqual([c.trusted(), c.status().source], [true, 'assumed']);
++  } finally { if (prev === undefined) delete process.env.RPI_ALERT_ASSUME_CLOCK; else process.env.RPI_ALERT_ASSUME_CLOCK = prev; }
++});
+diff --git a/agent/test/config.test.js b/agent/test/config.test.js
+index f1fe18f..4ca6703 100644
+--- a/agent/test/config.test.js
++++ b/agent/test/config.test.js
+@@ -180,3 +180,24 @@ test('settings: the narrowest and widest window automatic may take (0.20), share
+   assert.deepEqual([patch.receivers.sdr.sampleRateMin, patch.receivers.sdr.sampleRateMax], [0, 960000]);
+   assert.ok(c.update(patch).ok, 'the SD card\'s patch passes validation');
+ });
++
++test('settings file: a Wi-Fi network is joined on whichever Wi-Fi device the computer has', () => {
++  const calls = [];
++  const said = [];
++  const run = (cmd, args) => { calls.push([cmd].concat(args)); return { ok: true, out: '' }; };
++  boot.applyWifi({ wifiSsid: 'Depot', wifiPassword: 'correct-horse' }, (m) => said.push(m), { run });
++  assert.deepEqual(calls, [
++    ['nmcli', 'connection', 'delete', 'rpi-alert-wifi'],
++    ['nmcli', 'connection', 'add', 'type', 'wifi', 'con-name', 'rpi-alert-wifi', 'ifname', '*', 'ssid', 'Depot', 'connection.autoconnect', 'yes', 'wifi-sec.key-mgmt', 'wpa-psk', 'wifi-sec.psk', 'correct-horse'],
++    ['nmcli', 'radio', 'wifi', 'on'],
++    ['nmcli', 'connection', 'up', 'rpi-alert-wifi'],
++  ]);
++  assert.deepEqual(said, ['Wi-Fi network "Depot" added (joins when in range)']);
++  // No device is named anywhere in what the agent runs: NetworkManager chooses it.
++  for (const f of ['bootconf.js', 'hotspot.js', 'keeper.js', 'system.js']) {
++    assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '..', 'lib', f), 'utf8').replace(/^\s*\/\/.*$/gm, ''), /wlan\d/, f);
++  }
++  const open = []; boot.applyWifi({ wifiSsid: 'Open' }, () => {}, { run: (c, a) => { open.push(a); return { ok: false, out: 'no' }; } });
++  assert.equal(open.length, 2, 'not added: not brought up');
++  assert.ok(!open[1].includes('wifi-sec.psk'));
++});
+diff --git a/agent/test/managed-network.test.js b/agent/test/managed-network.test.js
+new file mode 100644
+index 0000000..df5e8fb
+--- /dev/null
++++ b/agent/test/managed-network.test.js
+@@ -0,0 +1,617 @@
++'use strict';
++// 0.24 — the dashboard of a base station on a managed network, where somebody
++// whose job it is asks what listens, who is let in, and what is on record.
++// Each setting is as before until it is set:
++//   web.bind          the address the dashboard listens on
++//   web.hosts         more names it answers to
++//   web.behindProxy   a reverse proxy on this machine publishes it
++//   web.requireLogin  "all": nothing is read without a login
++// and every login attempt is a line in the log, with the caller's address.
++
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const os = require('node:os');
++const net = require('node:net');
++const http = require('node:http');
++const path = require('node:path');
++const { EventEmitter } = require('node:events');
++
++const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'rpa-managed-'));
++// Before anything of the agent's is loaded: where its files are.
++process.env.RPI_ALERT_DATA = path.join(TMP, 'data');
++process.env.RPI_ALERT_WEBPW_FILE = path.join(TMP, 'data', 'web-password.txt');
++fs.mkdirSync(process.env.RPI_ALERT_DATA, { recursive: true });
++
++const { Config, defaults, validate, merge, hashPassword } = require('../lib/config');
++const { WebServer, isLocal, hostAllowed, forwarded, callerAddress } = require('../lib/web/server');
++const boot = require('../lib/bootconf');
++
++const PASSWORD = 'correct horse battery';
++const wait = (ms) => new Promise(r => setTimeout(r, ms));
++async function until(fn, ms) { const t0 = Date.now(); while (Date.now() - t0 < (ms || 5000)) { if (await fn()) return true; await wait(20); } return false; }
++const LINUX = process.platform === 'linux';   // 127.0.0.2 is this machine too, on Linux
++
++function freePort() {
++  return new Promise((resolve, reject) => {
++    const s = net.createServer();
++    s.once('error', reject);
++    s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); });
++  });
++}
++
++// A request as a caller would put it on the wire: the address to connect to,
++// the Host it asks for, and any header — a list for one sent more than once.
++function ask(port, o) {
++  o = o || {};
++  return new Promise((resolve) => {
++    const headers = Object.assign({ Host: '127.0.0.1:' + port }, o.headers || {});
++    let body = null;
++    if (o.body !== undefined) { body = JSON.stringify(o.body); headers['Content-Type'] = 'application/json'; headers['Content-Length'] = Buffer.byteLength(body); }
++    const req = http.request({ host: o.to || '127.0.0.1', port, path: o.path || '/api/status', method: o.method || (body ? 'POST' : 'GET'), headers, agent: false, setHost: false }, (res) => {
++      let text = '';
++      res.setEncoding('utf8');
++      res.on('data', (d) => { text += d; });
++      res.on('end', () => { let json = null; try { json = JSON.parse(text); } catch (_) {} resolve({ status: res.statusCode, headers: res.headers, text, json }); });
++    });
++    req.on('error', (e) => resolve({ status: 0, error: e.code || e.message }));
++    req.end(body || undefined);
++  });
++}
++
++// The live stream, read until closed: what came, and whether the server ended it.
++function stream(port, headers) {
++  const got = { status: 0, text: '', ended: false, req: null };
++  got.ready = new Promise((resolve) => {
++    got.req = http.request({ host: '127.0.0.1', port, path: '/api/events', headers: Object.assign({ Host: '127.0.0.1:' + port }, headers || {}), agent: false, setHost: false }, (res) => {
++      got.status = res.statusCode;
++      res.setEncoding('utf8');
++      res.on('data', (d) => { got.text += d; });
++      res.on('end', () => { got.ended = true; });
++      res.on('error', () => {});
++      resolve(got);
++    });
++    got.req.on('error', () => resolve(got));
++    got.req.end();
++  });
++  got.close = () => got.req.destroy();
++  return got;
++}
++
++// A base station with nothing plugged in: the settings, and what the routes read.
++async function station(webSettings, opts) {
++  const dir = fs.mkdtempSync(path.join(TMP, 'bs-'));
++  const config = new Config(path.join(dir, 'config.json')).load();
++  const port = await freePort();
++  const r = config.update({ web: Object.assign({ port, passwordHash: hashPassword(PASSWORD) }, webSettings || {}) });
++  assert.ok(r.ok, r.errors.join('; '));
++  const agent = new EventEmitter();
++  Object.assign(agent, {
++    config, board: {}, recent: [{ alert_id: 2088, eng: 14.3 }], bursts: [],
++    history: { get: () => ({ points: [1, 2, 3] }) },
++    stations: { search: () => [{ id: 'marburg' }], status: () => ({}) },
++    status: async () => ({ version: 'test', location: { lat: -27.47, lon: 153.02 }, system: { hostname: 'bs', addresses: [{ address: '10.0.0.5' }] }, devices: { ports: [], sdrs: [] } }),
++  });
++  config.on('change', (changed) => agent.emit('config', changed));
++  const web = new WebServer(agent);
++  const log = [];
++  web.log = { debug() {}, info: (m) => log.push(['info', String(m)]), warn: (m) => log.push(['warn', String(m)]), error: (m) => log.push(['error', String(m)]) };
++  Object.assign(web, opts || {});
++  web.start();
++  assert.ok(await until(async () => (await ask(port, { path: '/api/status' })).status !== 0), 'the dashboard comes up on 127.0.0.1');
++  return { web, config, agent, port, log, logins: () => log.filter(l => /^login /.test(l[1])), said: (level, re) => log.filter(l => l[0] === level && re.test(l[1])).map(l => l[1]), stop: () => web.stop() };
++}
++
++// A request as the web server sees it.
++function reqOf(remoteAddress, headers, raw) {
++  const h = {};
++  for (const [k, v] of Object.entries(headers || {})) h[k.toLowerCase()] = v;
++  const rawHeaders = raw || Object.entries(headers || {}).flatMap(([k, v]) => [k, v]);
++  return { socket: { remoteAddress }, headers: h, rawHeaders };
++}
++const OUTSIDE = { 'X-Forwarded-For': '203.0.113.7' };   // as a proxy on this machine forwards an outside caller
++
++// ── the settings ─────────────────────────────────────────────────────────────
++
++test('settings: each is as before 0.24 until set, and a bad value is refused with a reason', () => {
++  const d = defaults().web;
++  assert.deepEqual([d.bind, d.hosts, d.behindProxy, d.requireLogin], ['', [], false, 'settings']);
++  const c = new Config(path.join(fs.mkdtempSync(path.join(TMP, 'cfg-')), 'config.json')).load();
++  // A settings file from before 0.24 has none of them.
++  fs.writeFileSync(c.file, JSON.stringify({ version: 3, name: 'Old', web: { port: 8081, passwordHash: '' } }));
++  const old = new Config(c.file).load();
++  assert.equal(old.loadError, null);
++  assert.deepEqual(old.get().web, { port: 8081, passwordHash: '', bind: '', hosts: [], behindProxy: false, requireLogin: 'settings' });
++
++  assert.ok(c.update({ web: { bind: '127.0.0.1', hosts: ['bs01.council.example'], behindProxy: true, requireLogin: 'all' } }).ok);
++  assert.ok(c.update({ web: { bind: '::1' } }).ok, 'an IPv6 address');
++  assert.ok(c.update({ web: { bind: '' } }).ok, 'and back to every interface');
++  const bad = (web, re) => assert.match(c.update({ web }).errors.join('; '), re, JSON.stringify(web));
++  bad({ bind: 'eth0' }, /web\.bind: one of this machine's addresses/);
++  bad({ bind: '0.0.0.0' }, /web\.bind/);
++  bad({ bind: '::' }, /web\.bind/);
++  bad({ bind: 'bs01.council.example' }, /web\.bind/);
++  bad({ hosts: 'bs01.council.example' }, /web\.hosts: a list/);
++  bad({ hosts: ['two words'] }, /web\.hosts/);
++  bad({ hosts: ['evil.example/path'] }, /web\.hosts/);
++  bad({ hosts: new Array(17).fill('a.example') }, /web\.hosts: a list of up to 16/);
++  bad({ behindProxy: 'yes' }, /web\.behindProxy: true or false/);
++  bad({ requireLogin: 'none' }, /web\.requireLogin: one of settings, all/);
++  // None of them is a secret: they are shown with the rest.
++  assert.deepEqual(c.redacted().web.hosts, ['bs01.council.example']);
++});
++
++test('settings: one that is there but cannot be read becomes the cautious value, never the open one', () => {
++  const file = path.join(fs.mkdtempSync(path.join(TMP, 'cfg-')), 'config.json');
++  // A slip of the hand in config.json: an address mistyped, "yes" for true, "al" for all.
++  fs.writeFileSync(file, JSON.stringify({ version: 3, name: 'Kept', web: { port: 8082, bind: '127.0.0.l', behindProxy: 'yes', requireLogin: 'al', hosts: 'bs01' } }));
++  const c = new Config(file).load();
++  assert.deepEqual(c.get().web, { port: 8082, passwordHash: '', bind: '127.0.0.1', hosts: [], behindProxy: true, requireLogin: 'all' });
++  assert.equal(c.get().name, 'Kept');
++  assert.match(c.loadError, /web\.bind/);
++  assert.match(c.loadError, /the cautious value/);
++  assert.deepEqual(validate(c.get()), []);
++});
++
++test('settings: MegaNet cannot change them, and neither can a login from another computer', async () => {
++  const { checkPatch } = require('../lib/remote');
++  assert.match(checkPatch({ web: { bind: '' } }), /web is set on the base station itself/);
++  assert.match(checkPatch({ web: { requireLogin: 'settings' } }), /set on the base station itself/);
++
++  const s = await station({ hosts: ['bs01.council.example'], requireLogin: 'all' });
++  try {
++    const login = await ask(s.port, { path: '/api/login', headers: OUTSIDE, body: { password: PASSWORD } });
++    const cookie = login.headers['set-cookie'][0].split(';')[0];
++    const put = (web, headers) => ask(s.port, { path: '/api/config', method: 'PUT', headers: Object.assign({ Cookie: cookie }, headers), body: { config: { web } } });
++    for (const [web, key] of [[{ requireLogin: 'settings' }, 'requireLogin'], [{ bind: '10.0.0.5' }, 'bind'], [{ hosts: [] }, 'hosts'], [{ hosts: ['bs01.council.example', 'evil.example'] }, 'hosts'], [{ behindProxy: true }, 'behindProxy']]) {
++      const r = await put(web, OUTSIDE);
++      assert.equal(r.status, 403, JSON.stringify(web));
++      assert.match(r.json.error, new RegExp('web\\.' + key + ' can only be changed on the base station itself'));
++    }
++    assert.equal(s.config.get().web.requireLogin, 'all', 'nothing was opened');
++    // A form sending back what is already set saves as before.
++    assert.equal((await put({ requireLogin: 'all', hosts: ['bs01.council.example'], bind: '', behindProxy: false }, OUTSIDE)).status, 200);
++    // On the base station itself (rpi-alert config set), they change.
++    const local = await ask(s.port, { path: '/api/config', method: 'PUT', body: { config: { web: { requireLogin: 'settings' } } } });
++    assert.deepEqual([local.status, local.json.changed], [200, ['web.requireLogin']]);
++  } finally { s.stop(); }
++});
++
++test('settings file: web_bind, web_hosts, web_behind_proxy and web_require_login', () => {
++  const { patch, notes } = boot.toPatch(boot.parse('web_bind = 127.0.0.1\nweb_hosts = BS01.council.example, alert.council.example\nweb_behind_proxy = yes\nweb_require_login = all\n'));
++  assert.deepEqual(patch.web, { bind: '127.0.0.1', hosts: ['bs01.council.example', 'alert.council.example'], behindProxy: true, requireLogin: 'all' });
++  assert.deepEqual(notes, []);
++  assert.deepEqual(validate(merge(defaults(), patch)), [], 'and the settings take them');
++  const web = (text) => boot.toPatch(boot.parse(text)).patch.web;
++  assert.equal(web('web_bind = localhost\n').bind, '127.0.0.1');
++  assert.equal(web('web_bind = [::1]\n').bind, '::1');
++  for (const every of ['all', 'any', '0.0.0.0', '::', '*']) assert.equal(web('web_bind = ' + every + '\n').bind, '', every + ': every interface');
++  assert.deepEqual(web('web_hosts = none\n').hosts, []);
++  assert.equal(web('web_behind_proxy = no\n').behindProxy, false);
++  assert.equal(web('web_require_login = yes\n').requireLogin, 'all');
++  assert.equal(web('web_require_login = settings\n').requireLogin, 'settings');
++  // One that cannot be read is left as it was — and costs the others on the card nothing.
++  const slip = boot.toPatch(boot.parse('web_bind = 10.0.0.300\nweb_hosts = two words; bad/name\nweb_behind_proxy = maybe\nweb_require_login = some\nweb_password = hunter2hunter2\n'));
++  assert.deepEqual(Object.keys(slip.patch.web), ['passwordHash']);
++  assert.equal(slip.notes.length, 4);
++  for (const k of ['web_bind', 'web_hosts', 'web_behind_proxy', 'web_require_login']) assert.ok(slip.notes.some(n => n.startsWith(k + ':') && /not changed/.test(n)), k);
++});
++
++// ── web.bind ─────────────────────────────────────────────────────────────────
++
++test('web.bind: empty is every interface, as before; 127.0.0.1 keeps the dashboard off the network', { skip: !LINUX && '127.0.0.2 is this machine on Linux only' }, async () => {
++  const every = await station();
++  try {
++    assert.equal((await ask(every.port, { to: '127.0.0.2' })).status, 200, 'every interface: another of this machine\'s addresses answers');
++    assert.equal(every.said('info', /dashboard on http:\/\/.*\.local/).length, 1);
++  } finally { every.stop(); }
++
++  const only = await station({ bind: '127.0.0.1' });
++  try {
++    assert.equal((await ask(only.port)).status, 200, 'the rpi-alert command asks 127.0.0.1');
++    assert.equal((await ask(only.port, { to: '127.0.0.2' })).error, 'ECONNREFUSED', 'no other address answers');
++    const other = Object.values(os.networkInterfaces()).flat().find(a => a && !a.internal && (a.family === 'IPv4' || a.family === 4));
++    if (other) assert.equal((await ask(only.port, { to: other.address })).error, 'ECONNREFUSED', 'nor the network\'s (' + other.address + ')');
++    assert.deepEqual(only.said('info', /this machine only \(web\.bind\)/).length, 1);
++  } finally { only.stop(); }
++});
++
++test('web.bind: an address, and this machine\'s own beside it for the rpi-alert command', { skip: !LINUX && '127.0.0.2 is this machine on Linux only' }, async () => {
++  const s = await station({ bind: '127.0.0.2' });
++  try {
++    assert.ok(await until(async () => (await ask(s.port, { to: '127.0.0.2' })).status === 200), 'the address answers');
++    assert.equal((await ask(s.port)).status, 200, 'and so does 127.0.0.1');
++    assert.equal((await ask(s.port, { to: '127.0.0.3' })).error, 'ECONNREFUSED', 'nothing else does');
++  } finally { s.stop(); }
++});
++
++test('web.bind: an address the machine does not have — the agent carries on, the dashboard on this machine only', { skip: !LINUX && '127.0.0.2 is this machine on Linux only' }, async () => {
++  const mine = new Set(Object.values(os.networkInterfaces()).flat().map(a => a && a.address));
++  const absent = ['192.0.2.77', '198.51.100.77', '203.0.113.77'].find(a => !mine.has(a));
++  const s = await station({ bind: absent }, { bindRetryMs: 40 });
++  try {
++    assert.ok(await until(() => s.said('warn', /cannot listen/).length > 0), 'it says so');
++    const said = s.said('warn', /cannot listen/);
++    assert.match(said[0], new RegExp('cannot listen on http://' + absent.replace(/\./g, '\\.') + ':' + s.port + '/ \\(EADDRNOTAVAIL: this machine does not have that address\\)'));
++    assert.match(said[0], /the dashboard is on this machine only \(127\.0\.0\.1\) until it can/);
++    assert.equal((await ask(s.port)).status, 200, 'the rpi-alert command still reaches it');
++    // Failing closed: an address that cannot be had is not a reason to listen everywhere.
++    assert.equal((await ask(s.port, { to: '127.0.0.2' })).error, 'ECONNREFUSED');
++    await wait(200);
++    assert.equal(s.said('warn', /cannot listen/).length, 1, 'said once, not at every try');
++    assert.equal(s.said('error', /./).length, 0);
++  } finally { s.stop(); }
++});
++
++test('web.bind: an address that cannot be had yet is taken when it can be', { skip: !LINUX && '127.0.0.2 is this machine on Linux only' }, async () => {
++  // Something else holds the address and port, as an address DHCP has not given yet is not there to hold.
++  const blocker = net.createServer();
++  const s = await station({ bind: '127.0.0.2' }, { bindRetryMs: 40, alsoOn(onRequest, addr) {
++    if (!blocker.listening && !this.blocked) { this.blocked = true; return blocker.listen(this.port, addr, () => WebServer.prototype.alsoOn.call(this, onRequest, addr)); }
++    return WebServer.prototype.alsoOn.call(this, onRequest, addr);
++  } });
++  try {
++    assert.ok(await until(() => s.said('warn', /cannot listen on http:\/\/127\.0\.0\.2:\d+\/ \(EADDRINUSE\)/).length > 0), 'refused, and said');
++    assert.equal((await ask(s.port)).status, 200, '127.0.0.1 meanwhile');
++    await new Promise(r => blocker.close(r));
++    assert.ok(await until(async () => (await ask(s.port, { to: '127.0.0.2' })).json != null), 'taken at a later try');
++    assert.equal(s.said('info', /dashboard on http:\/\/127\.0\.0\.2/).length, 1);
++  } finally { s.stop(); if (blocker.listening) blocker.close(); }
++});
++
++// ── web.hosts ────────────────────────────────────────────────────────────────
++
++test('web.hosts: a name from the organisation\'s DNS is answered, on top of the rules before', async () => {
++  const req = (host) => ({ headers: { host } });
++  assert.ok(!hostAllowed(req('bs01.council.example')), 'refused until it is listed');
++  assert.ok(!hostAllowed(req('bs01.council.example'), []));
++  const hosts = ['bs01.council.example', 'Alert.Council.Example'];
++  for (const h of ['bs01.council.example', 'BS01.Council.Example:80', 'bs01.council.example.', 'alert.council.example:8443']) assert.ok(hostAllowed(req(h), hosts), h);
++  for (const h of ['evil.example', 'bs01.council.example.evil.example', 'xbs01.council.example', 'council.example']) assert.ok(!hostAllowed(req(h), hosts), h + ' is still refused');
++  for (const h of ['localhost', 'rpi-alert.local', '192.168.1.50', '[fe80::1]:80', os.hostname()]) assert.ok(hostAllowed(req(h), hosts), h + ' as before');
++
++  const s = await station();
++  try {
++    const named = { 'X-Forwarded-For': '203.0.113.7', Host: 'bs01.council.example' };
++    const before = await ask(s.port, { headers: named });
++    assert.deepEqual([before.status, before.text], [403, 'unrecognised Host header']);
++    assert.ok(s.config.update({ web: { hosts: ['bs01.council.example'] } }).ok);
++    assert.equal((await ask(s.port, { headers: named })).status, 200, 'at once, with no restart');
++    assert.equal((await ask(s.port, { headers: Object.assign({}, named, { Host: 'other.council.example' }) })).status, 403);
++  } finally { s.stop(); }
++});
++
++// ── web.behindProxy ──────────────────────────────────────────────────────────
++
++test('behindProxy off: this machine\'s own callers are told apart as before 0.24', () => {
++  const off = { behindProxy: false };
++  for (const a of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) {
++    assert.equal(isLocal(reqOf(a, {}), off), true, a);
++    assert.equal(isLocal(reqOf(a, {})), true, a + ' (no settings given)');
++    assert.equal(isLocal(reqOf(a, { 'X-Forwarded-For': '203.0.113.7' }), off), false, a + ' with X-Forwarded-For');
++    assert.equal(isLocal(reqOf(a, { Host: 'bs01.council.example', Forwarded: 'for=203.0.113.7' }), off), true, a + ': only X-Forwarded-For counted, as before');
++  }
++  for (const a of ['192.168.1.20', '::ffff:192.168.1.20', '10.42.0.7', 'fe80::1', '127.0.0.2', '', undefined]) assert.equal(isLocal(reqOf(a, {}), off), false, String(a));
++  // The caller's address is the connection's; a header from the network is not believed.
++  assert.equal(callerAddress(reqOf('::ffff:192.168.1.20', { 'X-Forwarded-For': '10.9.9.9' }), off), '192.168.1.20');
++  assert.equal(callerAddress(reqOf('127.0.0.1', { 'X-Forwarded-For': '10.9.9.9' }), off), '127.0.0.1');
++});
++
++test('behindProxy: a forwarded request is never this machine\'s own — every way of trying', () => {
++  const on = { behindProxy: true };
++  const local = (addr, headers, raw) => isLocal(reqOf(addr, headers, raw), on);
++  const cli = { Host: '127.0.0.1:8080' };
++  // The rpi-alert command and the screen's browser: this machine's address, no proxy's header, its own name.
++  for (const a of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) {
++    assert.equal(local(a, cli), true, a + ', as the command asks');
++    assert.equal(local(a, { Host: 'localhost' }), true, a + ', as the screen asks');
++    assert.equal(local(a, { Host: '[::1]:80' }), true);
++  }
++  // Each header a proxy may add, alone, under any spelling.
++  for (const h of ['X-Forwarded-For', 'x-forwarded-for', 'X-FORWARDED-FOR', 'x-FoRwArDeD-fOr', 'Forwarded', 'FORWARDED', 'X-Real-IP', 'x-real-ip', 'X-REAL-IP',
++    'X-Forwarded-Host', 'X-Forwarded-Proto', 'X-Forwarded-Port', 'X-Forwarded', 'Via', 'X-Client-IP', 'True-Client-IP', 'CF-Connecting-IP']) {
++    for (const a of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) assert.equal(local(a, Object.assign({ [h]: '203.0.113.7' }, cli)), false, h + ' from ' + a);
++    assert.equal(forwarded(reqOf('127.0.0.1', { [h]: 'x' })), true, h);
++  }
++  // Its value does not matter: this machine's own address, nonsense, nothing at all.
++  for (const v of ['127.0.0.1', '::1', 'localhost', 'unknown', '', ' ', ',', '127.0.0.1, 127.0.0.1']) assert.equal(local('127.0.0.1', Object.assign({ 'X-Forwarded-For': v }, cli)), false, JSON.stringify(v));
++  // Sent twice, or empty: Node's tidied list reads an empty header as none — the names as sent are asked.
++  assert.equal(local('127.0.0.1', { host: '127.0.0.1' }, ['Host', '127.0.0.1', 'X-Forwarded-For', '', 'X-Forwarded-For', '']), false, 'twice, empty');
++  assert.equal(isLocal({ socket: { remoteAddress: '127.0.0.1' }, headers: { host: '127.0.0.1' }, rawHeaders: ['Host', '127.0.0.1', 'X-Real-Ip', ''] }, on), false, 'in the raw list only');
++  assert.equal(isLocal({ socket: { remoteAddress: '127.0.0.1' }, headers: { host: '127.0.0.1', forwarded: '' } }, on), false, 'in the tidied list only');
++  // A connection that has carried a forwarded request is the proxy's for good.
++  assert.equal(isLocal({ socket: { remoteAddress: '127.0.0.1', rpaProxy: true }, headers: { host: '127.0.0.1' }, rawHeaders: ['Host', '127.0.0.1'] }, on), false);
++  // A proxy that passes the browser's Host on but adds no header of its own: not this machine's name.
++  for (const h of ['bs01.council.example', 'rpi-alert.local', '192.168.1.50', '10.42.0.1', 'localhost.evil.example', '127.0.0.1.evil.example', 'evil.example:127', '', undefined]) {
++    assert.equal(local('127.0.0.1', h === undefined ? {} : { Host: h }), false, 'Host ' + JSON.stringify(h));
++  }
++  assert.equal(local('127.0.0.1', { host: 'localhost' }, ['Host', 'localhost', 'Host', 'bs01.council.example']), false, 'two Hosts');
++  // A proxy that adds nothing and asks for 127.0.0.1 itself: a browser still says which page sent it.
++  for (const page of ['http://localhost/', 'http://localhost:8080/#set-sdr', 'http://127.0.0.1:8080', 'http://[::1]/']) {
++    assert.equal(local('127.0.0.1', Object.assign({ Origin: page, Referer: page }, cli)), true, 'the screen\'s own page, ' + page);
++  }
++  for (const page of ['https://bs01.council.example', 'https://bs01.council.example/', 'http://192.168.1.50/', 'http://localhost.evil.example/', 'null', '', 'localhost']) {
++    assert.equal(local('127.0.0.1', Object.assign({ Origin: page }, cli)), false, 'Origin ' + JSON.stringify(page));
++    assert.equal(local('127.0.0.1', Object.assign({ Referer: page }, cli)), false, 'Referer ' + JSON.stringify(page));
++  }
++  // From the network nothing is this machine's own, whatever it says of itself.
++  for (const a of ['192.168.1.20', '::ffff:192.168.1.20', '203.0.113.7', 'fe80::1', '127.0.0.2', '']) assert.equal(local(a, { Host: 'localhost' }), false, a);
++  assert.equal(forwarded(reqOf('127.0.0.1', { Host: 'localhost', 'User-Agent': 'node', Accept: '*/*', Cookie: 'x-forwarded-for=1', 'Accept-Language': '*' })), false, 'the command\'s own headers are none of them');
++});
++
++test('behindProxy: the caller\'s address is the one the proxy saw, and only from the proxy', () => {
++  const on = { behindProxy: true };
++  const from = (addr, xff) => callerAddress(reqOf(addr, xff === undefined ? {} : { 'X-Forwarded-For': xff }), on);
++  assert.equal(from('127.0.0.1', '203.0.113.7'), '203.0.113.7');
++  assert.equal(from('::1', '203.0.113.7'), '203.0.113.7');
++  assert.equal(from('::ffff:127.0.0.1', '2001:db8::7'), '2001:db8::7');
++  // The last address is the proxy's own; what comes before is whatever the caller sent.
++  assert.equal(from('127.0.0.1', '10.0.0.1, 127.0.0.1, 203.0.113.7'), '203.0.113.7');
++  assert.equal(from('127.0.0.1', '8.8.8.8,203.0.113.7'), '203.0.113.7', 'two header lines, joined');
++  assert.equal(from('127.0.0.1', '203.0.113.7:51234'), '203.0.113.7', 'with a port');
++  assert.equal(from('127.0.0.1', '[2001:db8::7]:51234'), '2001:db8::7');
++  assert.equal(from('127.0.0.1', '::ffff:203.0.113.7'), '203.0.113.7');
++  // Nothing usable: the connection's own address, which every such caller then shares.
++  for (const junk of ['', 'unknown', 'not an address', '203.0.113.7, evil', '999.1.1.1', '<script>']) assert.equal(from('127.0.0.1', junk), '127.0.0.1', JSON.stringify(junk));
++  assert.equal(from('127.0.0.1', undefined), '127.0.0.1');
++  // Straight from the network, past the proxy: the header is not believed.
++  assert.equal(from('192.168.1.20', '127.0.0.1'), '192.168.1.20');
++  assert.equal(from('::ffff:192.168.1.20', '10.9.9.9'), '192.168.1.20');
++});
++
++test('behindProxy: over HTTP — outside callers log in, the rpi-alert command does not have to', async () => {
++  fs.writeFileSync(process.env.RPI_ALERT_WEBPW_FILE, 'ABCDE-23456\n');
++  const s = await station({ behindProxy: true, hosts: ['bs01.council.example'] });
++  const via = (extra) => Object.assign({ 'X-Forwarded-For': '203.0.113.7', 'X-Forwarded-Proto': 'https', Host: 'bs01.council.example' }, extra || {});
++  try {
++    // The command on the machine itself: let in, and shown the first password.
++    const cli = await ask(s.port);
++    assert.deepEqual([cli.status, cli.json.auth.local, cli.json.auth.authed, cli.json.auth.initialPassword], [200, true, true, 'ABCDE-23456']);
++    assert.equal((await ask(s.port, { path: '/api/config' })).status, 200);
++    assert.equal((await ask(s.port, { path: '/api/config', headers: { Host: 'localhost:' + s.port } })).status, 200, 'the screen');
++
++    // Through the proxy: a visitor, who sees neither the settings, the first password nor where it is.
++    const out = await ask(s.port, { headers: via() });
++    assert.deepEqual([out.status, out.json.auth.local, out.json.auth.authed, out.json.auth.initialPassword, out.json.location.lat, out.json.system.addresses],
++      [200, false, false, undefined, undefined, undefined]);
++    assert.equal((await ask(s.port, { path: '/api/config', headers: via() })).status, 401);
++    // …whichever header the proxy uses, however it is spelt, even empty or sent twice.
++    for (const h of [{ Forwarded: 'for=203.0.113.7;proto=https' }, { 'X-Real-IP': '203.0.113.7' }, { 'x-FORWARDED-for': '127.0.0.1' }, { 'X-Forwarded-For': '' },
++      { 'X-Forwarded-For': ['127.0.0.1', '127.0.0.1'] }, { 'X-Forwarded-Host': 'bs01.council.example' }, { Via: '1.1 proxy' }]) {
++      const r = await ask(s.port, { path: '/api/config', headers: h });
++      assert.equal(r.status, 401, JSON.stringify(h) + ' — asking for 127.0.0.1 by name does not help');
++      assert.equal((await ask(s.port, { headers: h })).json.auth.initialPassword, undefined, JSON.stringify(h));
++    }
++    // A proxy that adds no header at all but passes the browser's Host on: a visitor — and the log says what is wrong, once.
++    assert.equal(s.said('warn', /reverse proxy/).length, 0, 'nothing to say while the proxy does its part');
++    assert.equal((await ask(s.port, { path: '/api/config', headers: { Host: 'bs01.council.example' } })).status, 401);
++    assert.equal((await ask(s.port, { path: '/api/config', headers: { Host: 'evil.example' } })).status, 403, 'and the Host guard holds for it');
++    // …or its own address in Host: the page a browser came from still gives it away.
++    assert.equal((await ask(s.port, { path: '/api/config', headers: { Referer: 'https://bs01.council.example/' } })).status, 401);
++    const doubt = s.said('warn', /reverse proxy/);
++    assert.equal(doubt.length, 1);
++    assert.match(doubt[0], /^a request from this machine itself, asking for "bs01\.council\.example", carried none of a reverse proxy's headers\. web\.behindProxy is on: .*the proxy is not adding X-Forwarded-For.* Treated as a visitor$/);
++    // A WebSocket upgrade is an ordinary request here: there is nothing to upgrade to.
++    assert.equal((await ask(s.port, { path: '/api/config', headers: via({ Connection: 'Upgrade', Upgrade: 'websocket' }) })).status, 401);
++
++    // What only this machine may do stays this machine's: where readings go, and removing the password.
++    const login = await ask(s.port, { path: '/api/login', headers: via({ Origin: 'https://bs01.council.example' }), body: { password: PASSWORD } });
++    assert.equal(login.status, 200);
++    assert.match(login.headers['set-cookie'][0], /; HttpOnly; SameSite=Strict; Secure$/, 'the proxy said HTTPS: the cookie is for HTTPS only');
++    const cookie = login.headers['set-cookie'][0].split(';')[0];
++    assert.equal((await ask(s.port, { path: '/api/config', headers: via({ Cookie: cookie }) })).status, 200, 'logged in');
++    const repoint = await ask(s.port, { path: '/api/config', method: 'PUT', headers: via({ Cookie: cookie }), body: { config: { meganet: { endpoints: ['https://evil.example/rest/v1'] } } } });
++    assert.equal(repoint.status, 403);
++    assert.equal((await ask(s.port, { path: '/api/password', headers: via({ Cookie: cookie }), body: { remove: true } })).status, 403);
++
++    // The same-origin check: the proxy passes the browser's Host on unchanged, so its Origin matches…
++    assert.equal((await ask(s.port, { path: '/api/logout', headers: via({ Origin: 'https://bs01.council.example' }), body: {} })).status, 200);
++    // …and another site's does not, nor "null", nor a proxy that put its own address in Host.
++    for (const h of [via({ Origin: 'https://evil.example' }), via({ Origin: 'null' }), via({ Origin: 'https://bs01.council.example', Host: '127.0.0.1:' + s.port })]) {
++      const r = await ask(s.port, { path: '/api/login', headers: h, body: { password: PASSWORD } });
++      assert.deepEqual([r.status, r.json.error], [403, 'cross-site request refused'], JSON.stringify(h));
++    }
++    // Plain HTTP through the proxy: no Secure, or the browser would never send the cookie back.
++    const plain = await ask(s.port, { path: '/api/login', headers: via({ 'X-Forwarded-Proto': 'http' }), body: { password: PASSWORD } });
++    assert.doesNotMatch(plain.headers['set-cookie'][0], /Secure/);
++  } finally { s.stop(); fs.rmSync(process.env.RPI_ALERT_WEBPW_FILE, { force: true }); }
++});
++
++// Requests written on one connection, as a proxy keeps one open for many callers.
++function onOneConnection(port, requests) {
++  return new Promise((resolve) => {
++    const sock = net.connect(port, '127.0.0.1');
++    let text = '';
++    sock.setEncoding('utf8');
++    sock.on('data', (d) => { text += d; });
++    sock.on('close', () => resolve(text.split(/(?=HTTP\/1\.1 \d{3} )/).map(r => ({ status: Number(r.slice(9, 12)), text: r }))));
++    sock.on('error', () => {});
++    sock.on('connect', () => sock.write(requests.join('')));
++  });
++}
++
++test('behindProxy: a request with no header of the proxy\'s, behind one that had — on the proxy\'s connection it is not this machine\'s own', async () => {
++  const s = await station({ behindProxy: true });
++  const get = (headers, last) => 'GET /api/config HTTP/1.1\r\nHost: 127.0.0.1:' + s.port + '\r\n' + headers + (last ? 'Connection: close\r\n' : '') + '\r\n';
++  try {
++    // A caller's request, forwarded; then one hidden in its body, or left on the connection, with nothing to mark it.
++    const mixed = await onOneConnection(s.port, [get('X-Forwarded-For: 203.0.113.7\r\n'), get('', true)]);
++    assert.deepEqual(mixed.map(r => r.status), [401, 401]);
++    // The command's own connection, which has carried none: let in each time.
++    const own = await onOneConnection(s.port, [get(''), get('', true)]);
++    assert.deepEqual(own.map(r => r.status), [200, 200]);
++    // With the setting off, as before 0.24: each request on its own.
++    s.config.update({ web: { behindProxy: false } });
++    const before = await onOneConnection(s.port, [get('X-Forwarded-For: 203.0.113.7\r\n'), get('', true)]);
++    assert.deepEqual(before.map(r => r.status), [401, 200]);
++  } finally { s.stop(); }
++});
++
++test('behindProxy: the live stream — a forwarded caller is a visitor, counted by its own address', async () => {
++  const s = await station({ behindProxy: true });
++  const open = [];
++  const from = async (addr) => { const st = await stream(s.port, { 'X-Forwarded-For': '10.1.1.1, ' + addr }).ready; open.push(st); return st; };
++  try {
++    const visitor = await from('203.0.113.7');
++    const own = await stream(s.port).ready; open.push(own);
++    assert.deepEqual([visitor.status, own.status], [200, 200]);
++    s.web.broadcast('log', { msg: 'for those let in' }, true);
++    s.web.broadcast('tick', { t: 1 });
++    assert.ok(await until(() => /event: tick/.test(visitor.text) && /event: log/.test(own.text)));
++    assert.doesNotMatch(visitor.text, /event: log/, 'the log is not for a visitor');
++    // Six from one address, as before — the address the proxy saw, not the proxy's own.
++    for (let i = 0; i < 5; i++) assert.equal((await from('203.0.113.7')).status, 200);
++    assert.equal((await from('203.0.113.7')).status, 503, 'the seventh from one address');
++    assert.equal((await from('203.0.113.8')).status, 200, 'another address is not held back by it');
++  } finally { open.forEach(o => o.close()); s.stop(); }
++});
++
++// ── a log line for every login attempt ───────────────────────────────────────
++
++test('login: every attempt is a line in the log — accepted or refused, the address, never what was typed', async () => {
++  const s = await station({}, { lockedNoteMs: 500 });
++  const tryLogin = (password, headers) => ask(s.port, { path: '/api/login', headers, body: { password } });
++  try {
++    assert.equal((await tryLogin('hunter2-wrong', OUTSIDE)).status, 401);
++    assert.equal((await tryLogin(PASSWORD, OUTSIDE)).status, 200);
++    assert.deepEqual(s.logins(), [
++      ['warn', 'login refused from 127.0.0.1: wrong password (1 in a row)'],
++      ['warn', 'login accepted from 127.0.0.1'],
++    ], 'both at the level of the other things asked of the web page that matter to its owner');
++
++    // Four wrong cost nothing; the fifth locks the address out for 30 s, the sixth for 60 s…
++    s.log.length = 0;
++    for (let i = 1; i <= 5; i++) assert.equal((await tryLogin('hunter2-wrong-' + i)).status, 401);
++    assert.match(s.logins()[3][1], /^login refused from 127\.0\.0\.1: wrong password \(4 in a row\)$/);
++    assert.match(s.logins()[4][1], /^login refused from 127\.0\.0\.1: wrong password \(5 in a row; locked out for 30 s\)$/);
++    // …and while it is locked out nothing is checked: the right password is refused too.
++    s.log.length = 0;
++    const locked = await tryLogin(PASSWORD);
++    assert.deepEqual([locked.status, /^too many tries — wait \d+ s$/.test(locked.json.error)], [429, true]);
++    for (let i = 0; i < 3; i++) assert.equal((await tryLogin('guess-' + i)).status, 429);
++    assert.equal(s.logins().length, 1, 'the first of them is a line');
++    assert.match(s.logins()[0][1], /^login refused from 127\.0\.0\.1: locked out for another \d+ s after 5 wrong passwords — not checked$/);
++    assert.ok(await until(() => s.logins().length === 2, 5000), 'the rest a count, so that nobody fills the log');
++    assert.equal(s.logins()[1][1], 'login refused from 127.0.0.1: 3 more tries while locked out — not checked');
++    assert.ok(s.logins().every(l => l[0] === 'warn'));
++
++    // No password set at all (removed on the machine itself): refused, and it says why.
++    s.web.fails.clear(); s.log.length = 0;
++    s.config.update({ web: { passwordHash: '' } });
++    assert.equal((await tryLogin('anything')).status, 401);
++    assert.equal(s.logins()[0][1], 'login refused from 127.0.0.1: no password is set (1 in a row)');
++  } finally { s.stop(); }
++  const all = JSON.stringify(s.log);
++  for (const typed of [PASSWORD, 'hunter2', 'guess-', 'anything']) assert.ok(!all.includes(typed), 'nothing typed is in the log');
++});
++
++test('login behind a proxy: the address in the log and in the lock-out is the one the proxy saw', async () => {
++  const s = await station({ behindProxy: true });
++  const tryLogin = (password, xff) => ask(s.port, { path: '/api/login', headers: xff === undefined ? {} : { 'X-Forwarded-For': xff }, body: { password } });
++  try {
++    // A caller cannot hide behind addresses it makes up, nor pass its lock-out to another.
++    for (let i = 1; i <= 5; i++) assert.equal((await tryLogin('wrong', '198.51.100.' + i + ', 203.0.113.7')).status, 401);
++    assert.equal(s.logins()[4][1], 'login refused from 203.0.113.7 (through the proxy): wrong password (5 in a row; locked out for 30 s)');
++    assert.equal((await tryLogin(PASSWORD, '203.0.113.7')).status, 429);
++    assert.equal((await tryLogin(PASSWORD, '127.0.0.1, 203.0.113.7')).status, 429);
++    const other = await tryLogin(PASSWORD, '203.0.113.7, 203.0.113.8');
++    assert.equal(other.status, 200, 'another address is not locked out by it');
++    assert.equal(s.log[s.log.length - 1][1], 'login accepted from 203.0.113.8 (through the proxy)');
++    // The command on the machine itself needs no login; if it tries one, it is its own address.
++    assert.equal((await tryLogin(PASSWORD)).status, 200);
++    assert.equal(s.log[s.log.length - 1][1], 'login accepted from 127.0.0.1');
++  } finally { s.stop(); }
++});
++
++// ── web.requireLogin ─────────────────────────────────────────────────────────
++
++const OPEN = ['/api/status', '/api/readings', '/api/history', '/api/stations/search?q=mar'];
++
++test('requireLogin settings: looking needs no login, as before 0.24', async () => {
++  const s = await station();
++  try {
++    for (const p of OPEN) assert.equal((await ask(s.port, { path: p, headers: OUTSIDE })).status, 200, p);
++    const st = await stream(s.port, OUTSIDE).ready;
++    assert.equal(st.status, 200, 'the live stream');
++    st.close();
++    const denied = await ask(s.port, { path: '/api/config', headers: OUTSIDE });
++    assert.deepEqual([denied.status, denied.json], [401, { error: 'log in first', login: true }]);
++  } finally { s.stop(); }
++});
++
++test('requireLogin all: nothing is read without a login — and the rpi-alert command still works', async () => {
++  const s = await station({ requireLogin: 'all' });
++  try {
++    for (const p of OPEN.concat('/api/events', '/api/config', '/api/log', '/api/hotspot', '/api/nothing-here')) {
++      const r = await ask(s.port, { path: p, headers: OUTSIDE });
++      assert.deepEqual([r.status, r.json], [401, { error: 'log in first', login: true, all: true }], p);
++    }
++    // The page itself is the same in every copy of RPi ALERT and holds no data: it loads, to ask for the password.
++    const page = await ask(s.port, { path: '/', headers: OUTSIDE });
++    assert.equal(page.status, 200);
++    assert.match(page.text, /id="login-form"/);
++    assert.equal((await ask(s.port, { path: '/app.js', headers: OUTSIDE })).status, 200);
++    // A wrong password opens nothing; the right one, everything.
++    assert.equal((await ask(s.port, { path: '/api/login', headers: OUTSIDE, body: { password: 'wrong' } })).status, 401);
++    const login = await ask(s.port, { path: '/api/login', headers: OUTSIDE, body: { password: PASSWORD } });
++    const cookie = login.headers['set-cookie'][0].split(';')[0];
++    const mine = Object.assign({ Cookie: cookie }, OUTSIDE);
++    for (const p of OPEN) assert.equal((await ask(s.port, { path: p, headers: mine })).status, 200, p + ', logged in');
++    const full = await ask(s.port, { headers: mine });
++    assert.equal(full.json.location.lat, -27.47, 'and the whole status');
++    // The command on the base station itself: no login.
++    for (const p of OPEN.concat('/api/config')) assert.equal((await ask(s.port, { path: p })).status, 200, p + ', on the machine itself');
++
++    // A live stream lasts as long as the login it was opened with.
++    const live = await stream(s.port, mine).ready;
++    const own = await stream(s.port).ready;
++    assert.deepEqual([live.status, own.status], [200, 200]);
++    assert.equal((await ask(s.port, { path: '/api/logout', headers: mine, body: {} })).status, 200);
++    assert.ok(await until(() => live.ended), 'logged out: the stream ends');
++    assert.equal((await ask(s.port, { headers: mine })).status, 401);
++    await wait(50);
++    assert.equal(own.ended, false, 'the machine\'s own goes on');
++    own.close();
++  } finally { s.stop(); }
++});
++
++test('requireLogin all: turned on, it ends what was open; with no password there is no login, and only the machine itself is let in', async () => {
++  const s = await station();
++  try {
++    const visitor = await stream(s.port, OUTSIDE).ready;
++    assert.equal(visitor.status, 200);
++    assert.ok(s.config.update({ web: { requireLogin: 'all' } }).ok);
++    assert.ok(await until(() => visitor.ended), 'a visitor\'s stream ends when the setting is turned on');
++    // Before 0.24's setting, no password meant anyone; with a login for everything it means nobody from outside.
++    s.config.update({ web: { passwordHash: '' } });
++    assert.equal((await ask(s.port, { headers: OUTSIDE })).status, 401);
++    assert.equal((await ask(s.port, { path: '/api/login', headers: OUTSIDE, body: { password: '' } })).status, 401);
++    assert.equal((await ask(s.port)).status, 200);
++    s.config.update({ web: { requireLogin: 'settings' } });
++    const open = await ask(s.port, { path: '/api/config', headers: OUTSIDE });
++    assert.equal(open.status, 200, 'and with the setting off, no password is anyone, as before');
++  } finally { s.stop(); }
++});
++
++test('all four together: the dashboard behind a proxy, on this machine only, a login for everything — and the command line and the updater still read it', async () => {
++  const s = await station({ bind: '127.0.0.1', hosts: ['bs01.council.example'], behindProxy: true, requireLogin: 'all' });
++  const via = (extra) => Object.assign({ 'X-Forwarded-For': '203.0.113.7', 'X-Forwarded-Proto': 'https', Host: 'bs01.council.example' }, extra || {});
++  try {
++    // rpi-alert status, and the updater's "is the new version answering": http://127.0.0.1:<port>/api/status, no login.
++    const own = await ask(s.port);
++    assert.deepEqual([own.status, own.json.version, own.json.auth.local], [200, 'test', true]);
++    assert.equal((await ask(s.port, { path: '/api/readings?limit=10' })).status, 200);
++    // From outside, through the proxy: the page to log in on, and nothing else until then.
++    assert.equal((await ask(s.port, { path: '/', headers: via() })).status, 200);
++    for (const p of OPEN.concat('/api/events', '/api/config')) assert.equal((await ask(s.port, { path: p, headers: via() })).status, 401, p);
++    const login = await ask(s.port, { path: '/api/login', headers: via({ Origin: 'https://bs01.council.example' }), body: { password: PASSWORD } });
++    assert.equal(login.status, 200);
++    const cookie = login.headers['set-cookie'][0].split(';')[0];
++    for (const p of OPEN.concat('/api/config')) assert.equal((await ask(s.port, { path: p, headers: via({ Cookie: cookie }) })).status, 200, p + ', logged in');
++    assert.equal((await ask(s.port, { headers: via({ Cookie: cookie }) })).json.auth.local, false);
++    assert.deepEqual(s.logins().map(l => l[1]), ['login accepted from 203.0.113.7 (through the proxy)']);
++    if (LINUX) assert.equal((await ask(s.port, { to: '127.0.0.2' })).error, 'ECONNREFUSED', 'and nothing but the proxy can reach it');
++  } finally { s.stop(); }
++});
++
++test.after(() => { fs.rmSync(TMP, { recursive: true, force: true }); });
+diff --git a/agent/test/root-files.test.js b/agent/test/root-files.test.js
+index 7ebc536..60f450b 100644
+--- a/agent/test/root-files.test.js
++++ b/agent/test/root-files.test.js
+@@ -133,3 +133,92 @@ test('an oversize log for MegaNet keeps its newest lines and says how many were
+   assert.equal(fitResult(small), small);
+   assert.equal(fitResult({ blob: 'x'.repeat(MAX_RESULT_BYTES + 10) }).truncated, true);
+ });
++
++// ── the settings file where there is no boot partition (0.24) ────────────────
++
++function importer(conf, mode) {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rpa-etc-'));
++  const etc = path.join(dir, 'etc'), bootDir = path.join(dir, 'boot');
++  fs.mkdirSync(etc); fs.mkdirSync(bootDir);
++  const file = path.join(etc, 'rpi-alert.conf');
++  if (conf != null) { fs.writeFileSync(file, conf, { mode: mode || 0o600 }); fs.chmodSync(file, mode || 0o600); }
++  const env = Object.assign({}, process.env, { RPI_ALERT_CONFIG: path.join(etc, 'config.json'), RPI_ALERT_ETC_CONF: file, RPI_ALERT_BOOT_DIRS: bootDir, RPI_ALERT_DATA: path.join(dir, 'data') });
++  const run = () => require('node:child_process').spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'rpi-alert'), 'import-boot-config'], { env, encoding: 'utf8' });
++  const settings = () => JSON.parse(fs.readFileSync(path.join(etc, 'config.json'), 'utf8'));
++  return { dir, etc, bootDir, file, run, settings };
++}
++
++test('settings file: /etc/rpi-alert/rpi-alert.conf is applied where no boot partition holds one', () => {
++  const i = importer('name = Council depot\nweb_bind = 127.0.0.1\nweb_require_login = all\nhotspot = off\nself_recovery = off\nremote_management = report\nweb_password = hunter2hunter2\n');
++  const r = i.run();
++  assert.equal(r.status, 0, r.stderr);
++  assert.match(r.stdout, /applying .*etc\/rpi-alert\.conf/);
++  const c = i.settings();
++  assert.deepEqual([c.name, c.web.bind, c.web.requireLogin, c.hotspot.mode, c.recover.mode, c.remote.mode], ['Council depot', '127.0.0.1', 'all', 'off', 'off', 'report']);
++  // As on a card: applied once, the secrets blanked, what happened beside it.
++  assert.equal(fs.existsSync(i.file), false);
++  const applied = fs.readFileSync(i.file + '.applied', 'utf8');
++  assert.match(applied, /^# Applied /);
++  assert.match(applied, /web_password = \(applied — removed from the card\)/);
++  assert.ok(!applied.includes('hunter2'));
++  assert.equal(fs.statSync(i.file + '.applied').mode & 0o777, 0o600);
++  assert.match(fs.readFileSync(path.join(i.etc, 'rpi-alert-boot.log'), 'utf8'), /settings changed: .*web\.bind/);
++  // Nothing there: nothing happens, and it says where it looked.
++  const again = i.run();
++  assert.equal(again.status, 0);
++  assert.match(again.stdout, /no rpi-alert\.conf on the boot partition or at .*rpi-alert\.conf — nothing to apply/);
++  // A second file adds to the log rather than replacing it.
++  fs.writeFileSync(i.file, 'name = Council depot 2\n', { mode: 0o600 });
++  assert.equal(i.run().status, 0);
++  assert.equal(fs.readFileSync(path.join(i.etc, 'rpi-alert-boot.log'), 'utf8').match(/applying/g).length, 2);
++});
++
++test('settings file: a boot partition\'s file comes first, and is applied as it always was', () => {
++  const i = importer('name = From etc\n');
++  fs.writeFileSync(path.join(i.bootDir, 'rpi-alert.conf'), 'name = From the card\r\n');
++  assert.equal(i.run().status, 0);
++  assert.equal(i.settings().name, 'From the card');
++  assert.ok(fs.existsSync(path.join(i.bootDir, 'rpi-alert.conf.applied')) && fs.existsSync(path.join(i.bootDir, 'rpi-alert-boot.log')));
++  assert.ok(fs.existsSync(i.file), 'the other waits for a boot with no card file');
++  assert.equal(i.run().status, 0);
++  assert.equal(i.settings().name, 'From etc');
++});
++
++test('settings file: in the agent\'s own directory only root\'s own file is applied — never a link, another\'s file, or one others may write', () => {
++  // The directory is the agent's, and this file can give the alert account a key: so the agent must not be able to write one.
++  const secret = path.join(tmp(), 'shadow'); fs.writeFileSync(secret, 'ssh_key = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlanted attacker\n');
++  const refused = (i, why) => {
++    const r = i.run();
++    assert.equal(r.status, 0, r.stderr);
++    assert.match(r.stdout, why);
++    assert.match(r.stdout, /is applied only when it is root's own/);
++    assert.equal(fs.existsSync(path.join(i.etc, 'config.json')), false, 'nothing was applied');
++    assert.equal(fs.existsSync(i.file + '.applied'), false);
++    assert.ok(fs.lstatSync(i.file), 'and it is left where it was, to be looked at');
++  };
++  const link = importer(null);
++  fs.symlinkSync(secret, link.file);
++  refused(link, /is a link — not read/);
++  const hard = importer(null);
++  fs.linkSync(secret, hard.file);
++  refused(hard, /more than one name/);
++  refused(importer('name = Open to all\n', 0o666), /can be written by others — not read/);
++  refused(importer('name = Open to a group\n', 0o660), /can be written by others/);
++  assert.equal(fs.readFileSync(secret, 'utf8').includes('Planted'), true);
++  // The same check, by itself.
++  const mine = importer('name = Mine\n');
++  assert.equal(readNoFollow(mine.file, 1024, { rootsOwn: true }), 'name = Mine\n');
++  if (typeof process.getuid === 'function' && process.getuid() === 0) {
++    // As root (as at boot): a file the agent's user wrote is not root's word.
++    const theirs = importer('alert_password = let-me-in-please\n');
++    fs.chownSync(theirs.file, 65534, 65534);
++    refused(theirs, /is not root's file — not read/);
++    // And the applied copy of root's own file goes to the directory's owner, so it cannot be put back as root's.
++    const kept = importer('name = Kept\n');
++    fs.chownSync(kept.etc, 65534, 65534);
++    assert.equal(kept.run().status, 0);
++    assert.equal(fs.statSync(kept.file + '.applied').uid, 65534);
++    fs.renameSync(kept.file + '.applied', kept.file);
++    assert.match(kept.run().stdout, /is not root's file — not read/, 'put back under the settings file\'s name, it is not applied again');
++  }
++});
+diff --git a/agent/web/app.js b/agent/web/app.js
+index e5446db..04f9d9f 100644
+--- a/agent/web/app.js
++++ b/agent/web/app.js
+@@ -43,7 +43,7 @@ async function api(path, opts) {
+   const res = await fetch(path, init);
+   let body = null;
+   try { body = await res.json(); } catch (_) {}
+-  if (res.status === 401 && body && body.login) { askLogin(); throw new Error('log in first'); }
++  if (res.status === 401 && body && body.login) { askLogin(body.all); throw new Error('log in first'); }
+   if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
+   return body;
+ }
+@@ -1661,8 +1661,10 @@ function renderLog() {
+ 
+ // ── login ───────────────────────────────────────────────────────────────────
+ 
+-function askLogin() {
++// all: this base station shows nothing without a login (web.requireLogin).
++function askLogin(all) {
+   const d = $('#login');
++  if (all === true) $('#login-hint').textContent = 'This base station asks for its web page password before it shows anything.';
+   if (!d.open) d.showModal();
+ }
+ $('#login-cancel').addEventListener('click', () => $('#login').close());
+@@ -1671,7 +1673,8 @@ $('#login-form').addEventListener('submit', async (e) => {
+   try {
+     await api('/api/login', { method: 'POST', body: { password: $('#login-pw').value } });
+     $('#login').close(); $('#login-pw').value = '';
+-    await refresh(); loadConfig(); connectEvents();
++    // The readings and the graphs too: where everything needs a login, none came before it.
++    await refresh(); loadConfig(); loadReadings(); loadHistory(); connectEvents();
+   } catch (err) { $('#login-status').textContent = err.message; $('#login-status').className = 'status small bad'; }
+ });
+ 
+@@ -1783,10 +1786,15 @@ async function refresh() {
+     if (S.config) { if (foldOpen('ports')) renderPortOverrides(); if (foldOpen('sdr')) sdrRender(); if (foldOpen('hotspot')) renderHotspot(); }
+     if (foldOpen('recover')) renderRecover();
+   } catch (e) {
+-    $('#host').textContent = 'not connected — ' + e.message;
++    if (e.message === 'log in first') $('#host').innerHTML = 'Log in to see this base station. <button type="button" class="small" data-login>Log in</button>';
++    else $('#host').textContent = 'not connected — ' + e.message;
+   }
+ }
+ 
++async function loadReadings() {
++  try { const r = await api('/api/readings?limit=500'); S.readings = r.readings; S.bursts = r.bursts; renderReadings(); renderCharts(true); } catch (_) {}
++}
++
+ function connectEvents() {
+   if (S.sse) S.sse.close();
+   const es = new EventSource('/api/events');
+@@ -2027,7 +2035,7 @@ window.addEventListener('resize', debounce(() => renderCharts(true), 200));
+   // Read at once where no password is asked (this Pi's own screen, or logged
+   // in): the folds' lines and forms are filled. Elsewhere, a fold opened asks.
+   if (S.status && S.status.auth && S.status.auth.authed) loadConfig().catch(() => {});
+-  try { const r = await api('/api/readings?limit=500'); S.readings = r.readings; S.bursts = r.bursts; renderReadings(); renderCharts(true); } catch (_) {}
++  await loadReadings();
+   loadHistory();
+   setInterval(loadHistory, 60 * 1000);
+   connectEvents();
+diff --git a/agent/web/index.html b/agent/web/index.html
+index 51c51d6..25e73a5 100644
+--- a/agent/web/index.html
++++ b/agent/web/index.html
+@@ -486,7 +486,7 @@
+ <dialog id="login">
+   <form method="dialog" id="login-form">
+     <h2>Log in</h2>
+-    <p class="hint">This base station has a web page password. Looking needs none; changing a setting does.</p>
++    <p class="hint" id="login-hint">This base station has a web page password. Looking needs none; changing a setting does.</p>
+     <label>Password <input type="password" id="login-pw" autocomplete="current-password"></label>
+     <div class="row-actions"><button id="login-go" value="go">Log in</button><button type="button" class="ghost" id="login-cancel">Not now</button><span class="status small" id="login-status"></span></div>
+   </form>
+diff --git a/os/files/systemd/rpi-alert-boot-config.service b/os/files/systemd/rpi-alert-boot-config.service
+index c8c2368..52975dd 100644
+--- a/os/files/systemd/rpi-alert-boot-config.service
++++ b/os/files/systemd/rpi-alert-boot-config.service
+@@ -9,6 +9,8 @@ ConditionPathExists=|/boot/firmware/rpi-alert.conf
+ ConditionPathExists=|/boot/firmware/rpi-alert.txt
+ ConditionPathExists=|/boot/firmware/rpi-alert.conf.txt
+ ConditionPathExists=|/boot/rpi-alert.conf
++# A computer with no boot partition: the same file, root's own, in /etc/rpi-alert.
++ConditionPathExists=|/etc/rpi-alert/rpi-alert.conf
+ 
+ [Service]
+ Type=oneshot

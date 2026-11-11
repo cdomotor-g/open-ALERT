@@ -1,0 +1,46 @@
+# open-ALERT base station: the dashboard answers this computer only.
+#
+# Loaded by open-alert-base-firewall.service, which "open-alert-base profile
+# enterprise" turns on. It is one table of its own: it adds to whatever
+# firewall the computer already has and changes none of it. To look at it:
+#     sudo nft list table inet open_alert_base
+#
+# Why it is here: RPi ALERT up to 0.23 opens its dashboard on every network
+# address of the computer and has no setting for that. These rules are what
+# keeps other computers out. From 0.24 the agent has a setting of its own
+# (web.bind, which the enterprise profile already sets), and these rules stay
+# as a second lock.
+#
+# If your own firewall set-up starts with "flush ruleset" (Debian's
+# /etc/nftables.conf does), that line removes this table too whenever it is
+# loaded by hand. Reloading through "systemctl reload nftables" puts this table
+# back by itself; to be sure in every case, add this line to your own file:
+#     include "/etc/open-alert-base/dashboard-local-only.nft"
+
+# The dashboard's port: the enterprise profile's web.port. If you change the
+# port in the agent's settings, change it here too, then:
+#     sudo systemctl restart open-alert-base-firewall
+define dashboard_port = 8080
+
+# Start clean each time this file is loaded (make sure the table exists, remove
+# it, make it again).
+table inet open_alert_base
+delete table inet open_alert_base
+
+table inet open_alert_base {
+	chain input {
+		type filter hook input priority filter - 5; policy accept;
+		# The computer talking to itself: the rpi-alert command and a browser on this computer.
+		iifname "lo" accept
+		# Anybody else asking for the dashboard is told nothing is there.
+		tcp dport $dashboard_port counter reject with tcp reset comment "dashboard: this computer only"
+	}
+	chain output {
+		type filter hook output priority filter - 5; policy accept;
+		oifname "lo" accept
+		# A second net, whatever the port: the agent's user may call out (to
+		# Flood-Net), but never accept a call from another computer. The
+		# packet that would accept one is thrown away.
+		meta skuid "rpi-alert" tcp flags & (syn | ack) == syn | ack counter drop comment "agent: no calls accepted from other computers"
+	}
+}

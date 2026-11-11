@@ -12,6 +12,10 @@ station builder (below).
 **→ Trial a Mallow beside a Pi: <https://cdomotor-g.github.io/open-ALERT/trial.html>** — the
 Mallow trial (below).
 
+**→ The hardware review (interim): [docs/hardware-review](docs/hardware-review/README.md)** — the Mallow
+trial's assumptions re-checked, and where a base station that is not a Raspberry Pi stands.
+A first, unfinished firmware layer for other computers is in [firmware/](firmware/).
+
 Every page has the same menu: **Plan** (Sites, Network, Parts), **Build** (Base station,
 Mallow trial) and **Learn** (How it works).
 

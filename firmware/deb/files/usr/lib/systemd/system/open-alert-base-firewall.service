@@ -1,0 +1,50 @@
+# open-ALERT base station: keep the dashboard to this computer only.
+#
+# Loads one small table of firewall rules (nftables) and exits. It is turned on
+# by "open-alert-base profile enterprise" (and by "open-alert-base sync" when
+# the settings say the dashboard belongs to this computer only), and turned off
+# by the standard profile. It touches no other firewall table.
+
+[Unit]
+Description=open-ALERT base station: dashboard for this computer only (nftables rules)
+Documentation=https://github.com/cdomotor-g/open-ALERT/tree/main/firmware
+ConditionPathExists=/etc/open-alert-base/dashboard-local-only.nft
+# After the system's own firewall service, whose usual first line clears every
+# table; and again whenever that service is reloaded or restarted.
+After=nftables.service
+PartOf=nftables.service
+ReloadPropagatedFrom=nftables.service
+Before=open-alert-base.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/open-alert-base/dashboard-local-only.nft
+ExecReload=/usr/sbin/nft -f /etc/open-alert-base/dashboard-local-only.nft
+ExecStop=-/usr/sbin/nft delete table inet open_alert_base
+# Root, because only root may change firewall rules; but with that one
+# privilege and no other, and the disk read-only.
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_NETLINK AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

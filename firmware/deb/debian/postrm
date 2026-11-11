@@ -1,0 +1,40 @@
+#!/bin/bash
+# open-alert-base, after its files are removed.
+#   remove: the settings (/etc/rpi-alert), what was heard and not yet sent
+#           (/var/lib/rpi-alert) and the agent's user are all kept.
+#   purge:  they are deleted.
+set -euo pipefail
+
+SVC_USER=rpi-alert
+UNITS="open-alert-base.service open-alert-base-firewall.service"
+DROPIN_DIR=/etc/systemd/system/open-alert-base.service.d
+
+case "${1:-}" in
+  remove)
+    if [ -d /run/systemd/system ]; then systemctl --system daemon-reload >/dev/null || true; fi
+    if command -v udevadm >/dev/null 2>&1 && [ -S /run/udev/control ]; then udevadm control --reload-rules >/dev/null 2>&1 || true; fi
+    ;;
+  purge)
+    for u in $UNITS; do
+      if command -v deb-systemd-helper >/dev/null 2>&1; then
+        deb-systemd-helper purge "$u" >/dev/null 2>&1 || true
+        deb-systemd-helper unmask "$u" >/dev/null 2>&1 || true
+      fi
+      rm -f "/etc/systemd/system/multi-user.target.wants/$u"
+    done
+    # What "open-alert-base profile" wrote.
+    rm -f "$DROPIN_DIR/10-low-port.conf" /etc/open-alert-base/profile
+    rmdir "$DROPIN_DIR" 2>/dev/null || true
+    rmdir /etc/open-alert-base 2>/dev/null || true
+    # Settings (with the Flood-Net token) and data.
+    rm -rf /etc/rpi-alert /var/lib/rpi-alert
+    # The agent's user, if it is the one this package uses.
+    if getent passwd "$SVC_USER" >/dev/null && [ "$(getent passwd "$SVC_USER" | cut -d: -f6)" = /var/lib/rpi-alert ]; then
+      if command -v deluser >/dev/null 2>&1; then deluser --system --quiet "$SVC_USER" >/dev/null 2>&1 || true
+      else userdel "$SVC_USER" >/dev/null 2>&1 || true; fi
+      if getent group "$SVC_USER" >/dev/null; then groupdel "$SVC_USER" >/dev/null 2>&1 || true; fi
+    fi
+    if [ -d /run/systemd/system ]; then systemctl --system daemon-reload >/dev/null || true; fi
+    ;;
+esac
+exit 0

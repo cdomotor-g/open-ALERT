@@ -21,8 +21,8 @@
   },
   "status": {
     "phase": "beta",
-    "updated": "2026-11-08",
-    "summary": "Prices re-checked in November 2026: each part is what one costs from an Australian shop with it in stock (else the cheapest way to get one, and when), and every bill — configurator, builder, trial — adds each shop's delivery once and clearance on an overseas order over A$1,000. The Pi 5 4 GB is A$249 in stock (A$178 was a back-order price); the RFI COL54 collinear is A$3,218 at Techwave, not the A$650 guessed; the RTL-SDR Blog V4 is end of life, so the V3 is the builder's stick. The builder and the Mallow trial rate every computer on RPi ALERT 0.17 and 0.19, with the Luna SL1680 and the Raspberry Pi range beside the Verdin AM62s.",
+    "updated": "2026-11-11",
+    "summary": "A review of the Mallow trial (interim, 11 November 2026: docs/hardware-review) found the Verdin AM62's price has roughly tripled, a heatsink on its list that does not fit, a speed figure nobody measured and a software recipe that is hard to get approved — and that RPi ALERT already runs unchanged off a Raspberry Pi. A hardware-neutral firmware layer is started in firmware/ (unfinished). Prices re-checked in November 2026: each part is what one costs from an Australian shop with it in stock (else the cheapest way to get one, and when), and every bill — configurator, builder, trial — adds each shop's delivery once and clearance on an overseas order over A$1,000. The Pi 5 4 GB is A$249 in stock (A$178 was a back-order price); the RFI COL54 collinear is A$3,218 at Techwave, not the A$650 guessed; the RTL-SDR Blog V4 is end of life, so the V3 is the builder's stick. The builder and the Mallow trial rate every computer on RPi ALERT 0.17 and 0.19, with the Luna SL1680 and the Raspberry Pi range beside the Verdin AM62s.",
     "next": [
       "Feed the trial's AM62 numbers back into the builder's CPU model",
       "Check what is still marked est. with suppliers: the mating Bulgin lead, the earth kit, the 18 Ah battery, delivery from shops that price it only at checkout",
@@ -39,13 +39,13 @@
       "Re-check quote-only and estimated prices with suppliers"
     ],
     "now": [
-      "The Mallow trial: buy the parts, bring the AM62 up on Torizon OS, run RPi ALERT in a container beside the Pi"
+      "The hardware review: research the remaining computers (small PCs, open-hardware boards, industrial ARM), finish firmware/, then the catalogue, the builder's processor sums and a page to explore it all"
     ],
     "blocked": [
       {
-        "what": "Ordering the trial's module from Toradex direct",
+        "what": "Choosing and ordering the computer to trial beside the Pi",
         "on": "human",
-        "kind": "money",
+        "kind": "decision",
         "since": "2026-11-02",
         "holds": [
           "The Mallow trial"
@@ -53,8 +53,13 @@
         "options": [
           {
             "by": "human",
-            "effort": "an hour",
+            "effort": "none",
             "recommended": true,
+            "what": "Hold the order until the hardware review names the computer: the Verdin AM62 Quad now lists at about US$306, and heatsink 23111001 does not fit it (23111101 does)"
+          },
+          {
+            "by": "human",
+            "effort": "an hour",
             "what": "Order 00761200, 01611102 and 23111001 from Toradex's webshop on the Bureau's business account"
           },
           {

@@ -1,0 +1,26 @@
+# The RPi ALERT release this firmware layer ships, unchanged.
+#
+# One KEY=value a line, no spaces, no quotes. firmware/lib/fetch-agent.sh reads
+# it and refuses the download unless every check below passes.
+# To move to a newer release, see "Moving the pin" in firmware/README.md.
+
+# The release tag and the version its agent/package.json must carry.
+AGENT_TAG=v0.23.1
+AGENT_VERSION=0.23.1
+
+# Where the signed source tarball and its signature are downloaded from.
+AGENT_URL=https://github.com/cdomotor-g/RPi_ALERT/releases/download/v0.23.1/rpi-alert-v0.23.1-src.tar.gz
+AGENT_SIG_URL=https://github.com/cdomotor-g/RPi_ALERT/releases/download/v0.23.1/rpi-alert-v0.23.1-src.tar.gz.sig
+
+# The SHA-256 of that tarball: any other file is refused before anything else is looked at.
+AGENT_SHA256=de01ee5399d427a54df23ce5a5292d5aa4ee7919208ce71cb3b70561d1e8cc85
+
+# RPi ALERT's public release key (Ed25519), kept in this repository, and its
+# fingerprint as RPi ALERT's docs/release-signing.md prints it.
+KEY_FILE=keys/rpi-alert-release.pub.pem
+KEY_FINGERPRINT=SHA256:fOdKIOUguw9edBdaecgkcSoJhXprGHvbNr1ddEVXOXI
+
+# This layer's own revision on top of that release: the "+oa1" in 0.23.1+oa1.
+# Raise it when the layer changes and the agent release does not; back to 1
+# when the pin moves.
+OA_REVISION=1

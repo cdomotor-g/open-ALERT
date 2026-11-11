@@ -1,0 +1,40 @@
+#!/bin/bash
+# Starts the RPi ALERT agent for open-alert-base.service.
+#
+# The service's own file says who it runs as and what it may touch; this only
+# decides how a web proxy is handed to Node.js, then becomes the agent.
+#   No HTTPS_PROXY in /etc/open-alert-base/env: nothing is added at all.
+#   Node.js 22.21 or newer (and 24 or newer): it reads the proxy settings
+#     itself once told to (NODE_USE_ENV_PROXY=1).
+#   Older Node.js (Debian 13's 20, Ubuntu 24.04's 18): a small file is loaded
+#     first that points Node's fetch() at the proxy (proxy-preload.js).
+set -euo pipefail
+
+LIB=/usr/lib/open-alert-base
+NODE="${OPEN_ALERT_BASE_NODE:-/usr/bin/node}"
+
+if [ ! -x "$NODE" ]; then
+  echo "open-alert-base: Node.js was not found at $NODE (see OPEN_ALERT_BASE_NODE in /etc/open-alert-base/env)" >&2
+  exit 78
+fi
+
+proxy="${HTTPS_PROXY:-${https_proxy:-}}"
+if [ -n "$proxy" ]; then
+  # Both spellings, so that Node.js and curl (the agent's "is the internet there?" check) agree.
+  export HTTPS_PROXY="$proxy" https_proxy="$proxy"
+  exempt="${NO_PROXY:-${no_proxy:-}}"
+  if [ -n "$exempt" ]; then export NO_PROXY="$exempt" no_proxy="$exempt"; fi
+  version=$("$NODE" -p 'process.versions.node')
+  major=${version%%.*}; rest=${version#*.}; minor=${rest%%.*}
+  # A user name and password in the proxy's address stay out of the log.
+  shown=$(printf '%s' "$proxy" | sed -E 's#//[^/@]*@#//(name and password)@#')
+  if [ "$major" -ge 24 ] || { [ "$major" -eq 22 ] && [ "$minor" -ge 21 ]; }; then
+    export NODE_USE_ENV_PROXY=1
+    echo "open-alert-base: sending through the web proxy $shown (Node.js $version reads the proxy settings itself)" >&2
+  else
+    export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$LIB/proxy-preload.js"
+    echo "open-alert-base: sending through the web proxy $shown (Node.js $version: proxy-preload.js loaded first)" >&2
+  fi
+fi
+
+exec "$NODE" "$LIB/agent/bin/rpi-alert" daemon

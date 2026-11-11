@@ -1,0 +1,29 @@
+#!/bin/bash
+# RPi ALERT's own command, under the name its documentation uses. It talks to
+# the running agent on this computer (http://127.0.0.1, port 80 or 8080):
+#   rpi-alert status      rpi-alert setup      rpi-alert token      rpi-alert help
+#
+# Three of its commands belong to RPi ALERT's own Raspberry Pi installer and
+# are not part of open-alert-base; they are turned away here with the reason.
+set -euo pipefail
+
+AGENT=/usr/lib/open-alert-base/agent
+NODE=/usr/bin/node
+
+case "${1:-}" in
+  daemon)
+    echo "rpi-alert: the agent is run by the service, not by hand:" >&2
+    echo "    sudo systemctl start open-alert-base      (and: open-alert-base status)" >&2
+    exit 2 ;;
+  access)
+    echo "rpi-alert: 'access' sets up RPi ALERT's own SSH maintenance account. open-alert-base installs" >&2
+    echo "no such account and changes nothing about SSH: who may log in to this computer is for" >&2
+    echo "your organisation's own accounts and rules." >&2
+    exit 2 ;;
+  import-boot-config)
+    echo "rpi-alert: 'import-boot-config' reads a settings file from a Raspberry Pi's SD card as root." >&2
+    echo "open-alert-base does not use one: use 'rpi-alert setup', 'rpi-alert config set' or the dashboard." >&2
+    exit 2 ;;
+esac
+
+exec "$NODE" "$AGENT/bin/rpi-alert" "$@"

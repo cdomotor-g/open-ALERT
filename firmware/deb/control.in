@@ -1,0 +1,23 @@
+Package: open-alert-base
+Version: @VERSION@
+Architecture: all
+Maintainer: open-ALERT <cdomotor-g@users.noreply.github.com>
+Installed-Size: @INSTALLED_SIZE@
+Depends: nodejs (>= 18.17), rtl-sdr, ca-certificates, adduser
+Recommends: nftables
+Suggests: socat
+Section: net
+Priority: optional
+Homepage: https://github.com/cdomotor-g/open-ALERT
+Description: open-ALERT base station (flood-warning radio telemetry to Flood-Net)
+ The RPi ALERT agent, unchanged from its signed release @TAG@, for any Debian
+ or Ubuntu computer (x86-64 or 64-bit ARM). It decodes ALERT and ALERT2
+ flood-warning radio telemetry from RTL-SDR USB sticks and serial receivers and
+ posts the readings to Flood-Net over outbound HTTPS.
+ .
+ This package adds what a managed network asks for: a locked-down service with
+ no root helper, two settings profiles (standard and enterprise), web-proxy
+ support, the device rules for the sticks, and "open-alert-base audit", which
+ prints the security posture for a reviewer.
+ .
+ Not yet tested with a real radio stick on hardware other than a Raspberry Pi.

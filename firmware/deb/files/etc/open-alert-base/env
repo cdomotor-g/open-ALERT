@@ -1,0 +1,31 @@
+# open-ALERT base station: settings for the service's surroundings.
+#
+# systemd reads this file each time the service starts. After a change:
+#     sudo systemctl restart open-alert-base
+# One NAME=value a line; no quotes, no "export". A line starting with # is ignored.
+#
+# The agent's own settings (channels, the Flood-Net token, the dashboard) are
+# not here. They are in /etc/rpi-alert/config.json and are changed with the
+# "rpi-alert" command or on the dashboard.
+
+# ── A web proxy ──────────────────────────────────────────────────────────────
+# If this computer reaches the internet only through a web proxy, name it here.
+# Readings then go to Flood-Net through it.
+#HTTPS_PROXY=http://proxy.example.internal:3128
+# Addresses that must NOT go through the proxy, separated by commas.
+#NO_PROXY=localhost,127.0.0.1
+
+# ── A private certificate authority ──────────────────────────────────────────
+# If your network opens HTTPS traffic for inspection and signs it again with
+# its own certificate authority, add that authority to the operating system in
+# the usual way: copy its .crt file into /usr/local/share/ca-certificates/ and
+# run "sudo update-ca-certificates". The Node.js that Debian and Ubuntu ship
+# then trusts it, and nothing is needed here.
+# Only for a Node.js from somewhere else (nodejs.org, NodeSource), name the file:
+#NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/my-organisation.crt
+
+# ── Other ────────────────────────────────────────────────────────────────────
+# A Node.js other than /usr/bin/node (it must be 18.17 or newer).
+#OPEN_ALERT_BASE_NODE=/usr/bin/node
+# How much the agent writes to the system log: debug, info (the default), warn or error.
+#RPI_ALERT_LOG_LEVEL=info

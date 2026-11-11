@@ -1,0 +1,472 @@
+#!/bin/bash
+# open-alert-base — the platform's own command on an open-ALERT base station.
+#
+#   open-alert-base version          what is installed: this package, the agent, the signed release it came from
+#   open-alert-base status           is the service running, which profile, and the agent's own status
+#   open-alert-base profile          which profile is in force, and the ones there are
+#   open-alert-base profile <name>   put a profile in force: standard or enterprise          (root)
+#   open-alert-base sync             make the service and the firewall lock follow the
+#                                    settings as they are now (after changing the port, say)  (root)
+#   open-alert-base audit            the security posture, for a reviewer: what listens, who it
+#                                    runs as, what it is kept from, what is switched off      (root, for all of it)
+#   open-alert-base selftest         run the agent's own tests on this computer (a few minutes)
+#   open-alert-base bench [options]  measure how many channels this computer will carry
+#
+# The agent's own command is "rpi-alert" (rpi-alert status, rpi-alert setup, …).
+set -euo pipefail
+
+LIB=/usr/lib/open-alert-base
+SHARE=/usr/share/open-alert-base
+AGENT=$LIB/agent
+ETC=/etc/open-alert-base
+UNIT=open-alert-base.service
+UNIT_FILE=/usr/lib/systemd/system/$UNIT
+FW_UNIT=open-alert-base-firewall.service
+FW_RULES=$ETC/dashboard-local-only.nft
+FW_TABLE=open_alert_base
+DROPIN_DIR=/etc/systemd/system/$UNIT.d
+DROPIN=$DROPIN_DIR/10-low-port.conf
+SVC_USER=rpi-alert
+SETTINGS_DIR=/etc/rpi-alert
+DATA_DIR=/var/lib/rpi-alert
+NODE=/usr/bin/node
+
+say()  { printf '%s\n' "$*"; }
+warn() { printf 'open-alert-base: %s\n' "$*" >&2; }
+die()  { printf 'open-alert-base: %s\n' "$*" >&2; exit 1; }
+is_root() { [ "$(id -u)" = 0 ]; }
+need_root() { is_root || die "this needs the administrator account: sudo open-alert-base $*"; }
+have_systemd() { [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; }
+
+usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; }
+
+# Run something as the agent's own user: root never reads or writes in the
+# agent's folders itself.
+as_agent() {
+  if is_root; then
+    runuser -u "$SVC_USER" -- env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME="$DATA_DIR" "$@"
+  elif [ "$(id -un)" = "$SVC_USER" ]; then
+    "$@"
+  else
+    return 77
+  fi
+}
+
+pin() { sed -n "s|^$1=\(.*\)\$|\1|p" "$SHARE/PIN" 2>/dev/null | tail -n 1; }
+package_version() { cat "$SHARE/VERSION" 2>/dev/null || echo unknown; }
+agent_version() { sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$AGENT/package.json" 2>/dev/null | head -n 1; }
+current_profile() { if [ -r "$ETC/profile" ]; then head -n 1 "$ETC/profile"; else echo "none recorded"; fi; }
+profile_file() { case "$1" in *[!a-z0-9-]*|'') return 1 ;; esac; [ -f "$SHARE/profiles/$1.json" ] && printf '%s' "$SHARE/profiles/$1.json"; }
+profile_names() { local f; for f in "$SHARE"/profiles/*.json; do basename "$f" .json; done | tr '\n' ' ' | sed 's/ $//'; }
+profile_about() { sed -n 's/^[[:space:]]*"about"[[:space:]]*:[[:space:]]*"\(.*\)",\{0,1\}[[:space:]]*$/\1/p' "$1" | head -n 1; }
+
+# The settings that matter here, as NAME=value lines (settings.js summary).
+SUMMARY=''
+load_summary() {
+  local rc=0
+  SUMMARY=$(as_agent "$NODE" "$LIB/settings.js" summary 2>/dev/null) || rc=$?
+  return "$rc"
+}
+setting() { printf '%s\n' "$SUMMARY" | sed -n "s|^$1=\(.*\)\$|\1|p" | head -n 1; }
+is_loopback() { case "$1" in 127.*|::1|localhost) return 0 ;; *) return 1 ;; esac; }
+
+# ── version ──────────────────────────────────────────────────────────────────
+cmd_version() {
+  say "open-alert-base $(package_version)"
+  say "RPi ALERT agent $(agent_version), unchanged from the signed release $(pin AGENT_TAG)"
+  say "    release tarball  sha256 $(pin AGENT_SHA256)"
+  say "    release key      $(pin KEY_FINGERPRINT)"
+  say "Node.js $("$NODE" --version 2>/dev/null || echo 'not found') ($NODE)"
+}
+
+# ── status ───────────────────────────────────────────────────────────────────
+cmd_status() {
+  say "open-alert-base $(package_version) — RPi ALERT agent $(agent_version)"
+  if have_systemd; then
+    say "Service    $(systemctl is-active "$UNIT" 2>/dev/null || true), $(systemctl is-enabled "$UNIT" 2>/dev/null || true) at start-up"
+  else
+    say "Service    systemd is not running here (a container, or a system being built): nothing to ask"
+  fi
+  say "Profile    $(current_profile)"
+  if is_root && load_summary; then
+    local port bind
+    port=$(setting web.port); bind=$(setting web.bind)
+    if is_loopback "$bind"; then
+      say "Dashboard  http://127.0.0.1:$port/ — for this computer only (firewall lock: $(lock_state))"
+    else
+      say "Dashboard  port $port, for the local network"
+    fi
+  fi
+  say ""
+  if ! /usr/bin/rpi-alert status 2>/dev/null; then
+    say "The agent is not answering on this computer (try: sudo systemctl status open-alert-base)."
+  fi
+}
+
+# ── the platform follows the settings ────────────────────────────────────────
+unit_enable() {
+  if command -v systemctl >/dev/null 2>&1; then systemctl enable "$1" >/dev/null 2>&1
+  elif command -v deb-systemd-helper >/dev/null 2>&1; then deb-systemd-helper enable "$1" >/dev/null 2>&1
+  else return 1; fi
+}
+unit_disable() {
+  if command -v systemctl >/dev/null 2>&1; then systemctl disable "$1" >/dev/null 2>&1 || true
+  elif command -v deb-systemd-helper >/dev/null 2>&1; then deb-systemd-helper disable "$1" >/dev/null 2>&1 || true; fi
+}
+lock_state() {
+  if ! command -v nft >/dev/null 2>&1; then echo "NOT ON — nftables is not installed"; return; fi
+  if ! is_root; then echo "ask as root"; return; fi
+  if nft list table inet "$FW_TABLE" >/dev/null 2>&1; then echo "on"; else echo "NOT ON"; fi
+}
+
+# Sets CHANGED=1 when the service has to be restarted for it. Returns 3 when
+# the dashboard should be for this computer only and the lock could not be put on.
+CHANGED=0
+sync_platform() {
+  local port bind rc=0 want
+  load_summary || die "cannot read the agent's settings (is the package fully installed?)"
+  port=$(setting web.port); bind=$(setting web.bind)
+  case "$port" in ''|*[!0-9]*) die "the agent's settings give no usable dashboard port" ;; esac
+
+  # 1. A port below 1024 needs one privilege; any other port needs none.
+  if [ "$port" -lt 1024 ]; then
+    want="# Written by \"open-alert-base profile\" and \"open-alert-base sync\" — do not edit; it is rewritten.
+# The dashboard's port ($port) is below 1024, which an ordinary user may not
+# open. This gives the service that one privilege (CAP_NET_BIND_SERVICE) and
+# no other.
+[Service]
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE"
+    if [ ! -f "$DROPIN" ] || [ "$(cat "$DROPIN")" != "$want" ]; then
+      install -d -m 0755 "$DROPIN_DIR"
+      printf '%s\n' "$want" > "$DROPIN.new"; chmod 0644 "$DROPIN.new"; mv -f "$DROPIN.new" "$DROPIN"
+      CHANGED=1
+      say "Port $port is below 1024: the service is given the one privilege to open it (and no other)."
+    fi
+  elif [ -f "$DROPIN" ]; then
+    rm -f "$DROPIN"; rmdir "$DROPIN_DIR" 2>/dev/null || true
+    CHANGED=1
+    say "Port $port needs no privilege: the service runs with none at all."
+  fi
+  if [ "$CHANGED" = 1 ] && have_systemd; then systemctl daemon-reload; fi
+
+  # 2. "For this computer only" is kept by a firewall rule (RPi ALERT before
+  #    0.24 listens on every address whatever its settings say).
+  if is_loopback "$bind"; then
+    if ! grep -Eq "^define dashboard_port = $port\$" "$FW_RULES" 2>/dev/null; then
+      warn "the dashboard is on port $port, and $FW_RULES names another: change its \"define dashboard_port\" line to $port"
+    fi
+    unit_enable "$FW_UNIT" || warn "could not set the firewall lock to load at start-up"
+    if ! command -v nft >/dev/null 2>&1; then
+      warn "THE DASHBOARD IS NOT YET KEPT TO THIS COMPUTER: nftables is not installed."
+      warn "Other computers can still reach it on port $port (it asks them for its password)."
+      warn "Install it (apt install nftables), then run: open-alert-base sync"
+      rc=3
+    elif have_systemd; then
+      if systemctl restart "$FW_UNIT" && nft list table inet "$FW_TABLE" >/dev/null 2>&1; then
+        say "Firewall lock on: only this computer can reach the dashboard (port $port)."
+      else
+        warn "THE DASHBOARD IS NOT YET KEPT TO THIS COMPUTER: the firewall rules could not be loaded."
+        warn "Other computers can still reach it on port $port (it asks them for its password)."
+        warn "See: systemctl status $FW_UNIT"
+        rc=3
+      fi
+    else
+      say "Firewall lock: set to load when the computer starts (systemd is not running here, so not loaded now)."
+    fi
+  else
+    unit_disable "$FW_UNIT"
+    if have_systemd && systemctl is-active --quiet "$FW_UNIT"; then systemctl stop "$FW_UNIT" || true; fi
+  fi
+  return "$rc"
+}
+
+cmd_sync() {
+  need_root sync
+  local rc=0
+  sync_platform || rc=$?
+  if [ "$CHANGED" = 1 ] && have_systemd && systemctl is-active --quiet "$UNIT"; then
+    systemctl restart "$UNIT"; say "Service restarted."
+  fi
+  [ "$rc" != 0 ] || say "The service and the firewall lock match the settings."
+  return "$rc"
+}
+
+# ── profile ──────────────────────────────────────────────────────────────────
+cmd_profile() {
+  local name="${1:-}" file was_active=0 rc=0 n
+  if [ -z "$name" ]; then
+    say "Profile in force: $(current_profile)"
+    say ""
+    for n in $(profile_names); do
+      say "  $n"
+      profile_about "$SHARE/profiles/$n.json" | fold -s -w 76 | sed 's/^/      /'
+    done
+    say ""
+    say "To put one in force: sudo open-alert-base profile <name>"
+    if is_root && [ -r "$ETC/profile" ] && file=$(profile_file "$(current_profile)"); then
+      local d; d=$(as_agent "$NODE" "$LIB/settings.js" differ "$file" 2>/dev/null || true)
+      if [ -n "$d" ]; then say ""; say "Changed since \"$(current_profile)\" was put in force:"; printf '%s\n' "$d" | sed 's/^/  /'; fi
+    fi
+    return 0
+  fi
+  need_root "profile $name"
+  file=$(profile_file "$name") || die "there is no profile called \"$name\". There are: $(profile_names)"
+  id "$SVC_USER" >/dev/null 2>&1 || die "the user $SVC_USER does not exist (is the package fully installed?)"
+  install -d -o "$SVC_USER" -g "$SVC_USER" -m 0750 "$SETTINGS_DIR" "$DATA_DIR"
+
+  # The agent writes its settings file from memory when a setting changes, so
+  # it is stopped while the file is changed underneath it.
+  if have_systemd && systemctl is-active --quiet "$UNIT"; then was_active=1; systemctl stop "$UNIT"; fi
+  if ! as_agent "$NODE" "$LIB/settings.js" apply "$file"; then
+    if [ "$was_active" = 1 ]; then systemctl start "$UNIT" || true; fi
+    die "the profile \"$name\" was not put in force"
+  fi
+  install -d -m 0755 "$ETC"
+  printf '%s\n' "$name" > "$ETC/profile.new"; chmod 0644 "$ETC/profile.new"; mv -f "$ETC/profile.new" "$ETC/profile"
+  sync_platform || rc=$?
+  if [ "$was_active" = 1 ]; then systemctl start "$UNIT"; say "Service restarted."; fi
+  if [ "$rc" = 0 ]; then say "Profile \"$name\" is in force."; else warn "profile \"$name\": the settings are in force, the firewall lock is not (see above)"; fi
+  return "$rc"
+}
+
+# ── audit ────────────────────────────────────────────────────────────────────
+# "0100007F" as /proc/net/tcp has it → 127.0.0.1
+ipv4_of() { printf '%d.%d.%d.%d' "0x${1:6:2}" "0x${1:4:2}" "0x${1:2:2}" "0x${1:0:2}"; }
+listening() {
+  local uid="$1" f addr port hex a found=0
+  for f in /proc/net/tcp /proc/net/tcp6; do
+    [ -r "$f" ] || continue
+    while read -r _ local_addr _ state _ _ _ sock_uid _; do
+      if [ "$state" != 0A ] || [ "$sock_uid" != "$uid" ]; then continue; fi
+      hex=${local_addr%:*}; port=$((16#${local_addr##*:}))
+      if [ ${#hex} = 8 ]; then
+        a=$(ipv4_of "$hex")
+        case "$a" in 0.0.0.0) addr="every address of this computer (0.0.0.0)" ;; 127.*) addr="this computer only ($a)" ;; *) addr="$a" ;; esac
+      else
+        case "$hex" in
+          00000000000000000000000000000000) addr="every address of this computer (::, IPv4 and IPv6)" ;;
+          00000000000000000000000001000000) addr="this computer only (::1)" ;;
+          0000000000000000FFFF00000100007F) addr="this computer only (127.0.0.1)" ;;
+          *) addr="IPv6 address $hex" ;;
+        esac
+      fi
+      say "    TCP port $port on $addr"
+      found=1
+    done < <(tail -n +2 "$f")
+  done
+  [ "$found" = 1 ] || say "    none (the agent is not running, or has opened no port)"
+}
+unit_line() { grep -hE "^$1=" "$UNIT_FILE" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'; }
+absent() { if [ -e "$2" ] || [ -L "$2" ]; then say "    PRESENT  $1 ($2) — not from this package"; else say "    absent   $1"; fi; }
+env_value() { sed -n "s|^$1=\(.*\)\$|\1|p" "$ETC/env" 2>/dev/null | tail -n 1; }
+
+cmd_audit() {
+  local uid='' port bind remote node_ver major rest minor proxy shown
+  say "open-ALERT base station — security posture"
+  say "Taken $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(hostname) ($(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' /etc/os-release 2>/dev/null), $(uname -m))"
+  is_root || say "NOTE: not run as root, so the agent's settings, the firewall and the sudo rules could not be read. For all of it: sudo open-alert-base audit"
+  say ""
+  say "1. What is installed"
+  say "    open-alert-base $(package_version)"
+  say "    RPi ALERT agent $(agent_version), unchanged from the signed release $(pin AGENT_TAG)"
+  say "      release tarball sha256 $(pin AGENT_SHA256)"
+  say "      release key     $(pin KEY_FINGERPRINT)"
+  if ( cd "$AGENT" && sha256sum --quiet -c "$SHARE/agent.sha256" >/dev/null 2>&1 ) \
+     && [ "$(cd "$AGENT" && find . -type f | wc -l)" = "$(wc -l < "$SHARE/agent.sha256")" ]; then
+    say "    agent files     $(wc -l < "$SHARE/agent.sha256") files, each the same as in the signed release (SHA-256 checked just now)"
+  else
+    say "    agent files     DIFFERENT from the signed release — see: cd $AGENT && sha256sum -c $SHARE/agent.sha256"
+  fi
+  node_ver=$("$NODE" -p 'process.versions.node' 2>/dev/null || echo unknown)
+  say "    Node.js         $node_ver, the operating system's own package"
+  say "    No packages from npm: the agent uses none."
+
+  say ""
+  say "2. Who it runs as"
+  if id "$SVC_USER" >/dev/null 2>&1; then
+    uid=$(id -u "$SVC_USER")
+    say "    user $SVC_USER (id $uid), groups: $(id -Gn "$SVC_USER")"
+    say "    login shell $(getent passwd "$SVC_USER" | cut -d: -f7); password: $(if is_root; then case "$(passwd -S "$SVC_USER" 2>/dev/null | awk '{print $2}')" in L|LK) echo "locked (none can be typed)" ;; NP) echo "EMPTY" ;; P|PS) echo "SET" ;; *) echo "unknown" ;; esac; else echo "ask as root"; fi)"
+  else
+    say "    the user $SVC_USER does not exist"
+  fi
+  say "    root helper: none. The agent looks for one at $(unit_line Environment | tr ' ' '\n' | sed -n 's/^Environment=RPI_ALERT_PRIV=//p' | head -n 1)"
+  if [ -e "$(unit_line Environment | tr ' ' '\n' | sed -n 's/^Environment=RPI_ALERT_PRIV=//p' | head -n 1)" ]; then
+    say "      SOMETHING IS AT THAT PATH — it should not exist"
+  else
+    say "      and nothing is there, so it can ask the administrator account for nothing"
+  fi
+  if is_root; then
+    if grep -rlE "(^|[^a-z-])$SVC_USER([^a-z-]|\$)" /etc/sudoers /etc/sudoers.d 2>/dev/null | grep -q .; then
+      say "    sudo rules naming $SVC_USER: FOUND in $(grep -rlE "(^|[^a-z-])$SVC_USER([^a-z-]|\$)" /etc/sudoers /etc/sudoers.d 2>/dev/null | tr '\n' ' ')— not from this package"
+    else
+      say "    sudo rules naming $SVC_USER: none"
+    fi
+  fi
+
+  say ""
+  say "3. What it is kept from (the service's own file, $UNIT_FILE)"
+  local k
+  for k in NoNewPrivileges CapabilityBoundingSet AmbientCapabilities ProtectSystem ReadWritePaths StateDirectory ProtectHome PrivateTmp \
+           ProtectProc ProtectKernelTunables ProtectKernelModules ProtectKernelLogs ProtectControlGroups ProtectClock ProtectHostname \
+           DevicePolicy DeviceAllow RestrictAddressFamilies RestrictNamespaces RestrictRealtime RestrictSUIDSGID LockPersonality \
+           SystemCallArchitectures SystemCallFilter UMask; do
+    say "    $(unit_line "$k" | sed "s/ $k=/, /g")"
+  done
+  if [ -f "$DROPIN" ]; then
+    say "    Privileges: one. The dashboard's port is below 1024, so $DROPIN adds:"
+    grep -hE '^(AmbientCapabilities|CapabilityBoundingSet)=' "$DROPIN" | sed 's/^/      /'
+  else
+    say "    Privileges: none at all (CapabilityBoundingSet and AmbientCapabilities are empty)."
+  fi
+  say "    Not set: MemoryDenyWriteExecute — Node.js makes machine code as it runs and needs such memory."
+  if have_systemd && command -v systemd-analyze >/dev/null 2>&1; then
+    say "    systemd's own score: $(systemd-analyze security --no-pager "$UNIT" 2>/dev/null | sed -n 's/^.*Overall exposure level for [^:]*: *//p' | sed 's/ *[^ -~].*$//')  (0 is the most closed, 10 the most open)"
+  fi
+
+  say ""
+  say "4. What listens on the network (sockets the user $SVC_USER has open now)"
+  if [ -n "$uid" ]; then listening "$uid"; fi
+  say "    Nothing else in this package listens. Flood-Net never connects in: the agent calls out."
+
+  say ""
+  say "5. Profile and the settings that decide the posture"
+  say "    profile in force: $(current_profile)"
+  if is_root && load_summary; then
+    port=$(setting web.port); bind=$(setting web.bind); remote=$(setting remote.mode)
+    [ -z "$(setting problems)" ] || say "    SETTINGS FILE PROBLEM: $(setting problems)"
+    say "    dashboard port          $port, plain HTTP, password $(setting web.password)"
+    if is_loopback "$bind"; then
+      say "    dashboard reach         this computer only — web.bind = $bind (the agent takes notice of it from 0.24; this one is $(agent_version))"
+      say "    firewall lock           $(lock_state)  (table inet $FW_TABLE; $FW_UNIT)"
+    else
+      say "    dashboard reach         the local network (every address of this computer)"
+      say "    firewall lock           not used by this profile"
+    fi
+    say "    anyone logged in on this computer can read and change the agent's settings through http://127.0.0.1:$port/"
+    case "$remote" in
+      manage) say "    remote management       manage — Flood-Net's administrators may change radio settings and restart receivers; with no root helper they cannot reboot, update or touch SSH" ;;
+      report) say "    remote management       report — Flood-Net is told how the base station is; whatever it asks is refused" ;;
+      off)    say "    remote management       off — no check-ins at all" ;;
+      *)      say "    remote management       $remote" ;;
+    esac
+    say "    self-recovery           $(setting recover.mode)  (off: it never reboots or restarts networking by itself; with no root helper it could not anyway)"
+    say "    own Wi-Fi hotspot       $(setting hotspot.mode)"
+    say "    screen kiosk            $(setting kiosk.mode)"
+    say "    audio                   $(setting audio.mode)"
+    say "    sends to Flood-Net      $(setting meganet.enabled) (every frame heard too: $(setting meganet.receptions)); token $(setting meganet.token)"
+    say "    calls out to            $(setting hosts.readings) (readings, HTTPS)"
+    say "                            $(setting hosts.stations) (station names, daily, HTTPS)"
+    if [ -r "$ETC/profile" ] && k=$(profile_file "$(current_profile)"); then
+      k=$(as_agent "$NODE" "$LIB/settings.js" differ "$k" 2>/dev/null || true)
+      if [ -n "$k" ]; then say "    CHANGED since the profile was put in force:"; printf '%s\n' "$k" | sed 's/^/      /'; else say "    every setting the profile names is still as the profile has it"; fi
+    fi
+  else
+    say "    (the settings are readable by root only)"
+  fi
+
+  say ""
+  say "6. Web proxy and certificates"
+  if is_root; then
+    proxy=$(env_value HTTPS_PROXY)
+    if [ -n "$proxy" ]; then
+      shown=$(printf '%s' "$proxy" | sed -E 's#//[^/@]*@#//(name and password)@#')
+      major=${node_ver%%.*}; rest=${node_ver#*.}; minor=${rest%%.*}
+      case "$major$minor" in *[!0-9]*|'') major=0; minor=0 ;; esac
+      if [ "$major" -ge 24 ] || { [ "$major" -eq 22 ] && [ "$minor" -ge 21 ]; }; then
+        say "    web proxy $shown — Node.js $node_ver reads the proxy settings itself"
+      else
+        say "    web proxy $shown — handed to Node.js $node_ver by $LIB/proxy-preload.js"
+      fi
+      say "    not through the proxy: $(env_value NO_PROXY)"
+    else
+      say "    no web proxy set ($ETC/env): the agent calls out directly, and nothing extra is loaded"
+    fi
+    if [ -n "$(env_value NODE_EXTRA_CA_CERTS)" ]; then say "    extra certificate authority file: $(env_value NODE_EXTRA_CA_CERTS)"; else say "    certificate authorities: the operating system's own list"; fi
+  else
+    say "    ($ETC/env is readable by root only)"
+  fi
+
+  say ""
+  say "7. Parts of RPi ALERT's Raspberry Pi installer that this package does not install"
+  absent "root helper and its sudo rule" /etc/sudoers.d/rpi-alert
+  absent "the \"alert\" maintenance account's sudo rule" /etc/sudoers.d/rpi-alert-maint
+  if id alert >/dev/null 2>&1; then say "    PRESENT  a user called \"alert\" exists on this computer — not from this package"; else say "    absent   the \"alert\" maintenance account"; fi
+  absent "hourly SSH-key fetch" /etc/systemd/system/rpi-alert-access.timer
+  absent "self-updater" /etc/systemd/system/rpi-alert-update.service
+  absent "nightly update timer" /etc/systemd/system/rpi-alert-update-auto.timer
+  absent "settings import from a boot partition, as root" /etc/systemd/system/rpi-alert-boot-config.service
+  absent "screen kiosk" /etc/systemd/system/rpi-alert-kiosk.service
+  absent "Bluetooth GPS service, as root" /etc/systemd/system/rpi-alert-btgps.service
+  absent "cap on the whole system's log" /etc/systemd/journald.conf.d/rpi-alert.conf
+  absent "SSH server settings" /etc/ssh/sshd_config.d/10-rpi-alert.conf
+  say "    Accounts, SSH, operating-system updates and where the log goes are your organisation's own."
+  say "    The agent logs to the system journal: journalctl -u open-alert-base"
+
+  say ""
+  say "8. What has not been tested"
+  say "    This package has not been run with a real radio stick on a computer that is not a Raspberry Pi."
+  say "    Its tests use stand-ins for the sticks. See /usr/share/doc/open-alert-base/README."
+}
+
+# ── selftest ─────────────────────────────────────────────────────────────────
+cmd_selftest() {
+  local log f files=() run_node="$NODE" rc=0 left=0
+  if is_root && [ -n "$(env_value OPEN_ALERT_BASE_NODE)" ]; then run_node=$(env_value OPEN_ALERT_BASE_NODE); fi
+  say "Self-test on $(hostname): $(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' /etc/os-release 2>/dev/null), $(uname -m), Node.js $("$run_node" --version)"
+  say ""
+  say "1. The agent's files against the signed release"
+  if ( cd "$AGENT" && sha256sum --quiet -c "$SHARE/agent.sha256" ); then
+    say "   $(wc -l < "$SHARE/agent.sha256") files, each the same as in the signed release $(pin AGENT_TAG)."
+  else
+    say "   SOME FILES DIFFER from the signed release (listed above)."; rc=1
+  fi
+  say ""
+  say "2. The agent's own tests (RPi ALERT's test suite, as shipped in the release; a few minutes)"
+  # One file is left out: it tests RPi ALERT's root helper, which is not installed here.
+  for f in "$AGENT"/test/*.test.js; do
+    if [ "$(basename "$f")" = priv-net.test.js ]; then left=1; else files+=("test/$(basename "$f")"); fi
+  done
+  command -v socat >/dev/null 2>&1 || say "   note: socat is not installed, so the two tests that need pretend serial ports are skipped (apt install socat)"
+  command -v sshd >/dev/null 2>&1 || [ -x /usr/sbin/sshd ] || say "   note: no SSH server is installed, so the one test that checks a file against it is skipped"
+  log=$(mktemp "${TMPDIR:-/tmp}/open-alert-base-selftest.XXXXXX")
+  chmod 0644 "$log"
+  if is_root; then
+    ( cd "$AGENT" && runuser -u "$SVC_USER" -- env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/tmp TMPDIR=/tmp "$run_node" --test --test-reporter=tap "${files[@]}" ) > "$log" 2>&1 || rc=1
+  else
+    ( cd "$AGENT" && env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME="${TMPDIR:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" "$run_node" --test --test-reporter=tap "${files[@]}" ) > "$log" 2>&1 || rc=1
+  fi
+  grep -E '^not ok ' "$log" | sed 's/^/   /' || true
+  say "   $(grep -E '^# (tests|pass|fail|skipped) ' "$log" | sed 's/^# //' | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
+  say "   run as $(if is_root; then echo "the service's user ($SVC_USER)"; else id -un; fi), from ${#files[@]} test files; $left left out (it tests RPi ALERT's root helper, which is not installed here)"
+  say "   full output: $log"
+  say ""
+  if [ "$rc" = 0 ]; then say "Self-test passed."; else say "Self-test FAILED."; fi
+  say "These tests use stand-ins for the radio sticks: they show the software works on this computer, not that a real stick does."
+  return "$rc"
+}
+
+# ── bench ────────────────────────────────────────────────────────────────────
+cmd_bench() {
+  local b="$LIB/bench/open-alert-bench.js"
+  if [ ! -f "$b" ]; then
+    say "The benchmark is not installed on this computer."
+    say "It is firmware/bench/open-alert-bench.js in https://github.com/cdomotor-g/open-ALERT — one file, run with:"
+    say "    node open-alert-bench.js $AGENT"
+    return 1
+  fi
+  exec "$NODE" "$b" "$AGENT" "$@"
+}
+
+case "${1:-help}" in
+  version|--version|-v) cmd_version ;;
+  status) cmd_status ;;
+  profile) shift; cmd_profile "$@" ;;
+  sync) cmd_sync ;;
+  audit) cmd_audit ;;
+  selftest) cmd_selftest ;;
+  bench) shift; cmd_bench "$@" ;;
+  help|--help|-h) usage ;;
+  *) warn "unknown command \"$1\""; usage >&2; exit 2 ;;
+esac

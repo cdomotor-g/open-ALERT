@@ -1,0 +1,34 @@
+#!/bin/bash
+# open-alert-base, before its files are unpacked: refuse to go beside an
+# RPi ALERT that RPi ALERT's own installer put on this computer.
+set -euo pipefail
+
+case "${1:-}" in
+  install|upgrade)
+    found=''
+    for p in /opt/rpi-alert /etc/systemd/system/rpi-alert.service /usr/lib/systemd/system/rpi-alert.service /lib/systemd/system/rpi-alert.service; do
+      if [ -e "$p" ] || [ -L "$p" ]; then found="$p"; break; fi
+    done
+    if [ -n "$found" ]; then
+      cat >&2 <<MSG
+
+open-alert-base cannot be installed on this computer as it is.
+
+RPi ALERT is already here, put there by RPi ALERT's own installer
+(found: $found).
+Both would run the same agent on the same settings and data folders
+(/etc/rpi-alert and /var/lib/rpi-alert), and only one can.
+
+To move this computer over to open-alert-base, remove the other install
+first. Its settings and what it has queued for Flood-Net are kept:
+
+    sudo /opt/rpi-alert/os/install.sh --uninstall
+
+Then install this package again.
+
+MSG
+      exit 1
+    fi
+    ;;
+esac
+exit 0

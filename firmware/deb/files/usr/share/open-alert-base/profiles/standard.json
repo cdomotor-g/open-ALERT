@@ -1,0 +1,12 @@
+{
+  "profile": "standard",
+  "about": "A base station on a small network, or on a network of its own. The dashboard is on port 80 for the computers on the local network, as on a Raspberry Pi. Flood-Net's administrators may change its radio settings from Flood-Net.",
+  "settings": {
+    "web": { "port": 80, "bind": null },
+    "remote": { "mode": "manage" },
+    "hotspot": { "mode": "off" },
+    "recover": { "mode": "off" },
+    "kiosk": { "mode": "off" },
+    "audio": { "mode": "off" }
+  }
+}

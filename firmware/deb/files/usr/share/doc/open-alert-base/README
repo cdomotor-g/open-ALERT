@@ -1,0 +1,137 @@
+open-alert-base @VERSION@
+=========================
+
+An open-ALERT base station on an ordinary Debian or Ubuntu computer.
+
+It is the RPi ALERT agent, unchanged from its signed release @TAG@, with the
+surroundings a managed network asks for. The agent listens to ALERT and ALERT2
+flood-warning radio telemetry on RTL-SDR USB sticks (and on serial receivers),
+decodes it, and posts the readings to Flood-Net over outbound HTTPS. Nothing
+connects in to it.
+
+NOT YET TESTED WITH A REAL RADIO STICK on a computer that is not a Raspberry
+Pi. Everything below was tested with stand-ins for the sticks. Try it on your
+own hardware before you rely on it, and run "open-alert-base selftest".
+
+
+First steps
+-----------
+
+    rpi-alert setup                   the Flood-Net token, a name, the location
+    open-alert-base status            is it running, and what does it hear
+    sudo open-alert-base audit        the security posture, for a reviewer
+
+The dashboard is a web page the agent serves:
+    standard profile     http://<this computer>/        from the local network
+    enterprise profile   http://127.0.0.1:8080/         from this computer only
+It asks other computers for a password; "rpi-alert status" shows the first
+one, "rpi-alert password" changes it.
+
+
+The two commands
+----------------
+
+    rpi-alert          RPi ALERT's own command, as its documentation describes
+                       (rpi-alert help). Three of its commands are for a
+                       Raspberry Pi install and are turned away here: daemon,
+                       access, import-boot-config.
+    open-alert-base    this package's command:
+        version        what is installed, and the signed release it came from
+        status         the service, the profile, and the agent's own status
+        profile [name] show the profile, or put one in force (root)
+        sync           make the service and the firewall lock follow the
+                       settings as they are now (root)
+        audit          print the security posture (root, for all of it)
+        selftest       run the agent's own tests on this computer
+        bench          measure how many channels this computer will carry
+
+
+The two profiles
+----------------
+
+A profile is a short list of the agent's own settings, merged into
+/etc/rpi-alert/config.json. One is applied when the package is first installed
+and there is no settings file yet ("standard", unless the install was told
+otherwise); an existing settings file is never overwritten by an install.
+
+    sudo open-alert-base profile enterprise
+
+                              standard               enterprise
+    dashboard port            80                     8080
+    dashboard reached from    the local network      this computer only
+    Flood-Net may             change radio settings  only be told how it is
+      (remote.mode)           (manage)               (report; "off" tells it nothing)
+    own Wi-Fi hotspot         off                    off
+    reboots or restarts
+      networking by itself    never (off)            never (off)
+    screen kiosk, audio       off                    off
+
+"This computer only" is kept by a small table of firewall rules
+(/etc/open-alert-base/dashboard-local-only.nft, loaded by
+open-alert-base-firewall.service; it needs the nftables package). RPi ALERT up
+to 0.23 opens its dashboard on every address of the computer and has no setting
+for that; from 0.24 it has one (web.bind), which the enterprise profile already
+sets, and the firewall rules stay as a second lock.
+
+To turn remote management off altogether:   rpi-alert remote off
+
+
+What is where
+-------------
+
+    /usr/lib/open-alert-base/agent/     the agent, read-only, as in the signed release
+    /usr/share/open-alert-base/         the pin (which release), the release key,
+                                        the SHA-256 of every agent file, the profiles
+    /etc/rpi-alert/config.json          the agent's settings (they hold the Flood-Net
+                                        token: readable by the agent's user only)
+    /var/lib/rpi-alert/                 what it has heard and not yet sent, its state
+    /etc/open-alert-base/env            a web proxy, a private certificate authority
+    /etc/open-alert-base/profile        the profile in force
+    /usr/lib/systemd/system/open-alert-base.service
+                                        the service: user rpi-alert, no privileges,
+                                        the disk read-only but for the two folders above
+    /usr/lib/udev/rules.d/60-open-alert-base.rules
+                                        lets the agent's user open the sticks
+    /usr/lib/modprobe.d/open-alert-base-blacklist-dvb.conf
+                                        keeps the kernel's TV driver off the sticks
+    /usr/lib/modules-load.d/open-alert-base.conf
+                                        loads the two USB serial drivers at start-up
+
+The log is the system journal:   journalctl -u open-alert-base
+
+
+A web proxy, a private certificate authority
+--------------------------------------------
+
+Put the proxy in /etc/open-alert-base/env (HTTPS_PROXY=…, NO_PROXY=…) and
+restart the service. Add a private certificate authority to the operating
+system the usual way (update-ca-certificates). The file explains both.
+
+
+What is not here, on purpose
+----------------------------
+
+No program the agent can run as root, no sudo rule, no "alert" maintenance
+account, no fetching of SSH keys, no updater of its own, no screen kiosk, no
+Wi-Fi hotspot, no cap on the system log. Accounts, SSH, operating-system
+updates and log collection are your organisation's own. A new version of the
+agent arrives as a new version of this package, built from the next signed
+release.
+
+With no root helper, some buttons on the dashboard do nothing: restart or
+shut down the computer, install an update, join a Wi-Fi network, the hotspot,
+SSH access. They answer that the system helper is not installed.
+
+
+Removing it
+-----------
+
+    sudo apt remove open-alert-base     the settings and the data are kept
+    sudo apt purge open-alert-base      they are deleted, and the agent's user too
+
+
+More
+----
+
+    https://github.com/cdomotor-g/open-ALERT/tree/main/firmware    this layer
+    https://github.com/cdomotor-g/RPi_ALERT/tree/main/docs         the agent
