@@ -276,8 +276,10 @@ function agentRunning() {        // is a base station (or rtl_sdr) running here 
   try {
     for (const pid of fs.readdirSync('/proc')) {
       if (!/^\d+$/.test(pid) || Number(pid) === process.pid) continue;
-      const cmd = (slurp('/proc/' + pid + '/cmdline') || '').replace(/\0/g, ' ');
-      if (/\brtl_sdr\b/.test(cmd) || /rpi-alert\S*\s+daemon\b/.test(cmd)) return true;
+      const argv = (slurp('/proc/' + pid + '/cmdline') || '').split('\0');
+      const first = (argv[0] || '').split('/').pop();
+      // The program itself is rtl_sdr, or the agent's command line was started as "daemon".
+      if (first === 'rtl_sdr' || (/^(node|nodejs|rpi-alert)/.test(first) && argv.slice(1, 6).some(a => /rpi-alert\S*$/.test(a)) && argv.includes('daemon'))) return true;
     }
   } catch (e) { /* not Linux */ }
   return false;

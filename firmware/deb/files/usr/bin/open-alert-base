@@ -212,7 +212,7 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE"
     unit_enable "$FW_UNIT" || warn "could not set the firewall lock to load at start-up"
     if ! command -v nft >/dev/null 2>&1; then
       warn "THE DASHBOARD IS NOT YET KEPT TO THIS COMPUTER: nftables is not installed."
-      warn "Other computers can still reach it on port $port (it asks them for its password)."
+      warn "Other computers can still open it on port $port: they can look without a password, and need its password to change anything."
       warn "Install it (apt install nftables), then run: open-alert-base sync"
       rc=3
     elif have_systemd; then
@@ -220,7 +220,7 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE"
         say "Firewall lock on: only this computer can reach the dashboard (port $port)."
       else
         warn "THE DASHBOARD IS NOT YET KEPT TO THIS COMPUTER: the firewall rules could not be loaded."
-        warn "Other computers can still reach it on port $port (it asks them for its password)."
+        warn "Other computers can still open it on port $port: they can look without a password, and need its password to change anything."
         warn "See: systemctl status $FW_UNIT"
         rc=3
       fi
@@ -386,7 +386,7 @@ cmd_audit() {
   say ""
   say "3. What it is kept from (the service's own file, $UNIT_FILE)"
   local k
-  for k in NoNewPrivileges CapabilityBoundingSet AmbientCapabilities ProtectSystem ReadWritePaths StateDirectory ProtectHome PrivateTmp \
+  for k in NoNewPrivileges CapabilityBoundingSet AmbientCapabilities ProtectSystem ReadWritePaths StateDirectory ProtectHome PrivateTmp PrivateMounts \
            ProtectProc ProtectKernelTunables ProtectKernelModules ProtectKernelLogs ProtectControlGroups ProtectClock ProtectHostname \
            DevicePolicy DeviceAllow RestrictAddressFamilies RestrictNamespaces RestrictRealtime RestrictSUIDSGID LockPersonality \
            SystemCallArchitectures SystemCallFilter UMask; do
@@ -445,6 +445,7 @@ cmd_audit() {
       say "    firewall lock           $lock  (table inet $FW_TABLE; $FW_UNIT)"
     else
       say "    dashboard reach         the local network (every address of this computer)"
+      say "                            from another computer, looking needs no password; changing anything needs the dashboard's password"
       say "    firewall lock           not used by this profile"
     fi
     say "    anyone logged in on this computer can read and change the agent's settings through http://127.0.0.1:$port/"

@@ -29,8 +29,9 @@ First steps
 The dashboard is a web page the agent serves:
     standard profile     http://<this computer>/        from the local network
     enterprise profile   http://127.0.0.1:8080/         from this computer only
-It asks other computers for a password; "rpi-alert status" shows the first
-one, "rpi-alert password" changes it.
+From another computer, anybody can look at it (what is heard, how the base
+station is) without a password; changing anything needs its password.
+"rpi-alert status" shows the first password, "rpi-alert password" changes it.
 
 
 The two commands
@@ -122,6 +123,20 @@ A web proxy, a private certificate authority
 Put the proxy in /etc/open-alert-base/env (HTTPS_PROXY=…, NO_PROXY=…) and
 restart the service. Add a private certificate authority to the operating
 system the usual way (update-ca-certificates). The file explains both.
+
+
+The clock
+---------
+
+The agent keeps every reading back until it trusts this computer's clock, so
+that none goes to Flood-Net with a wrong time; it sends them, with the right
+times, as soon as it does. It trusts the clock once the operating system says
+it is set from the network ("System clock synchronized: yes" in what
+"timedatectl" prints) or a GPS receiver gives the time. On a network that
+blocks the public time servers, point the operating system's time service at
+your own. "rpi-alert status" says whether the clock is trusted. For a clock
+that is kept right some other way, see RPI_ALERT_ASSUME_CLOCK in
+/etc/open-alert-base/env.
 
 
 What is not here, on purpose

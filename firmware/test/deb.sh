@@ -21,7 +21,8 @@
 #         the service would start it, with stand-ins for the radio sticks and
 #         for Flood-Net; both profiles; a web proxy; remove, reinstall, purge;
 #         the refusal to install beside RPi ALERT's own install; systemd's
-#         checker and exposure score for the service file.
+#         checker and exposure score for the service file; udev's checker
+#         for the device rules.
 #      b. firewall — the enterprise profile's rules, loaded as the service
 #         would load them, tried from a second container ("another computer").
 #         This container is given the one privilege that needs (NET_ADMIN).
@@ -503,6 +504,22 @@ LIST
   else
     oa_skip "systemd-analyze — the systemd package could not be installed in this container"
   fi
+
+  # udev is the part of the system that sets who may open a device when it is
+  # plugged in. No real udev runs in a container, so the rules are only read
+  # by its checker here; they are not tried on a device.
+  oa_section "$OA_DISTRO: udev's own checker for the device rules"
+  if command -v udevadm >/dev/null 2>&1 || t_apt install --no-install-recommends udev > "$T_LOG/apt-udev.log" 2>&1; then
+    if udevadm verify --help > /dev/null 2>&1; then
+      got=0; udevadm verify /usr/lib/udev/rules.d/60-open-alert-base.rules > "$T_LOG/udev-verify.txt" 2>&1 || got=$?
+      if [ "$got" = 0 ]; then oa_ok "udevadm verify (udev $(udevadm --version)): the device rules read without a complaint"
+      else oa_fail "udevadm verify (exit $got): $(head -n 3 "$T_LOG/udev-verify.txt" | tr '\n' ' ')"; fi
+    else
+      oa_skip "udev's checker for the device rules — this system's udev ($(udevadm --version)) has none (it came with udev 254)"
+    fi
+  else
+    oa_skip "udev's checker for the device rules — the udev package could not be installed in this container"
+  fi
   trap - ERR
 }
 
@@ -762,6 +779,7 @@ try() { n=$1; shift; if m=$("$@" 2>&1); then echo "$n: ok"; else echo "$n: $m"; 
   try write-data sh -c 'touch /var/lib/rpi-alert/.oa-probe && rm /var/lib/rpi-alert/.oa-probe'
   try see-outside-tmp test -e /tmp/oa-test-outside
   try read-env-file cat /etc/open-alert-base/env
+  echo "clock-question: $(timedatectl show -p NTPSynchronized --value 2>&1 | head -n 1)"
   echo "home: $(ls -A /home /root 2>&1 | tr '\n' ' ')"
   echo "others: $(ls /proc | grep -c '^[0-9]') processes in sight"
 } > "$out" 2>&1
@@ -826,6 +844,16 @@ inside_systemd() {
     if [ "$(t_probe see-outside-tmp)" = ok ]; then oa_fail "the service sees the computer's own /tmp"; else oa_ok "it has a /tmp of its own: a file put in the computer's /tmp is not there for it"; fi
     case "$(t_probe read-env-file)" in *"Permission denied"*) oa_ok "it cannot read /etc/open-alert-base/env (where a proxy's password would be): root only" ;; *) oa_fail "reading /etc/open-alert-base/env from inside the service: $(t_probe read-env-file)" ;; esac
     oa_is "/home and /root are empty or closed to it" "" "$(t_probe home | sed "s#ls: cannot open directory '[^']*': Permission denied##g; s#/home:##; s#/root:##" | tr -d ' ')"
+    # The agent holds every reading back until systemd says the clock is set
+    # from the network (timedatectl): the limits must not stand in the way of
+    # that question. The stand-in runs below are told to trust the clock, so
+    # this is the one place it is asked from inside the service.
+    got=$(timedatectl show -p NTPSynchronized --value 2>/dev/null | head -n 1 || true)
+    case "$got:$(t_probe clock-question)" in
+      yes:yes|yes:no|no:yes|no:no) oa_ok "it can ask systemd whether the clock is set from the network, as the agent does before it trusts a reading's time (answered \"$(t_probe clock-question)\" inside the service, \"$got\" outside)" ;;
+      yes:*|no:*) oa_fail "from inside the service the clock question got no answer: $(t_probe clock-question) (outside: $got)" ;;
+      *) oa_skip "the clock question from inside the service — this container's systemd does not answer it outside the service either ($got)" ;;
+    esac
     oa_note "other programs: $(t_probe others) from inside the service (its own only; the computer has $(find /proc -maxdepth 1 -name '[0-9]*' | wc -l))"
   else
     oa_fail "the service did not make its attempts (no $T_PROBE_OUT) — see: journalctl -u open-alert-base"

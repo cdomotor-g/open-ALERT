@@ -24,6 +24,16 @@
 # Only for a Node.js from somewhere else (nodejs.org, NodeSource), name the file:
 #NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/my-organisation.crt
 
+# ── The clock ────────────────────────────────────────────────────────────────
+# The agent keeps every reading back until it trusts this computer's clock, so
+# that none goes to Flood-Net with a wrong time. It trusts the clock once the
+# operating system says it is set from the network ("System clock
+# synchronized: yes" in what the command timedatectl prints), or once a GPS
+# receiver gives the time. If this computer's clock is kept right some other
+# way that the operating system does not report (a virtual machine set by its
+# host, say), say so here:
+#RPI_ALERT_ASSUME_CLOCK=1
+
 # ── Other ────────────────────────────────────────────────────────────────────
 # A Node.js other than /usr/bin/node (it must be 18.17 or newer).
 #OPEN_ALERT_BASE_NODE=/usr/bin/node

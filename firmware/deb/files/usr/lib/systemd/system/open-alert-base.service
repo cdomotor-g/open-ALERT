@@ -65,6 +65,9 @@ RemoveIPC=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+# Its own view of what is mounted. The lines above bring this with them; it is
+# written out because older systemd (252) only counts it in its score when it is.
+PrivateMounts=yes
 ProtectProc=invisible
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

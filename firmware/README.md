@@ -162,7 +162,7 @@ service file tells it to run the agent as the user `rpi-alert` with these limits
 | `NoNewPrivileges` | It can never gain a right it did not start with: `sudo` and set-user-id programs do nothing for it |
 | No capabilities | A *capability* is one named piece of root's power. The service has none — or exactly one, `CAP_NET_BIND_SERVICE`, when the dashboard is on a port below 1024 (see the profiles) |
 | `ProtectSystem=strict` | The whole disk is read-only to it, except its two folders |
-| `ProtectHome`, `PrivateTmp`, `ProtectProc=invisible` | It cannot see people's home folders, has a `/tmp` of its own, and cannot see other users' programs |
+| `ProtectHome`, `PrivateTmp`, `PrivateMounts`, `ProtectProc=invisible` | It cannot see people's home folders, has a `/tmp` of its own and its own view of what is mounted, and cannot see other users' programs |
 | `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectKernelLogs`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname` | It cannot change kernel settings, load drivers, read the kernel log, or set the clock or the computer's name |
 | `DevicePolicy=closed` with three `DeviceAllow` lines | Of the computer's devices it may open USB device files (the sticks) and USB serial ports — no disks, no memory, no sound card, no screen |
 | `RestrictAddressFamilies`, `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `LockPersonality` | Ordinary internet and local sockets only; none of the kernel features that sandbox escapes lean on |
@@ -171,8 +171,8 @@ service file tells it to run the agent as the user `rpi-alert` with these limits
 
 systemd gives a service an *exposure score* from 0 (most closed) to 10 (most open). This one
 scores **1.7** with the enterprise profile and **1.9** with the standard profile (the one extra
-capability), on systemd 252, 255 and 257. RPi ALERT's own service on a Pi, which keeps `sudo`, is not
-comparable and was not scored here.
+capability), as the running service on systemd 252, 255 and 257. RPi ALERT's own service on a
+Pi, which keeps `sudo`, is not comparable and was not scored here.
 
 What is **not** installed, on purpose: no sudo rule, no "alert" maintenance account, no timer
 that fetches SSH keys, no updater, no screen kiosk, no Wi-Fi hotspot, no cap on the system log.
@@ -223,6 +223,13 @@ overwritten by an install or an update.
 
 Audio and self-recovery are off in both because of how the service is built: it is allowed no
 sound card, and without a root helper it could not restart anything.
+
+**What "the local network" can do, in the standard profile.** Anybody who can reach the
+computer can open the dashboard and look, without a password: what is being heard, the latest
+readings, how the base station is (its location and addresses are left out). Changing anything
+needs the dashboard's password. The page is plain HTTP, not HTTPS. That is RPi ALERT 0.23.1's
+own rule and this layer does not change it; it is the reason the enterprise profile keeps the
+dashboard to the computer itself.
 
 **Port 80 and the one capability.** A program that is not root may not open a port below 1024.
 The service file gives no capability at all. When the settings ask for a port below 1024,
@@ -279,6 +286,21 @@ again) is added to the operating system the usual way — copy its `.crt` file i
 `/usr/local/share/ca-certificates/` and run `sudo update-ca-certificates`. Debian's and Ubuntu's
 Node.js then trusts it with nothing more to set.
 
+### The clock
+
+The agent keeps every reading back until it trusts the computer's clock, so that none goes to
+Flood-Net with a wrong time; once it does, it sends them with the right times. It trusts the
+clock when the operating system says it is set from the network (`timedatectl` prints "System
+clock synchronized: yes") or when a GPS receiver gives the time. `rpi-alert status` has a
+"Clock" line that says which.
+
+On a Raspberry Pi this matters because most have no battery clock. On an ordinary computer it
+matters for another reason: a managed network often blocks the public time servers. Point the
+operating system's time service at the organisation's own, as for any other server. For a
+clock that is kept right some other way that the operating system does not report (a virtual
+machine set by its host, say), `/etc/open-alert-base/env` has a line to switch on,
+`RPI_ALERT_ASSUME_CLOCK=1`.
+
 ### Removing it
 
 ```
@@ -318,12 +340,13 @@ passed. In order:
      web proxy that is the only way to the stand-in, with a private certificate authority, with
      and without a password, on the system's Node.js and on a Node.js 22.21+ when the test
      computer has one; remove, reinstall, purge; the refusal beside RPi ALERT's own install;
-     systemd's checker and exposure score.
+     systemd's checker and exposure score; udev's checker on the device rules.
    - *b. The firewall lock*, tried from a second container that plays another computer. This
      container is given the one capability that changing firewall rules needs (`NET_ADMIN`).
    - *c. Under a real systemd*, as the container's first program: the package installed and the
      real service started, sandbox and all; the service itself tries what it should not be able
-     to do; both profiles; an update over itself; remove and purge. This container is given
+     to do, and asks what it must be able to ask (whether the clock is set from the network);
+     both profiles; an update over itself; remove and purge. This container is given
      `SYS_ADMIN` (systemd needs it to build the sandbox) and `NET_ADMIN`. Where systemd will not
      start in a container the part is skipped and says so (`--require-systemd` makes that a
      failure).
@@ -332,11 +355,16 @@ passed. In order:
 
 Everything below was run on 11 November 2026 on one computer: a virtual machine with an ordinary
 64-bit PC processor (x86-64), Ubuntu 24.04, Docker 29. **It has no USB at all, so no radio stick,
-real or passed through, was involved in any of it.** One run of `firmware/test/deb.sh` (started
-10:14 UTC, 16 minutes): **719 checks passed, none failed, 1 skipped.** After that run, what
-`audit` prints about the dashboard's reach and about where the agent calls out to was made
-plainer, and checks for it were added; the run is being repeated on the files as they are now,
-and this paragraph is updated when it ends.
+real or passed through, was involved in any of it.** (After the run described next, the
+wording of three messages about the dashboard's password was made exact, in the `open-alert-base`
+command and the package's README; a run on the files with that wording had not finished when
+this was written.) The last whole run of
+`firmware/test/deb.sh`, on the files as they are in this folder (started 20:32 UTC, 17 minutes,
+all three systems, from the release files already on the computer): **760 checks passed, none
+failed, 2 skipped.** Both skipped checks are in the tables below. A whole run before it, at
+20:11 UTC, also passed (755 checks, 1 skipped); between the two, one line was written out in
+the service file (`PrivateMounts=yes`, a limit it already had by way of the others), the note
+about the clock was added, and two checks were added.
 
 The three systems, as the containers had them:
 
@@ -359,18 +387,22 @@ The three systems, as the containers had them:
 | The same on Node.js 22.23.4 (`NODE_USE_ENV_PROXY`); this Node.js was the test computer's own, not a Debian or Ubuntu package | Passed | Passed | Passed |
 | Remove keeps settings and data; reinstall leaves the settings byte for byte; purge deletes everything; refused beside RPi ALERT's own install | Passed | Passed | Passed |
 | systemd's checker (`systemd-analyze verify`) on both service files | Nothing to report | Nothing to report | Nothing to report |
-| Exposure score of the service (`systemd-analyze security`, from the file and from the running service) | 1.7 enterprise, 1.9 standard | 1.7, 1.9 | 1.7, 1.9 |
+| Exposure score of the service (`systemd-analyze security`), enterprise profile then standard: worked out from the file alone, and for the running service | 1.7, 1.9 both ways | 1.7, 1.9 both ways | 1.7, 1.9 both ways |
+| udev's own checker (`udevadm verify`) on the device rules — read, not tried on a device: a container has no udev running | Nothing to report | Nothing to report | Skipped: this older udev has no checker |
 | The firewall lock, tried from a second container: the dashboard's port open before, refused with the lock on, another user's port left alone, open again when the table is removed | Passed | Passed | Passed |
 | Under a real systemd in a container: the install starts the service; port 80 by the drop-in file; the service itself is refused writing in `/usr`, `/etc` and `/var`, can write its two folders, has its own `/tmp`, cannot read the proxy file; the agent arms systemd's watchdog; killed, it is restarted; the enterprise profile loads the firewall lock; an update over itself; remove and purge | Passed | Passed | Passed |
+| From inside the running service, the question the agent asks before it trusts the clock (`timedatectl`) gets an answer | Passed (the answer was "no": a container's clock is not set from the network) | Passed, the same | Passed, the same |
 | The kernel's device list for the running service | Skipped: this systemd keeps it where it cannot be listed | Listed: the standard pseudo-devices only. USB was not on it, because the test computer's kernel has no USB | As Ubuntu |
 
 Also, on the test computer itself:
 
 | What | Result |
 |---|---|
-| The release check accepts the real v0.23.1 — from local files, and downloaded from GitHub — and refuses the 14 bad cases listed under Testing | Passed |
+| The release check accepts the real v0.23.1 and refuses the 14 bad cases listed under Testing | Passed |
+| By hand, not part of `deb.sh`: the release check downloads the release from GitHub and accepts it (20:29 UTC) | Passed |
+| By hand: the release check in a clean Debian 13 container with OpenSSL alone (3.5.7), then with Node.js alone (20.19.2): the real release accepted, a changed tarball with a pin to match refused; with neither tool it stops and says so (status 3) | Passed |
 | shellcheck 0.9.0 on the 11 shell scripts here | Nothing to report |
-| The package builds; a second build is the same file | Passed: 2.4 MB, 5.9 MB installed |
+| The package builds; a second build is the same file | Passed: 2,423,076 bytes (2.4 MB), 5.9 MB installed, with the benchmark in it as `bench/` had it at 20:32 UTC (the size moves by a little when that file changes) |
 | lintian, Debian's package checker | No errors; 7 warnings, none acted on (no manual pages; the 0640 mode of `env`; a `systemctl` call in the install script; two files with a script line but no run permission, one of them the release's own; a udev rule without desktop-catalogue data) |
 
 ## What has not been tested
@@ -380,7 +412,14 @@ Also, on the test computer itself:
   (`DeviceAllow=char-usb_device`) have never met a real stick: the test computer's kernel has no
   USB, so systemd had no USB device class to put on the list. This is the first thing to try on
   real hardware.
+- **The device rules on a real udev.** udev's checker read them without a complaint on Debian
+  13 and Ubuntu 24.04; no udev has applied them to a device.
 - **Serial receivers** (a Quansheng radio, an ERT-A2, a GPS) under the service's device list.
+- **The clock on a real computer.** The service can ask systemd whether the clock is set from
+  the network, and in these containers the answer was "no", so the stand-in runs are told to
+  trust the clock (`RPI_ALERT_ASSUME_CLOCK=1`, as RPi ALERT's own `simulate.sh` does). The
+  agent going from "not trusted" to "trusted" on a computer whose time service has just
+  answered has not been watched under this service.
 - **Any ARM computer.** The package holds no compiled code, so there is no reason to expect a
   difference, but it has not been run on one. The automatic build is to run these checks on
   GitHub's ARM machines.
@@ -395,6 +434,10 @@ Also, on the test computer itself:
   package installed over itself is tested.
 - **Flood-Net itself.** The stand-in is RPi ALERT's own test helper.
 - **RPi ALERT 0.24.**
+- **The checks themselves on another kind of test computer.** `firmware/test/deb.sh` has only
+  been run on the one computer described above. Its real-systemd part depends on how the test
+  computer keeps its groups of processes (cgroups); on a computer where systemd will not start
+  in a container it skips that part and says so, and that path has not been seen.
 
 ## Choices made here
 
@@ -421,6 +464,15 @@ Where the design left something open, this is what was chosen and why.
   list from the drivers loaded when the service starts; without this a serial receiver plugged
   in for the first time later would be refused until a restart. On a kernel built without them
   systemd reports that it could not load them; the file says how to silence that.
+- **If the firewall lock cannot be loaded when the computer starts, the agent still starts.**
+  A flood-warning receiver that stays silent because a firewall rule failed seemed the worse
+  of the two. Other computers can then open the dashboard as with the standard profile (look
+  without a password, change nothing without it), and `audit` says in capitals that the
+  dashboard is not kept to this computer. An organisation that wants it the other way adds `Requires=open-alert-base-firewall.service`
+  to the service with `sudo systemctl edit open-alert-base` (not tested here).
+- **The clock rule is left as the agent has it.** Readings wait until the operating system says
+  the clock is set from the network; the package does not switch that off, and
+  `/etc/open-alert-base/env` says how to, for a computer whose clock is kept right another way.
 - **Purge deletes the agent's user**, with its settings and data, unless RPi ALERT's own install
   has appeared on the computer since — then all three are left alone.
 - **The agent's `priv-net` test file is left out of `selftest`**: it tests RPi ALERT's root
