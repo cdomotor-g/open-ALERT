@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Mallow trial · open-ALERT</title>
-<meta name="description" content="Trial a Toradex Verdin AM62 on a Mallow carrier running RPi ALERT beside the Raspberry Pi already doing the job, on the same antenna: what to buy, what to do, what to compare and how it passes.">
+<title>Side-by-side trial · open-ALERT</title>
+<meta name="description" content="Trial a computer that is not a Raspberry Pi running RPi ALERT beside the Raspberry Pi already doing the job, on the same antenna: pick the computer, run the benchmark, what to buy, what to do, what to compare and how it passes.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -22,8 +22,8 @@
   <div class="wrap hero-in">
     <img src="icon.svg" width="52" height="52" alt="">
     <div class="hero-text">
-      <h1>open-ALERT <span>Mallow trial</span></h1>
-      <p>Does a Toradex Verdin AM62 on a Mallow carrier — industrial parts, no Raspberry Pi — do the job of the Pi 4 you already have? Run the two side by side on the same antenna for two weeks and find out. What to buy, what to do, what to compare, and how it passes.</p>
+      <h1>open-ALERT <span>Side-by-side trial</span></h1>
+      <p>Does a computer that is not a Raspberry Pi do the job of the Pi 4 you already have? Pick one, run the benchmark, then run the two side by side on the same antenna for two weeks and find out. What to buy, what to do, what to compare, and how it passes.</p>
     </div>
     <button type="button" class="ghost theme-btn" data-act="theme" aria-label="Colour theme" title="Colour theme"><span id="theme-label">Auto</span></button>
   </div>
@@ -35,7 +35,8 @@
     </div>
     <div class="nav-group"><span class="nav-h">Build</span>
       <a class="nav-link" href="build.html"><b>Base station</b><span>builder, costs, steps</span></a>
-      <a class="nav-link" href="trial.html" aria-current="page"><b>Mallow trial</b><span>beside the Pi</span></a>
+      <a class="nav-link" href="trial.html" aria-current="page"><b>Side-by-side trial</b><span>beside the Pi</span></a>
+      <a class="nav-link" href="hardware.html"><b>Other computers</b><span>beyond the Pi</span></a>
     </div>
     <div class="nav-group"><span class="nav-h">Learn</span>
       <a class="nav-link" href="./#about"><b>How it works</b><span>ALERT, the numbers, the law</span></a>
@@ -44,14 +45,12 @@
 </header>
 
 <main id="main" class="wrap">
-  <nav class="onpage" aria-label="On this page"><span class="dim small">On this page</span> <a href="#setup">The set-up</a> <a href="#which">Which computer</a> <a href="#keepup">Will it keep up?</a> <a href="#lighter">A lighter decoder</a> <a href="#buy">What to buy</a> <a href="#do">What to do</a> <a href="#results-h">Results</a> <a href="#trouble">If it won't</a></nav>
-
-  <p class="note"><b>Under review, 11 November 2026 — hold off buying.</b> A review of this trial found that the Verdin AM62 Quad now lists at about US$306 from Toradex (not US$107), that the heatsink named below (23111001) does not fit the AM62 (23111101 does), that "half a Pi 4" has never been measured, and that the container recipe below is not the one to use. <a href="https://github.com/cdomotor-g/open-ALERT/blob/main/docs/hardware-review/README.md" target="_blank" rel="noopener">Read the review</a> before ordering anything.</p>
+  <nav class="onpage" aria-label="On this page"><span class="dim small">On this page</span> <a href="#setup">The set-up</a> <a href="#which">Which computer</a> <a href="#keepup">Will it keep up?</a> <a href="#faster">What would help most</a> <a href="#buy">What to buy</a> <a href="#do">What to do</a> <a href="#results-h">Results</a> <a href="#trouble">If it won't</a> <a href="#words">Words</a></nav>
 
   <section class="sect" id="setup">
     <h2>The set-up</h2>
-    <p class="lead">One antenna, split two ways, so both computers hear exactly the same bursts. Each has its own stick of the same model, its own Flood-Net ingest token and its own receivers in Flood-Net. Flood-Net keeps one copy of each reading — whichever arrives first — but records <b>every</b> copy on the Reception Map, so the two can be compared burst for burst. Halfway through, swap the sticks: no two sticks are equally good, and swapping cancels that out.</p>
-    <figure class="diagram trialset" aria-label="The antenna feeds a splitter; one side goes to the Pi's stick, the other to the Mallow's; both computers post to Flood-Net over Ethernet">
+    <p class="lead">One antenna, split two ways, so both computers hear exactly the same bursts. Each has its own stick of the same model, its own Flood-Net <span class="term" title="The code that lets a base station send readings to Flood-Net. You ask for one on the computer, and an administrator approves it from Flood-Net's Admin tab." style="border-bottom:1px dotted;cursor:help">ingest token</span> and its own receivers in Flood-Net. Flood-Net keeps one copy of each reading — whichever arrives first — but records <b>every</b> copy on the Reception Map, so the two can be compared burst for burst. Halfway through, swap the sticks: no two sticks are equally good, and swapping cancels that out.</p>
+    <figure id="trialset" class="diagram trialset" aria-label="The antenna feeds a splitter; one side goes to the Pi's stick, the other to the trial computer's; both computers post to Flood-Net over Ethernet">
       <svg viewBox="0 0 900 340" role="img" aria-hidden="true">
         <defs><marker id="tar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
         <path d="M60 30 V120" class="mast"/><path d="M48 30 h24 M52 50 h16 M48 70 h24" class="ant"/><text x="60" y="20" class="cap2">the existing antenna</text>
@@ -65,9 +64,9 @@
         <path d="M400 90 H460" class="usb"/><path d="M400 250 H460" class="usb"/>
         <path d="M420 118 C 440 140, 440 200, 420 222" class="swap" marker-end="url(#tar)" marker-start="url(#tar)"/><text x="470" y="173" class="cap2 swap-t">swap the sticks</text><text x="470" y="187" class="cap2 swap-t">after week 1</text>
         <g class="bx b-pi"><rect x="460" y="60" width="160" height="62" rx="8"/><text x="540" y="86" class="cap1">Raspberry Pi 4</text><text x="540" y="104" class="cap2">RPi ALERT, as now</text></g>
-        <g class="bx b-am"><rect x="460" y="220" width="160" height="62" rx="8"/><text x="540" y="246" class="cap1">Verdin AM62 + Mallow</text><text x="540" y="264" class="cap2">RPi ALERT in a container</text></g>
+        <g class="bx b-am"><rect x="460" y="220" width="160" height="62" rx="8"/><text x="540" y="246" class="cap1" id="svg-pick">The trial computer</text><text x="540" y="264" class="cap2" id="svg-pick2">RPi ALERT via open-alert-base</text></g>
         <path d="M540 60 V40 H500" class="wire"/><text x="440" y="36" class="cap2">USB-C supply + meter</text>
-        <path d="M540 282 V306 H500" class="wire"/><text x="440" y="318" class="cap2">12 V + DC meter</text>
+        <path d="M540 282 V306 H500" class="wire"/><text x="440" y="318" class="cap2" id="svg-pick3">its own supply + meter</text>
         <path d="M620 91 H690 V160" class="eth"/><path d="M620 251 H690 V190" class="eth"/>
         <rect x="660" y="160" width="60" height="30" rx="5" class="sw"/><text x="690" y="179" class="cap1">switch</text>
         <path d="M720 175 H770" class="lnk" marker-end="url(#tar)"/><text x="745" y="166" class="cap2">HTTPS</text>
@@ -75,173 +74,107 @@
       </svg>
     </figure>
     <div class="cards3">
-      <div class="card-o"><h3>Passes if</h3><ul class="small"><li>it decodes at least <b>98%</b> of the bursts the Pi does, over both weeks</li><li>no channel ever drops samples</li><li><i>Decoder busy</i> stays under <b>70%</b> in the worst hour</li><li>the processor stays under <b>70 °C</b></li><li>no restarts or check-in gaps of its own</li></ul></div>
-      <div class="card-o"><h3>Takes</h3><ul class="small"><li>a couple of hours on the bench to bring it up</li><li>an hour on site to fit the splitter</li><li>two weeks running — ideally with some rain in them</li><li>an hour to read off and compare the numbers</li></ul></div>
-      <div class="card-o"><h3>Costs</h3><p class="small" id="cost-line">About A$1,270–1,570 for what you need, delivered, at element14 prices — the list below has each part, where to get it and how long it takes.</p></div>
+      <div class="card-o"><h3>Passes if</h3><ul class="small"><li>it decodes at least <b>98%</b> of the bursts the Pi does, over both weeks</li><li>no channel ever drops samples</li><li>no channel takes over <b>70% of one core</b> in the worst hour (<i>Decoder busy</i>), and all together under 70% of the computer</li><li>the processor stays under <b>70 °C</b></li><li>no restarts of its own, and no check-in gap the Pi does not share (a gap both have is the network's)</li></ul></div>
+      <div class="card-o"><h3>Takes</h3><ul class="small"><li>the benchmark first: about four minutes</li><li>a couple of hours on the bench to bring it up (allow days the first time: the firmware is new)</li><li>an hour on site to fit the splitter</li><li>two weeks running — ideally with some rain in them</li><li>an hour to read off and compare the numbers</li></ul></div>
+      <div class="card-o"><h3>Costs</h3><p class="small" id="cost-line">The cost follows the computer you pick below.</p></div>
     </div>
+    <p class="note"><b>The firmware is new.</b> open-ALERT's <code>firmware/</code> takes RPi ALERT's <i>signed</i> release unchanged and wraps it three ways: a package for any Debian 13 or Ubuntu 24.04 computer, the same in a container with no privileges for Torizon OS, and disk images. As at 13 November 2026 the package is built and its own checks pass on Debian 13 and Ubuntu 24.04 with stand-ins for the radio, on one test computer that has no USB; <b>the container has only been tried with stand-ins for the radio, on one PC: never on Torizon OS, on an ARM computer or with a real stick; the disk images are still being written</b>; nothing is released; and <b>nothing has yet been run with a real radio stick on a computer that is not a Raspberry Pi.</b> The trial is where that gets proved. Releases will appear at <a href="https://github.com/cdomotor-g/open-ALERT/releases" target="_blank" rel="noopener">github.com/cdomotor-g/open-ALERT/releases</a> (none on that date). The <a href="https://github.com/cdomotor-g/open-ALERT/blob/main/firmware/README.md" target="_blank" rel="noopener">firmware's own notes</a> are always the current word on what has been tested where.</p>
   </section>
 
   <section class="sect" id="which">
     <h2>Which computer</h2>
-    <p>Toradex makes six Verdin AM62s. They all use the same Cortex-A53 cores — the very cores of a Raspberry Pi 3B+ — so what differs is how many and how fast. Each is rated below against what RPi ALERT 0.17's lean decoder asks of it, and what it does with 0.19's Light decoder filtering only around bursts (<a href="#lighter">below</a>). Part numbers are Toradex's current ones. Prices are element14 Australia's, including GST, with Toradex's own direct price (to businesses only) under each — element14 charges two to three times as much for the modules.</p>
-    <p>Under them, for comparison and rated the same way: Toradex's new <b>Luna SL1680</b> board and the <b>Raspberry Pi</b> range. A Verdin's price is the module alone; a Luna's or a Pi's is the whole board. Under each CPU, how much decoding it does with a Pi 4 as 1.</p>
-    <div id="variants"></div>
-    <p class="small dim">Percent of each computer's CPU from the builder's model: green comfortable, amber the edge, red dropping bursts. The trial is what turns these into measurements. Change the channels and traffic under <a href="#keepup">Will it keep up?</a> and the second-last column follows.</p>
-    <div class="card-o luna-check">
-      <h3>Would a Luna SL1680 work?</h3>
-      <p class="small"><b>Yes, on paper — untested.</b> Its four Cortex-A73 cores at 2.1 GHz should decode a little more than a Pi 4 — about 1.1 times, scaled by clock, because no one has published benchmarks yet —, so Flood-Net's four channels would take about a seventh of it on 0.17. It has what a base wants: 4 GB, 16 GB of eMMC instead of an SD card, a battery clock, four USB 3 ports for sticks, Wi-Fi and Ethernet, rated −25 to +85 °C. About US$145 from Toradex, roughly A$230 with GST plus courier.</p>
-      <ul class="small">
-        <li><b>The software route is the trial's.</b> It comes with Torizon OS, not Debian, so RPi ALERT runs in a Debian container — just what this trial tries on the Verdin. If the trial passes, the Luna takes the same route.</li>
-        <li><b>5 V only, like a Pi.</b> Up to 5 A, and it doesn't negotiate USB-PD: a proper 5 V 5 A supply, or a 12 → 5 V converter on a battery site. The Mallow takes 7–24 V directly.</li>
-        <li><b>New.</b> Released early 2026; the datasheet is preliminary, its power use not yet measured, and Toradex hasn't said how long it will make it — the Verdin AM62 is promised to 2033 and beyond. No Australian distributor stocks it yet.</li>
-      </ul>
-      <p class="small dim">Sources: <a href="https://www.toradex.com/single-board-computers/luna-sl1680" target="_blank" rel="noopener">Toradex: Luna SL1680</a> · <a href="https://docs.toradex.com/118084-luna_sl1680_datasheet.pdf" target="_blank" rel="noopener">its datasheet (preliminary)</a> · <a href="https://docs.toradex.com/118333-luna_sl1680_sbc_getting_started.pdf" target="_blank" rel="noopener">getting started</a>. It is also in the <a href="build.html#builder">base station builder</a>.</p>
+    <p>Pick the computer to trial. Any of these will do: the shopping list, the power notes and the steps below follow your pick. The <a href="hardware.html#computers">Other computers</a> page compares them in full, with photographs and where to buy each one. The default is the cheapest way to learn, an N150 mini PC from an Australian shop, for the bench; the OnLogic CL260 (for a 12 V or 24 V site) and the Lenovo ThinkEdge (where IT wants a brand it already buys) are the ones to buy for real.</p>
+    <div class="card-o" id="pick-box">
+      <div class="row"><label for="t-pick"><b>The computer to trial</b></label> <select id="t-pick"></select></div>
+      <div id="pick-card"></div>
     </div>
+    <p><b>The one-line verdict:</b> buy an N150-class fanless PC with a TPM (the CL260 for a battery site, the ThinkEdge where the brand matters), prove it on the bench with a A$300 mini PC first if you like, and keep the Verdin AM62 and the Luna out of the order book.</p>
+    <p>Every computer is rated below for your channels with the corrected sums: all the channels together against the whole computer, and the busiest channel against <i>one</i> core, because each channel is decoded on one core. Speed is how much decoding it does as a multiple of a Pi 4; no published benchmark runs this program, so every figure but the Pi 4's is a stand-in until the benchmark in step 0 settles it.</p>
+    <div id="variants"></div>
+    <p class="small dim">Each computer has two lines: its figures, then what it is built with and what the hardware review says of it. Under "all together" and "busiest channel" the first figure is RPi ALERT's measurement alone and the second the same work on a busy computer. Green is comfortable, amber the edge, red dropping bursts. Change the channels and traffic under <a href="#keepup">Will it keep up?</a> and the table follows. The rule for buying with headroom for ALERT2: at least four cores, each at least 2.5 times a Pi 4 core. The N150 and N355 classes meet it at their planning figure of about 3 a core (the lowest published benchmark puts an N150 core at about 2.4, just under: run the benchmark before buying several); a Pi 4 and the Beagle boards do not. "Probably meets it" is for a computer whose processor the review has no figure for. A temperature marked "assumed" is not the maker's: no rating was read.</p>
+    <details class="card-o" id="verdin-details">
+      <summary><b>If you still want the Verdin</b> — the AM62s, with the corrected prices, the right heatsink and the iMX95 beside them</summary>
+      <p class="small">The old trial (the Mallow trial) chose a Toradex Verdin AM62 Quad on a Mallow carrier. The <a href="hardware.html#trial">hardware review</a> found it should not be run as written: the module's price had roughly tripled, its heatsink did not fit, and its speed had never been measured. It is not recommended; this is for those who still want it.</p>
+      <div id="verdin-fold"></div>
+    </details>
   </section>
 
   <section class="sect" id="keepup">
     <h2>Will it keep up?</h2>
-    <p>The AM62's four Cortex-A53 cores are about half a Pi 4 for decoding. RPi ALERT 0.17's lean decoder takes a third of the time the old one did over a burst. Put in the channels your Pi listens on to see what the builder's model expects — then let the trial say what really happens.</p>
+    <p>Put in the channels your Pi listens on to see what the builder's model expects of the Pi 4 and of your pick — then let the trial say what really happens. On a busy Pi 4, today's work is about 0.55–0.6 of a Pi 4 core a channel in a 1.44 MHz window, 0.25–0.5 at 960 kHz and 0.15–0.25 at 240 kHz; four channels on one stick take about 2.2–2.5 Pi 4 cores, 55–62% of a Pi 4, in busy to heavy traffic. Those are the top of each range: by RPi ALERT's measurement alone, with nothing else loading the computer, the same four channels take about 1.4 Pi 4 cores, 36%. That is why the table below shows the Pi 4 at 36–55% on a busy day.</p>
+    <p class="small dim">Where the figures come from: the work between bursts is RPi ALERT's own Raspberry Pi 4 figure, and the higher end is what that Pi 4 showed while busy with eight channels and a screen, so it may read high. What each burst costs was timed on a PC and multiplied by 4 to 5 to stand for a Pi 4 (review report U2): an estimate until a Pi 4 runs the benchmark.</p>
     <div class="card-o" id="est"></div>
   </section>
 
-  <section class="sect" id="lighter">
-    <h2>A lighter decoder</h2>
-    <p>RPi ALERT's decoder is Flood-Net's own, so the box decodes exactly as the website does. Three changes make it lighter, each measured against the decoder RPi ALERT ran until 0.16:</p>
-    <div class="cards3">
-      <div class="card-o"><h3>Filter once per guess — done, 0.17's default</h3><p class="small">A burst's decode tries 45 carrier and timing guesses and used to re-filter the whole window for each. Now it filters once for each of the 9 carrier guesses and makes the ±75 and ±150 Hz nudges afterwards, at 12 kHz. At the Brisbane base, run both ways overnight: <b>14 of 11,628 live bursts read differently (0.12%)</b>, in <b>a third of the time</b>. 0.17 also fills its buffers a block at a time and works out a stick's spectrum on one channel only: a quarter to two fifths less between bursts.</p></div>
-      <div class="card-o"><h3>Filter only around bursts — built, 0.18, being checked</h3><p class="small">Between bursts, every channel used to filter the stick's whole window all the time. Now each can keep the last 1.6 s as bytes, look at its channel 25 times a second, and filter only from a second before something shows, so the squelch and the decoder see the samples they always did. In Flood-Net's tests, <b>the same readings and the same bursts every time</b>. Asleep, a channel costs <b>a quarter</b> of filtering always at 240 kHz and <b>a fifteenth</b> at 2.4 MHz. It's <i>Settings → RTL-SDR → Between bursts</i>, off by default until its <i>Check</i> has run at the Brisbane base.</p></div>
-      <div class="card-o"><h3>Light — built, 0.19, being checked</h3><p class="small">A burst's nine carrier guesses all lie within ±17 kHz of the channel, so Light filters the burst down to 48 kHz once and makes every guess from there: <b>about half of lean's time</b> a burst (65 ms against 122 on the bench). Over 600 synthesised bursts both found the same 642 true readings; every real one reads the same. <i>Settings → RTL-SDR → Decoder: Light</i>, with <i>Compare light</i> to prove it at the Brisbane base first.</p></div>
-      <div class="card-o"><h3>What it means</h3><p class="small">On 0.17, Flood-Net's four channels on a busy day take about a third of the Quad and two thirds of the cheaper <b>Dual</b>. On 0.19's Light decoder filtering only around bursts, about an eighth and a quarter. Even the <b>Solo</b> — one 1 GHz core, 512 MB — now carries a site of one or two channels. The Quad keeps the headroom for a site that hears a whole region, which is why it's the one to trial.</p></div>
-    </div>
+  <section class="sect" id="faster">
+    <h2>What would help most</h2>
+    <p>One software change is worth more than any hardware: <b>not trying the older-ALERT decoder first on a channel known to carry ALERT2</b>. It takes a full ALERT2 channel from about 1.2 to about 0.4 Pi 4 cores. It is planned in RPi ALERT, not shipped (review report U2), so nothing on this page counts on it. Two lighter ways of decoding are built and off by default. Resting a channel between bursts (RPi ALERT 0.18) missed some of the weakest bursts in its first field check. The Light decoder (0.19) has had no field check at all. So a Pi 4 keeps filtering all the time, and no sizing should lean on either.</p>
+    <p>On ALERT2: a channel whose time slots are all used needs about 1.1–1.3 Pi 4 cores of work for its messages alone, and 1.2–1.8 once the cost of listening in the stick's window is added (review report R9): the box above shows that fuller figure for your own channels. All of it lands on one core, which is more than any Pi 4-class core has. Both figures were timed on another computer and scaled to a Pi 4, so they are estimates. Real networks run far below that (20–31 messages a minute). RPi ALERT and Flood-Net work from version 1.1 of the ALERT2 radio specification (AirLink); version 1.2 (January 2025) adds ways of sending that the program cannot hear yet, and optional encryption — software and access questions, not hardware (report R9).</p>
   </section>
 
   <section class="sect" id="buy">
     <h2>What to buy</h2>
-    <p class="small dim">Tick things off as they arrive — the ticks stay in this browser. Prices are Australian dollars including GST, with each shop's delivery once at the end; <span class="chip st-warn">est.</span> marks an estimate.</p>
+    <p class="small dim">Tick things off as they arrive — the ticks stay in this browser. Prices are Australian dollars including GST, with each shop's delivery once at the end; <span class="chip st-warn">est.</span> marks an estimate. Where no price could be read it says so and gives the seller's link: the owner checks prices by hand, so the links matter more than the figures. The list follows your pick under <a href="#which">Which computer</a>.</p>
     <div id="shop"></div>
   </section>
 
   <section class="sect" id="do">
     <h2>What to do</h2>
-    <ol class="phases">
-      <li>
-        <h3>Before anything arrives: write down the Pi's week</h3>
-        <p>The splitter will cost the Pi about 3.5 dB. So for two or three days before you fit it, note what the Pi does on its own — that's your baseline:</p>
-        <ul>
-          <li>On the Pi's <b>Overview</b> (<code>http://&lt;the Pi&gt;/</code>): bursts decoded per channel, <i>Decoder busy</i>, any dropped samples, the processor temperature.</li>
-          <li>On its <b>Receivers</b> page: the SNR of two or three stations it hears well.</li>
-          <li>In <b>Flood-Net</b>: its receivers on the Reception Map, and its row on the Base Stations tab.</li>
-          <li>On the Pi, over SSH: <code>rpi-alert sdr 1</code> lists its channels, gain and ppm — you'll give the Mallow the same.</li>
-        </ul>
-      </li>
-      <li>
-        <h3>On the bench: put the module on the carrier</h3>
-        <ol>
-          <li>With the power off, slide the Verdin module into Mallow's edge connector at an angle, press it down flat and fit its screw. Fit the heatsink over it with its thermal pad.</li>
-          <li>Connect Ethernet to a network with internet, then 12 V to the power header (mind the polarity marked on the board).</li>
-          <li>Power on. A new module comes with <b>Toradex Easy Installer</b> on it: find its IP address (your router's list of devices, or a monitor on the HDMI port) and open it in a browser or a VNC viewer.</li>
-          <li>Install <b>Torizon OS</b> (the plain one, without the evaluation containers). Power off when it says <i>Image installed</i>, then on again.</li>
-          <li>Log in over SSH: <code>ssh torizon@&lt;its IP&gt;</code> — the first password is <code>torizon</code>, and it makes you choose a new one. Give the box a name you'll recognise in Flood-Net: <code>sudo hostnamectl set-hostname am62-trial</code>, then <code>sudo reboot</code>.</li>
-        </ol>
-        <p class="small dim">No Easy Installer? Load it again in recovery mode from a computer over USB-C — <a href="https://developer.toradex.com/knowledge-base/load-toradex-easy-installer" target="_blank" rel="noopener">Toradex: loading Toradex Easy Installer</a> — and see <i>If it won't</i> below.</p>
-      </li>
-      <li>
-        <h3>On the bench: run RPi ALERT in a container</h3>
-        <p>Torizon runs software in Docker containers, and RPi ALERT's installer is made for Raspberry Pi OS — so the agent runs in a Debian container instead. <b>This has not been done before</b>: it is the first time RPi ALERT runs off a Raspberry Pi, and part of what the trial finds out. Log in and make the image:</p>
-        <div class="code"><button type="button" class="ghost small" data-act="copycode" data-for="c1">Copy</button><pre id="c1">mkdir -p ~/rpi-alert && cd ~/rpi-alert
-cat > Dockerfile &lt;&lt;'EOF'
-FROM debian:trixie-slim
-RUN apt-get update \
- && apt-get install -y --no-install-recommends nodejs rtl-sdr git ca-certificates procps \
- && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 1 https://github.com/cdomotor-g/RPi_ALERT /opt/rpi-alert
-CMD ["node", "/opt/rpi-alert/agent/bin/rpi-alert", "daemon"]
-EOF
-docker build -t rpi-alert .</pre></div>
-        <p>Plug the new stick into a USB port, then start it — it restarts itself after a power cut, and keeps its settings and queue across updates:</p>
-        <div class="code"><button type="button" class="ghost small" data-act="copycode" data-for="c2">Copy</button><pre id="c2">docker run -d --name rpi-alert --restart unless-stopped \
-  --privileged --network host \
-  -v /dev/bus/usb:/dev/bus/usb \
-  -v rpi-alert-etc:/etc/rpi-alert -v rpi-alert-var:/var/lib/rpi-alert \
-  rpi-alert
-docker logs -f rpi-alert</pre></div>
-        <ol>
-          <li>The log should show the stick found and <code>rtl_sdr</code> started. Then open <code>http://&lt;its IP&gt;/</code> — the same dashboard as the Pi's.</li>
-          <li><b>Decoder</b> (Settings → RTL-SDR): leave both on <b>Lean</b>, RPi ALERT 0.17's default, so the two computers decode alike. A Pi on 0.15 or older gets it from <i>Settings → System → Check for updates</i> (or <code>sudo rpi-alert-update</code> over SSH).</li>
-          <li>Give it the Pi's channels, gain and ppm (Settings → RTL-SDR), or: <code>docker exec rpi-alert node /opt/rpi-alert/agent/bin/rpi-alert sdr 1 freq 151.5, 151.525, 151.95, 152.4</code> — with the Pi's own list. Leave the screen dashboard off: the Pi's comparison should be like for like, so turn the Pi's off too if it has one.</li>
-          <li>Press <b>Request a token</b>, check the code, and approve it on Flood-Net's <b>Admin</b> tab. Its receivers appear as <code>rpi-am62-trial-sdr1…</code> beside the Pi's.</li>
-          <li>Leave it on the bench a day with an antenna by a window. If <i>Decoder busy</i> is already near 100% here, it won't cope on site — see <i>Will it keep up?</i> and take some channels off before going on.</li>
-        </ol>
-        <p class="small dim">Things that need the Pi's own system — the Wi-Fi hotspot, updates from Flood-Net, the screen — won't work in the container. That's expected; the trial is about receiving and decoding.</p>
-      </li>
-      <li>
-        <h3>On site: share the antenna</h3>
-        <ol>
-          <li>Undo the coax at the Pi's stick. Between the arrestor and the sticks, fit the splitter: the antenna lead to its input (with the N–N jumper if needed), a pigtail from each output to each stick.</li>
-          <li>Both boxes on the same switch or router, by Ethernet. Each on its power meter.</li>
-          <li>Check both are hearing: each Overview counts bursts within minutes, and both sets of receivers turn up on Flood-Net's Reception Map.</li>
-          <li>Write down the date and time — week 1 starts now. Stick A is on the Pi, stick B on the Mallow.</li>
-        </ol>
-      </li>
-      <li>
-        <h3>After a week: swap the sticks</h3>
-        <p>Move stick A to the Mallow and stick B to the Pi (each keeps its own pigtail). Give each stick its own ppm on its new box — the tuning help on each stick's card suggests it within an hour. Write down the time: week 2 starts.</p>
-      </li>
-      <li>
-        <h3>After two weeks: read off the numbers</h3>
-        <p>Fill in the results sheet below from each box and from Flood-Net. The verdicts work themselves out. Then decide: keep the Mallow on site beside the Pi, take it off and keep the Pi, or — if it passes — let the Mallow take over.</p>
-      </li>
-    </ol>
+    <p class="small dim">The steps follow your pick. Step 0 comes first.</p>
+    <ol class="phases" id="do-list"><li>The steps need JavaScript.</li></ol>
   </section>
 
   <section class="sect" id="results-h">
     <h2>Results sheet</h2>
-    <p class="small dim">Week 1: stick A on the Pi, stick B on the Mallow. Week 2: swapped. Counts are for the whole week; the verdict adds the two weeks together.</p>
+    <p class="small dim">Week 1: stick A on the Pi, stick B on the trial computer. Week 2: swapped. Counts are for the whole week; the verdict adds the two weeks together. A sheet saved by the earlier trial still reads the same: its "AM62" columns are the trial computer's.</p>
     <div id="results"></div>
   </section>
 
   <section class="sect" id="trouble">
     <h2>If it won't</h2>
     <dl class="trouble">
-      <dt>No Easy Installer screen, or it won't load over USB</dt>
-      <dd>Others have had this with an AM62 on Mallow: use the newest Toradex Easy Installer and the recovery steps in Toradex's guide, and ask on the <a href="https://community.toradex.com/" target="_blank" rel="noopener">Toradex Community</a> — Toradex staff answer there. The console cable on Mallow's console header shows what it's doing.</dd>
-      <dt>The stick isn't found in the container</dt>
-      <dd>On the box, <code>lsusb</code> should list a Realtek RTL2838 device. If <code>dmesg</code> shows a DVB driver taking it, unload it (<code>sudo modprobe -r dvb_usb_rtl28xxu</code>) — RPi ALERT blacklists it on a Pi. Check the container was started with <code>-v /dev/bus/usb:/dev/bus/usb</code> and <code>--privileged</code>.</dd>
-      <dt><i>Decoder busy</i> near 100%, or channels dropping samples</dt>
-      <dd>It is doing more than the AM62 can with RPi ALERT's decoder as it is. Take channels off until it settles, write down how many it managed — that is a result in itself — and see the builder's <a href="build.html#custom">custom path</a>: the faster decoder is what would make up the difference.</dd>
+      <dt>It won't start from the USB stick, or the stick is refused</dt>
+      <dd>Check the maker's page for the operating system it supports, and that the stick was written as a bootable disk. Write down what the firmware screen says; if you change a Secure Boot setting to get the bench build in, write that down too and tell IT before it goes on a network.</dd>
+      <dt>The radio stick isn't found</dt>
+      <dd><code>lsusb</code> should list a Realtek RTL2838 device. The package keeps the kernel's digital-TV drivers off the sticks; if one was already holding it, unplug and replug the stick, or reboot. With a Verdin, check the container was given the USB bus. On a computer with one USB port, use a powered hub.</dd>
+      <dt>The benchmark says the computer is slow, or <i>Decoder busy</i> is near 100%, or channels drop samples</dt>
+      <dd>It is doing more than it can with RPi ALERT's decoder as it is. Take channels off until it settles, and write down how many it managed — that is a result in itself. Then look at <a href="#faster">what would help most</a>, and at the <a href="hardware.html#speed">Other computers</a> page for a faster computer.</dd>
       <dt>Hot: the processor over 70 °C</dt>
-      <dd>Check the heatsink is seated with its pad, and that the box isn't in the sun. Industrial-rated parts run hot without failing, but a throttled processor decodes less.</dd>
+      <dd>A fanless computer in the sun throttles. Check it has air round it and is not in direct sun; compare the maker's temperature rating. A throttled processor decodes less.</dd>
       <dt>The Pi got worse after the splitter</dt>
       <dd>Expected, by about 3.5 dB — compare with the baseline you wrote down. If a weak station drops out altogether, note it; take the splitter out when the trial ends.</dd>
+      <dt>Both computers lost the network at the same time</dt>
+      <dd>That is the network's gap, not the trial computer's: only a gap the Pi does not share counts against it.</dd>
     </dl>
 
     <h3>When the trial ends</h3>
     <ul>
       <li>Take the splitter out to give the Pi its full signal back — or keep both running.</li>
-      <li>If the Mallow comes off, revoke its ingest token on Flood-Net's Admin tab and remove its receivers.</li>
-      <li>Put the results in RPi ALERT's issues so the builder's CPU model can use real AM62 numbers.</li>
+      <li>If the trial computer comes off, revoke its ingest token on Flood-Net's Admin tab and remove its receivers.</li>
+      <li>Put the results, and the benchmark file, in open-ALERT's or RPi ALERT's issues so the builder's speed figures can use real numbers.</li>
     </ul>
 
     <h3>Sources</h3>
     <ul class="small src-list">
-      <li><a href="https://www.toradex.com/computer-on-modules/verdin-arm-family/ti-am62" target="_blank" rel="noopener">Toradex: Verdin AM62</a></li>
-      <li><a href="https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf" target="_blank" rel="noopener">Mallow carrier board datasheet</a></li>
-      <li><a href="https://au.element14.com/toradex/01611102/carrier-board-mallow/dp/4759350" target="_blank" rel="noopener">element14: Mallow</a></li>
-      <li><a href="https://www.toradex.com/accessories/verdin-industrial-heatsink-type-1" target="_blank" rel="noopener">Toradex: Verdin Industrial Heatsink</a></li>
-      <li><a href="https://developer.toradex.com/quickstart/5/bringup/installing-torizon" target="_blank" rel="noopener">Toradex: installing Torizon OS</a></li>
-      <li><a href="https://developer.toradex.com/knowledge-base/load-toradex-easy-installer" target="_blank" rel="noopener">Toradex: loading Toradex Easy Installer</a></li>
-      <li><a href="https://community.toradex.com/t/struggling-to-load-easy-installer-on-am62-mallow/23841" target="_blank" rel="noopener">Toradex Community: Easy Installer on AM62 + Mallow</a></li>
+      <li>The hardware review: the <a href="hardware.html">Other computers</a> page on this site, its <a href="https://github.com/cdomotor-g/open-ALERT/blob/main/docs/hardware-review/README.md" target="_blank" rel="noopener">written record</a> and its reports: <a href="https://github.com/cdomotor-g/open-ALERT/blob/main/docs/hardware-review/research/U2-decoder-cost-and-bench.md" target="_blank" rel="noopener">U2 the decoder's cost</a>, <a href="https://github.com/cdomotor-g/open-ALERT/blob/main/docs/hardware-review/research/R8-cpu-performance.md" target="_blank" rel="noopener">R8 speeds</a>, <a href="https://github.com/cdomotor-g/open-ALERT/blob/main/docs/hardware-review/research/R9-alert2-demands.md" target="_blank" rel="noopener">R9 ALERT2</a>, <a href="https://github.com/cdomotor-g/open-ALERT/blob/main/docs/hardware-review/research/R7-x86-boxes.md" target="_blank" rel="noopener">R7 small PCs</a>, <a href="https://github.com/cdomotor-g/open-ALERT/blob/main/docs/hardware-review/research/R1-toradex-verdin-mallow.md" target="_blank" rel="noopener">R1 Toradex</a></li>
+      <li><a href="https://github.com/cdomotor-g/open-ALERT/tree/main/firmware" target="_blank" rel="noopener">open-ALERT firmware</a> and its <a href="https://github.com/cdomotor-g/open-ALERT/tree/main/firmware/bench" target="_blank" rel="noopener">benchmark</a></li>
       <li><a href="https://github.com/cdomotor-g/RPi_ALERT/blob/main/docs/hardware.md" target="_blank" rel="noopener">RPi ALERT hardware notes</a></li>
       <li><a href="https://github.com/cdomotor-g/RPi_ALERT/blob/main/docs/configuration.md" target="_blank" rel="noopener">RPi ALERT configuration (receiver ids)</a></li>
       <li><a href="https://github.com/cdomotor-g/MegaNet/blob/main/docs/ingest-http.md" target="_blank" rel="noopener">Flood-Net ingest: the first copy is kept, every copy recorded</a></li>
+      <li>Each computer's own sources are under its line in the shopping list.</li>
     </ul>
+  </section>
+
+  <section class="sect" id="words">
+    <h2>What the words on this page mean</h2>
+    <p class="small dim">The same meanings the hovers give, for a finger or a keyboard: this page's own words first, then the words it shares with the Other computers page.</p>
+    <details open><summary class="small">The list</summary><ul id="trial-terms" class="small"><li>The list needs JavaScript.</li></ul></details>
   </section>
 </main>
 
 <div id="toast" role="status" aria-live="polite"></div>
 <footer class="wrap small dim">
-  <p>open-ALERT · MIT licence · <a href="https://github.com/cdomotor-g/open-ALERT" target="_blank" rel="noopener">source on GitHub</a> · prices indicative, November 2026 · a plan to start from, not an endorsement.</p>
+  <p>open-ALERT · MIT licence · <a href="https://github.com/cdomotor-g/open-ALERT" target="_blank" rel="noopener">source on GitHub</a> · prices indicative, November 2026 (read when and where each says) · a plan to start from, not an endorsement.</p>
 </footer>
 
 <script src="data/alert.js"></script>
@@ -251,6 +184,7 @@ docker logs -f rpi-alert</pre></div>
 <script src="data/power.js"></script>
 <script src="data/site.js"></script>
 <script src="data/builder.js"></script>
+<script src="data/review.js"></script>
 <script src="js/builder.js"></script>
 <script src="js/trial.js"></script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>

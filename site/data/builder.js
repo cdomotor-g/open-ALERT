@@ -41,6 +41,7 @@
   const REVIEW_R6 = ['Hardware review, report R6: industrial Arm computers and gateways', REV + 'R6-industrial-arm-gateways.md'];
   const REVIEW_R7 = ['Hardware review, report R7: small PCs with a TPM and Secure Boot', REV + 'R7-x86-boxes.md'];
   const REVIEW_R8 = ['Hardware review, report R8: processor speeds against a Raspberry Pi 4', REV + 'R8-cpu-performance.md'];
+  const REVIEW_R10 = ['Hardware review, report R10: a board of our own, and the radio', REV + 'R10-custom-hardware-and-sdr.md'];
   const OA_BENCH = ['open-ALERT firmware/bench: the benchmark that measures a real computer', 'https://github.com/cdomotor-g/open-ALERT/tree/main/firmware/bench'];
   const RPI_HOW = ['RPi ALERT: how it works', 'https://github.com/cdomotor-g/RPi_ALERT/blob/main/docs/how-it-works.md'];
   const AU_STOCK = { d: [2, 7], text: 'stocked by Australian retailers' };
@@ -222,7 +223,7 @@
         id: 'rpi-3b-plus', ref: 'rpi-3b-plus', short: 'Pi 3B+', kind: 'board',
         aud: [64.79, 83.23], gst: true, lead: { d: [2, 7], text: 'in stock at Core Electronics (A$64.79) and Little Bird (A$83.23), November 2026' }, where: [LB, CORE],
         supply: '5v', usb: 4, m2: false, eth: 1, wifi: true, board: [85, 56], install: 'pi',
-        fit: 'Half a Pi 4 (0.5), and each core half a Pi 4 core: the builder\'s sums put Flood-Net\'s four channels at 72–109% of it on a busy day, with one channel over a whole core, so it is at its limit on today\'s default decoder. Fine for a small legacy-ALERT site or the bench. 1 GB holds the decoders and the screen dashboard; leave the screen off. Micro-USB power: a good 2.5 A supply.',
+        fit: 'Half a Pi 4 (0.5), and each core half a Pi 4 core: the builder\'s sums put Flood-Net\'s four channels at 72–109% of it on a busy day, with one channel over a whole core, so it is at its limit on today\'s default decoder. Fine for a small older-ALERT site or the bench. 1 GB holds the decoders and the screen dashboard; leave the screen off. Micro-USB power: a good 2.5 A supply.',
         src: [RPI_HW], conf: 'medium',
       },
       {
@@ -254,7 +255,7 @@
         where: [['OnLogic (direct; no Australian distributor found)', 'https://www.onlogic.com/']],
         supply: 'wide', usb: 6, m2: 'nvme', eth: 2, wifi: false, board: [170, 120], install: 'package',
         parts: 'OnLogic Cabrio CL260, N150, 8 GB, 128 GB (from US$641); ask OnLogic for the price delivered to Australia',
-        fit: 'FIRST CHOICE for a 12 V or 24 V site. An N150 fanless PC: about three Pi 4s, each core about three Pi 4 cores, so it meets the ALERT2 buying rule on paper. 12–24 V DC on a terminal block runs from a site battery with no converter; a TPM 2.0; Ubuntu 24.04 offered by the maker; 0–50 °C. The price is the list price from the US in January 2026, converted at A$1 = US$0.69: check it with OnLogic.',
+        fit: 'FIRST CHOICE for a 12 V or 24 V site. An N150 fanless PC: about three Pi 4s, each core about three Pi 4 cores, so it meets the ALERT2 buying rule at its planning figure (the lowest published benchmark puts a core at about 2.4, just under the rule: run the benchmark before buying several). 12–24 V DC on a terminal block runs from a site battery with no converter; a TPM 2.0; Ubuntu 24.04 offered by the maker; 0–50 °C. The price is the list price from the US in January 2026, converted at A$1 = US$0.69: check it with OnLogic.',
         src: [['CNX Software: OnLogic CL260 (TPM 2.0, 12–24 V terminal block, 0–50 °C, from US$641)', 'https://www.cnx-software.com/2026/01/21/onlogic-cl260-fanless-intel-n150-n250-industrial-mini-pc-offers-rs232-rs485-terminal-block-12-24v-dc-input/'], REVIEW_R7], conf: 'low',
       },
       {
@@ -263,8 +264,8 @@
         where: [['Lenovo Australia, or a Lenovo partner: ask for a quote', 'https://www.lenovo.com/au/en/'], ['Lenovo specification sheet (PSREF)', 'https://psref.lenovo.com/syspool/Sys/PDF/ThinkEdge/ThinkEdge_SE10n_Gen2/ThinkEdge_SE10n_Gen2_Spec.pdf']],
         supply: 'mains', usb: 6, m2: 'nvme', eth: 2, wifi: false, board: [170, 120], install: 'package',
         parts: 'Lenovo ThinkEdge SE10n Gen2: the N150 model (0–50 °C) for a cabinet; ask for the 65 W 20 V adapter and the three-year on-site warranty',
-        fit: 'FIRST CHOICE where IT wants a brand it already buys. A fanless DIN-rail PC on the N150 (or an eight-core Core 3 N355), a discrete TPM 2.0 and Secure Boot, certified by the makers of Ubuntu and Red Hat, with a three-year on-site warranty option. Power is a 20 V adapter, so a 12 V site needs a converter. Two versions: 0–40 °C and 0–50 °C (needs 0.7 metres a second of air flow). The speed shown is the N150\'s; the N355 is faster.',
-        src: [['Lenovo ThinkEdge SE10n Gen2 specification sheet (PSREF, 22 October 2026)', 'https://psref.lenovo.com/syspool/Sys/PDF/ThinkEdge/ThinkEdge_SE10n_Gen2/ThinkEdge_SE10n_Gen2_Spec.pdf'], REVIEW_R7], conf: 'medium',
+        fit: 'FIRST CHOICE where IT wants a brand it already buys. A DIN-rail PC on the N150 that Lenovo calls fanless, with a discrete TPM 2.0, Secure Boot and a three-year on-site warranty option. Lenovo\'s specification lists it as certified for Ubuntu Server and Red Hat Enterprise Linux; Canonical\'s public list did not show it on 13 November 2026, and the Ubuntu the sheet names is 26.04, so ask Lenovo for the certificate and plan on Debian 13 or Ubuntu 24.04. Power is a 20 V adapter, so a 12 V site needs a converter. Two versions, 0–40 °C and 0–50 °C, both rated with 0.7 metres a second of moving air; the eight-core Core 3 N355 comes only in the 0–50 °C one. The speed shown is the N150\'s; the N355 is faster.',
+        src: [['Lenovo ThinkEdge SE10n Gen2 specification sheet (PSREF, 22 October 2026)', 'https://psref.lenovo.com/syspool/Sys/PDF/ThinkEdge/ThinkEdge_SE10n_Gen2/ThinkEdge_SE10n_Gen2_Spec.pdf'], ['Lenovo press release, 23 February 2026 ("the fanless nano gateway")', 'https://news.lenovo.com/pressroom/press-releases/data-potential-next-generation-ai-driven-thinkedge-solutions/'], ['Canonical: Ubuntu certified hardware, searched for "SE10n" (nothing listed on 13 November 2026)', 'https://ubuntu.com/certified?q=SE10n'], REVIEW_R7], conf: 'medium',
       },
       {
         id: 'protectli-vault-vp2430', ref: 'protectli-vault-vp2430', short: 'Protectli VP2430', kind: 'box',
@@ -280,16 +281,16 @@
         aud: [230, 350], gst: true, lead: { d: [2, 10], text: 'Australian online retailers; stock not checked' },
         where: [['Mwave', 'https://www.mwave.com.au/'], ['Amazon Australia', 'https://www.amazon.com.au/']],
         supply: 'mains', usb: 4, m2: 'nvme', eth: 1, wifi: true, board: [120, 115], install: 'package',
-        fit: 'THE CHEAPEST WAY TO START, for the bench and an air-conditioned room only: about three Pi 4s (range 2.4–4.5; the benchmarks disagree) with each core about three Pi 4 cores, so it meets the ALERT2 buying rule on paper. Consumer brands rated 0–35 or 40 °C, with a fan, a model that changes every year, and last in a reviewer\'s ranking for an IT review. Prove the package on it, then buy a fanless box with a TPM for the site.',
+        fit: 'THE CHEAPEST WAY TO START, for the bench and an air-conditioned room only: about three Pi 4s (range 2.4–4.5; the benchmarks disagree) with each core about three Pi 4 cores, so it meets the ALERT2 buying rule at its planning figure (at the low end, a core is just under the rule). Consumer brands rated 0–35 or 40 °C, with a fan, a model that changes every year, and last of the small PCs for an IT review in the hardware review\'s own judgement. Prove the package on it, then buy a fanless box with a TPM for the site.',
         src: [REVIEW_R7, REVIEW_R8], conf: 'low',
       },
       {
         id: 'lenovo-m920q-tiny-refurb', ref: 'lenovo-m920q-tiny-refurb', short: 'Refurbished M920q Tiny', kind: 'box',
-        aud: [320, 322], gst: true, lead: { d: [2, 10], text: 'Australian refurbishers (PB Tech, Reboot IT); stock not read' },
-        where: [['PB Tech Australia', 'https://www.pbtech.com/product/EXWKSLEN0091060/Lenovo-Think-Center-M920Q-Intel-Core-i5-8500T-Tiny'], ['Reboot IT', 'https://reboot-it.com.au/products/lenovo-m920q-tiny-i5-8500t-2-1ghz-8gb-256gb-ssd-w11p-pc-1yr-wty']],
+        aud: [239, 322], gst: true, lead: { d: [2, 21], text: 'Australian refurbishers, when one has it. PB Tech listed a reconditioned one at about A$322 (a search listing; stock not read). Reboot IT\'s, A$239 on sale and A$299 regular, had sold when its page was read on 13 November 2026' },
+        where: [['PB Tech Australia', 'https://www.pbtech.com/product/EXWKSLEN0091060/Lenovo-Think-Center-M920Q-Intel-Core-i5-8500T-Tiny'], ['Reboot IT: refurbished Lenovo desktops (its M920q had sold)', 'https://reboot-it.com.au/collections/refurbished-lenovo-desktops']],
         supply: 'mains', usb: 6, m2: 'nvme', eth: 1, wifi: false, board: [179, 183], install: 'package',
-        fit: 'CHEAP, WITH A BRAND IT KNOWS: an ex-lease Core i5-8500T "tiny", about A$320 with 8 GB and an SSD. Six cores and the fastest here by memory only (about four Pi 4 cores a core: unverified). Has a fan, office temperatures, a one-year warranty at best. Also the easiest to explain to a reviewer who already buys Lenovo.',
-        src: [REVIEW_R7, REVIEW_R8], conf: 'low',
+        fit: 'CHEAP, WITH A BRAND IT KNOWS: an ex-lease Core i5-8500T "tiny", about A$240–320 with 8 GB and an SSD when a refurbisher has one. Six cores and the fastest here by memory only (about four Pi 4 cores a core: unverified). Has a fan, office temperatures, a one-year warranty at best. Also the easiest to explain to a reviewer who already buys Lenovo.',
+        src: [['Reboot IT: Lenovo M920q Tiny (read 13 November 2026: A$239 on sale, sold out)', 'https://reboot-it.com.au/products/lenovo-m920q-tiny-i5-8500t-2-1ghz-8gb-256gb-ssd-w11p-pc-1yr-wty'], REVIEW_R7, REVIEW_R8], conf: 'low',
       },
       {
         id: 'compulab-fitlet3', ref: 'compulab-fitlet3', short: 'CompuLab fitlet3', kind: 'box',
@@ -304,7 +305,7 @@
         aud: [900, 2500], gst: false, lead: { d: [10, 42], text: 'configured to order by OnLogic, Advantech or a distributor; an estimate' },
         where: [['OnLogic', 'https://www.onlogic.com/'], ['Advantech Australia', 'https://www.advantech.com/en-au']],
         supply: 'wide', usb: 4, m2: 'nvme', eth: 2, wifi: false, board: [170, 120], install: 'package',
-        fit: 'A mid-range fanless industrial PC of the OnLogic Karbon or Advantech ARK class: sealed, wide DC input, industrial temperature, five years and more per model, nothing that says Raspberry Pi. About two and a half Pi 4s and a core about 2.5 Pi 4 cores: it meets the ALERT2 rule. Five to ten times the price of a Pi. A general entry: the named boxes above have better sources.',
+        fit: 'A GENERAL ENTRY for a fanless industrial PC of the OnLogic Karbon or Advantech ARK class: sealed, wide DC input, industrial temperature, five years and more per model, nothing that says Raspberry Pi. Its speed depends on the processor, so check the chip: an Atom x6000E box is about 1.8 Pi 4 cores a core (the figure used here, as for the fitlet3) and misses the ALERT2 rule of 2.5; one with an N150-class or Core processor passes. Five to ten times the price of a Pi. The named boxes above have better sources.',
         src: [['OnLogic Karbon', 'https://www.onlogic.com/computers/industrial/karbon/'], REVIEW_R7], conf: 'low',
       },
       {
@@ -313,7 +314,7 @@
         where: [['IP Trading: request a quote (an authorised Moxa partner)', 'https://www.iptrading.com.au/products/moxa-uc-4410a-t-arm-cortex-a53-quad-core-1-6-ghz-industrial-computer-2-ethernet-2-serial-1-can-4-di-4-do-40-to-75-c-lte-5g-wi-fi-6e'], ['Colterlec (Moxa\'s accredited Australian distributor; 1300 36 26 26)', 'https://colterlec.com.au/']],
         supply: 'wide', usb: 1, m2: false, eth: 2, wifi: false, board: [150, 105], install: 'package',
         parts: 'Moxa UC-4400A ordered with Moxa Industrial Linux 4 Secure (the IEC 62443-4-2 Security Level 2 model, Moxa\'s statement), and a powered USB hub for a second stick',
-        fit: 'THE CERTIFIED INDUSTRIAL GATEWAY: a TPM, secure boot, Debian 13-based Moxa Industrial Linux 4 Secure patched to 2035 and a five-year warranty. About 0.65 of a Pi 4: a small legacy-ALERT site, not ALERT2 growth. ONE USB 2.0 port, so two sticks need a powered hub. Ask for the Secure model by name: the certified option is made to order.',
+        fit: 'THE CERTIFIED INDUSTRIAL GATEWAY: a TPM, secure boot, Debian 13-based Moxa Industrial Linux 4 Secure patched to 2035 and a five-year warranty. About 0.65 of a Pi 4: a small older-ALERT site, not ALERT2 growth. ONE USB 2.0 port, so two sticks need a powered hub. Ask for the Secure model by name: the certified option is made to order. Not checked: whether Moxa\'s Secure system lets you install Node.js and the radio driver from Debian\'s packages, which the open-alert-base package needs. Ask Moxa or the seller before ordering.',
         src: [['Moxa UC-4400A series', 'https://moxa.com/Products/INDUSTRIAL-COMPUTING/Arm-Based-Computers/UC-4400A-Series'], REVIEW_R6], conf: 'medium',
       },
       {
@@ -321,12 +322,12 @@
         aud: [149.95, 155.88], gst: true, lead: { d: [7, 14], text: 'Pakronics, in stock: "ships in 7 to 10 days" (its page, 11 November 2026)' },
         where: [['Pakronics', 'https://www.pakronics.com.au/products/beagley-ai-ss102991834'], ['Core Electronics', 'https://core-electronics.com.au/beagley-ai-open-source-development-board-4-tops.html']],
         supply: '5v', usb: 4, m2: false, eth: 1, wifi: false, board: [85, 56], install: 'package',
-        fit: 'OPEN HARDWARE (OSHWA-certified) and in stock in Australia: four USB 3 ports, 4 GB, about half a Pi 4. microSD only, USB-C power, no industrial rating: a bench board and a small legacy-ALERT site, not ALERT2 growth. Runs BeagleBoard.org\'s own Debian. The hardest class to take through an IT review.',
+        fit: 'OPEN HARDWARE (OSHWA-certified) and in stock in Australia: four USB 3 ports, 4 GB, about half a Pi 4. microSD only, USB-C power, no industrial rating: a bench board and a small older-ALERT site, not ALERT2 growth. Runs BeagleBoard.org\'s own Debian. The hardest class to take through an IT review.',
         src: [['Pakronics: BeagleY-AI', 'https://www.pakronics.com.au/products/beagley-ai-ss102991834'], REVIEW_R5], conf: 'medium',
       },
       {
         id: 'beagleplay', ref: 'beagleplay', short: 'BeaglePlay', kind: 'board',
-        aud: [219.95, 266.95], gst: true, lead: { d: [7, 21], text: 'Little Bird: none in its Sydney stock, dispatch estimated 17–23 November 2026 (its page, 11 November)' },
+        aud: [219.95, 266.95], gst: true, lead: { d: [7, 21], text: 'Little Bird: none in its Sydney stock, dispatch estimated 19–25 November 2026 (its page, 13 November). Robot Gear: a special order, 7–10 days' },
         where: [['Little Bird Electronics', 'https://littlebirdelectronics.com.au/products/beagleplay'], ['Core Electronics (price from a search listing; its page refuses automated reads)', 'https://core-electronics.com.au/beagleplay.html'], ['Robot Gear', 'https://www.robotgear.com.au/Product.aspx/Details/11382-BeaglePlay']],
         supply: '5v', usb: 1, m2: false, eth: 1, wifi: false, board: [85, 56], install: 'package',
         fit: 'OPEN HARDWARE with 16 GB of eMMC: the same TI AM62 chip as the Verdin, so about half a Pi 4. ONE USB host port, so more than one stick needs a powered hub. Its chip is the general-purpose kind and can never do secure boot. Runs BeagleBoard.org\'s own Debian.',
@@ -339,7 +340,7 @@
         where: [['Toradex webshop (businesses only; US$452 a set)', 'https://www.toradex.cn/en/computer-on-modules/verdin-arm-family/nxp-imx95']],
         supply: 'wide', usb: 2, m2: 'b-key', eth: 1, wifi: false, board: [100, 72], cores: 6, install: 'verdin',
         parts: 'module Hexa 4GB ET, Toradex 0227 · Mallow 01611102 · heatsink 23111101',
-        fit: 'IF STAYING WITH TORADEX: the Verdin iMX95 Hexa, not the AM62. Six newer cores (about 1.1 Pi 4s, 0.75 of a Pi 4 core each: an estimate nobody has measured), USB 3 and PCIe on Mallow, supply to 2039 for the module. The datasheet is still preliminary and its power use is "TBD". Torizon OS with open-ALERT\'s container with no privileges. Still under the ALERT2 rule.',
+        fit: 'IF STAYING WITH TORADEX: the Verdin iMX95 Hexa, not the AM62. Six newer cores (about 1.1 Pi 4s, 0.75 of a Pi 4 core each: an estimate nobody has measured), USB 3 and PCIe on Mallow, supply promised to 2039 for the module and to 2034 for the Mallow carrier. The datasheet is still preliminary and its power use is "TBD". Torizon OS with open-ALERT\'s container with no privileges. Still under the ALERT2 rule.',
         src: [['Toradex Verdin iMX95 (Toradex\'s China-domain site, which allowed reading)', 'https://www.toradex.cn/en/computer-on-modules/verdin-arm-family/nxp-imx95'], REVIEW_R1, REVIEW_R8], conf: 'low',
       },
       {
@@ -348,16 +349,16 @@
         lead: { d: [7, 98], text: 'Toradex dispatches within 4 working days when it has stock, then express courier (freight and transit time are shown only after login). A distributor\'s factory lead time is 12–14 weeks (26 on one listing)' },
         where: [['Toradex webshop (businesses only; US$421 a set)', 'https://www.toradex.cn/en/computer-on-modules/verdin-arm-family/ti-am62'], ['element14 Australia (its prices are stale and its listing mistitled: check with the seller)', 'https://au.element14.com/toradex/761200/com-2ghz-32gb-arm-cortex-a72-r5f/dp/4852670'], ['Arrow Australia (Toradex\'s listed distributor; no price found)', 'https://www.arrow.com/en/manufacturers/t/toradex-ag.html'], ['Mouser Australia', 'https://au.mouser.com/c/?m=Toradex']],
         supply: 'wide', usb: 2, m2: 'b-key', eth: 1, wifi: true, board: [100, 72], install: 'verdin', parts: 'module 00761200 · Mallow 01611102 · heatsink 23111101 (the AM62\'s own: the old 23111001 does not fit it)',
-        fit: 'NOT RECOMMENDED. TI silicon on a Swiss module with supply to 2033 (seven years), but four Cortex-A53 cores are about half a Pi 4 (0.5, range 0.45–0.6, from published benchmarks): four channels on a busy day take 72–109% of it and one channel 109% of a core, so it fails both ways. With an AM62, Mallow\'s two USB sockets share one USB 2.0 bus and its M.2 slot has no PCIe. US$421 a set: about A$750–800 inc GST landed through a distributor. Secure boot is still early access.',
+        fit: 'NOT RECOMMENDED. TI silicon on a Swiss module with supply to 2033 (seven years), but four Cortex-A53 cores are about half a Pi 4 (0.5, range 0.45–0.6, from published benchmarks): four channels on a busy day take 72–109% of it and one channel 109% of a core, so it fails both ways. With an AM62, Mallow\'s two USB sockets share one USB 2.0 bus and its M.2 slot has no PCIe. US$421 a set from Toradex: about A$610 before GST and A$670 with it, before the courier; about A$750–800 inc GST through an Australian distributor (report R1, from search listings). Secure boot is still early access.',
         src: [['Toradex Verdin AM62: prices and 2033+ supply (Toradex\'s China-domain site, which allowed reading)', 'https://www.toradex.cn/en/computer-on-modules/verdin-arm-family/ti-am62'], ['Toradex Mallow carrier board datasheet', 'https://docs.toradex.com/116791-mallow_carrier_board_datasheet.pdf'], REVIEW_R1, REVIEW_R8], conf: 'medium',
       },
       {
         id: 'toradex-verdin-am62-dual-mallow', ref: 'toradex-verdin-am62-dual-mallow', short: 'AM62 Dual + Mallow (not recommended)', kind: 'module',
-        aud: [465.65, 512], gst: false,
+        aud: [465.65, 465.65], gst: false,
         lead: { d: [7, 98], text: 'Toradex dispatches within 4 working days when it has stock, then express courier (freight and transit time are shown only after login). A distributor\'s factory lead time is 12–14 weeks' },
         where: [['Toradex webshop (businesses only; US$321 a set)', 'https://www.toradex.cn/en/computer-on-modules/verdin-arm-family/ti-am62'], ['element14 Australia (its prices are stale: check with the seller)', 'https://au.element14.com/toradex/00741200/com-1-4ghz-1gb-arm-cortex-a53/dp/4759329']],
         supply: 'wide', usb: 2, m2: 'b-key', eth: 1, wifi: false, board: [100, 72], install: 'verdin', parts: 'module 00741201 (element14 lists the previous revision, 00741200) · Mallow 01611102 · heatsink 23111101',
-        fit: 'NOT RECOMMENDED. Half the Quad\'s CPU and no Wi-Fi: the builder\'s sums put Flood-Net\'s four channels at 144–218% of it on a busy day. Overloaded, and no cheaper for the speed. For a small legacy-ALERT site a Pi 3B+ does the same for a fraction of the price.',
+        fit: 'NOT RECOMMENDED. Half the Quad\'s CPU and no Wi-Fi: the builder\'s sums put Flood-Net\'s four channels at 144–218% of it on a busy day. Overloaded, and no cheaper for the speed. For a small older-ALERT site a Pi 3B+ does the same for a fraction of the price.',
         src: [['Toradex Verdin AM62: prices (Toradex\'s China-domain site)', 'https://www.toradex.cn/en/computer-on-modules/verdin-arm-family/ti-am62'], REVIEW_R1, REVIEW_R8], conf: 'medium',
       },
       {
@@ -376,10 +377,10 @@
     sdrs: [
       {
         id: 'rtl-sdr-blog-v3', ref: 'rtl-sdr-blog-v3', short: 'RTL-SDR Blog V3',
-        aud: [50.65, 72.39], gst: true, lead: { d: [7, 56], text: 'RTL-SDR Blog store, from China: free economy post takes 1–8 weeks (usually 2–4), or express in 2–8 business days. Its Australian reseller SE Comms (A$65 dongle, A$76 kit) is out of stock. Little Bird can get the SparkFun kit through Sydney for A$185.40' },
-        where: [['RTL-SDR Blog store', 'https://www.rtl-sdr.com/buy-rtl-sdr-dvb-t-dongles/'], ['SE Comms (RTL-SDR Blog\'s Australian reseller)', 'https://secomms.com.au/product-category/rtl-sdr/'], ['Little Bird Electronics', 'https://littlebirdelectronics.com.au/']],
+        aud: [50.65, 195], gst: true, lead: { d: [2, 56], text: 'About A$51 posted from its maker in China: free economy post takes 1–8 weeks (usually 2–4), or express in 2–8 business days. Or A$162–195 as a kit with antennas from an Australian shop this week: Little Bird A$185.40 inc GST, in stock (its page, 13 November 2026); Robot Gear A$161.95 as a special order and Core Electronics about A$195, from search listings. Its Australian reseller SE Comms (A$65 dongle, A$76 kit) is out of stock' },
+        where: [['RTL-SDR Blog store', 'https://www.rtl-sdr.com/buy-rtl-sdr-dvb-t-dongles/'], ['Little Bird Electronics: the kit', 'https://littlebirdelectronics.com.au/products/rtl-sdr-blog-v3-usb-dongle-with-dipole-antenna-kit'], ['Core Electronics: the kit', 'https://core-electronics.com.au/rtl-sdr-blog-v3-usb-dongle-with-dipole-antenna-kit.html'], ['Robot Gear: the kit', 'https://www.robotgear.com.au/Product.aspx/Details/11408-RTL-SDR-BLOG-V3-USB-Dongle-with-Dipole-Antenna-Kit'], ['SE Comms (RTL-SDR Blog\'s Australian reseller)', 'https://secomms.com.au/product-category/rtl-sdr/']],
         mount: 'usb', open: 'partial',
-        note: 'The stick to buy now: supported by every librtlsdr, and in stock at its maker — US$34.95 for the dongle alone, free post from China in 2–4 weeks (up to 8). From Australian stock it comes only as SparkFun\'s A$185 kit.',
+        note: 'The stick to buy now: supported by every librtlsdr, and in stock at its maker. One price everywhere on this site: about A$51 posted from its maker (US$34.95 for the dongle alone, 2–4 weeks, up to 8), or A$162–195 as a kit with antennas from an Australian shop this week.',
         src: [RPI_HW, ['RTL-SDR Blog store: prices, stock by warehouse, shipping policy', 'https://www.rtl-sdr.com/buy-rtl-sdr-dvb-t-dongles/'], ['SE Comms: RTL-SDR Blog V3 dongle A$65, OutOfStock', 'https://secomms.com.au/product/rtl-sdr-blog-v3-r820t2-rtl2832u-1ppm-tcxo-sma-software-defined-radio-dongle/']], conf: 'high', def: true },
       {
         id: 'rtl-sdr-blog-v4', ref: 'rtl-sdr-blog-v4', short: 'RTL-SDR Blog V4',
@@ -492,16 +493,30 @@
     gps: { ref: 'usb-gps-puck', aud: [20.24, 22.65], gst: true, lead: { d: [1, 10], text: 'Little Bird has one TEL0137 in Sydney and 113 at the supplier. The TEL0138 comes from the supplier' }, where: [['Little Bird Electronics', 'https://littlebirdelectronics.com.au/'], ['Core Electronics', 'https://core-electronics.com.au/']],
       note: 'Optional: gives the base its exact location for Flood-Net and a clock when there is no internet.', src: [['Little Bird: DFRobot USB GPS Receiver TEL0137 A$20.24', 'https://littlebirdelectronics.com.au/products/usb-gps-receiver'], ['Little Bird: USB GPS Receiver (2m Extension Cable) TEL0138 A$22.65', 'https://littlebirdelectronics.com.au/products/usb-gps-receiver-2m-extension-cable']], conf: 'high' },
 
-    // ── the custom path ─────────────────────────────────────────────────────
+    // ── a board of your own, later ──────────────────────────────────────────
+    // The hardware review's own estimates (report R10). None comes from a
+    // quote or a published price, so every one is conf 'low' and the page says
+    // so. `lead.d` is days ([0, 0] where the report gives no time of its own);
+    // `where` is who would do it or where to look.
     custom: [
-      { id: 'decoder', name: 'Lighter decoder (filter once per guess, bursts-only front end)', aud: [0, 0], gst: true, where: [['RPi ALERT', 'https://github.com/cdomotor-g/RPi_ALERT'], ['Flood-Net', 'https://github.com/cdomotor-g/MegaNet']], lead: { d: [14, 56], text: 'open-source work in Flood-Net and RPi ALERT; an estimate' },
-        note: 'No hardware cost. Done: since 0.17 RPi ALERT decodes a burst in a third of the time. Built, but off by default: filtering each channel only around bursts, 4 to 14 times less work while nothing is on the air — its first live check missed some of the weakest bursts. Not built yet: reading a frame as ALERT2 straight away on a channel known to carry it, which takes a channel with every slot used from about 1.2 Pi 4 cores to about 0.4.', src: [], conf: 'low' },
-      { id: 'm2card', name: 'M.2 RTL-SDR card: design and first boards', aud: [3000, 8000], gst: false, where: [['A PCB designer with RF experience', 'https://www.engineersaustralia.org.au/'], ['JLCPCB (prototype boards)', 'https://jlcpcb.com/']], lead: { d: [42, 84], text: 'a designer, prototypes, bring-up; an estimate' },
-        note: 'Small, self-contained, testable on today\'s CM5 IO board or Mallow. Lifetime-buy the RTL2832U chips: mainstream distributors don\'t stock them.', src: [['DigiKey forum: no RTL2832U on DigiKey', 'https://forum.digikey.com/t/alternative-for-rtl-sdr-rtl2832u/29884']], conf: 'low' },
-      { id: 'carrier', name: 'Custom carrier board (CM5 or Verdin)', aud: [15000, 40000], gst: false, where: [['Toradex design partners', 'https://www.toradex.com/support/partner-network/hardware/carrier-boards'], ['Raspberry Pi Approved Design Partners', 'https://www.raspberrypi.com/for-industry/design-partners/']], lead: { d: [90, 180], text: 'specification, layout, two board spins; an estimate' },
-        note: 'Start from a published design (Mallow\'s Altium files, or the CM5 IO board\'s KiCad files): 9–36 V input with surge and reverse protection, watchdog, RTC, the SDR on board or in M.2, DIN-rail footprint.', src: [['Toradex Mallow (design files)', 'https://www.toradex.com/products/carrier-board/mallow-carrier-board']], conf: 'low' },
-      { id: 'emc', name: 'EMC testing and RCM for a board of your own', aud: [5000, 15000], gst: false, where: [['NATA-accredited EMC test labs', 'https://nata.com.au/']], lead: { d: [14, 42], text: 'a test lab booking; an estimate' },
-        note: 'An off-the-shelf module and carrier carry their own compliance; a carrier you design needs its own before it goes on a Bureau site.', src: [['ACMA: the RCM', 'https://www.acma.gov.au/compliance-labelling']], conf: 'low' },
+      { id: 'first', name: 'First: an off-the-shelf computer, proved beside the Pi', aud: [0, 0], gst: true, lead: { d: [21, 42], text: 'the bench, then two weeks beside the Pi' },
+        where: [['The side-by-side trial', 'https://cdomotor-g.github.io/open-ALERT/trial.html'], ['Other computers', 'https://cdomotor-g.github.io/open-ALERT/hardware.html']],
+        note: 'No design cost: only the computer. Go further only if an approval or a site then fails for a reason a carrier board fixes.', src: [REVIEW_R10], conf: 'low' },
+      { id: 'carrier', name: 'Design a carrier for a bought module (four to six layers)', aud: [15000, 60000], gst: false, lead: { d: [90, 180], text: 'three to six months, with one or two rounds of changes' },
+        where: [['Raspberry Pi Approved Design Partners', 'https://www.raspberrypi.com/for-industry/design-partners/'], ['Toradex design partners', 'https://www.toradex.com/support/partner-network/hardware/carrier-boards']],
+        note: 'If the design is paid for outside: 150 to 400 hours of an engineer\'s time. Start from one of the four bases above. Mallow\'s files carry no open-source licence: get written permission first.', src: [REVIEW_R10], conf: 'low' },
+      { id: 'proto', name: 'Prototype boards, each round', aud: [2000, 6000], gst: false, lead: { d: [0, 0], text: 'inside the design time' },
+        where: [['JLCPCB (prototype boards)', 'https://jlcpcb.com/']],
+        note: 'One or two rounds. Boards made overseas cost less and take longer to arrive.', src: [REVIEW_R10], conf: 'low' },
+      { id: 'emc', name: 'Radio-noise testing: a first check, then the formal AS/NZS CISPR 32 report', aud: [5000, 15000], gst: false, lead: { d: [0, 0], text: 'a laboratory booking; the report gives no time' },
+        where: [['NATA: accredited laboratories', 'https://nata.com.au/']],
+        note: 'At an accredited Australian laboratory. No Australian price was found: the figure is the report\'s guess. Then the paperwork: a supplier\'s declaration of conformity, the Regulatory Compliance Mark, and an Australian responsible supplier.', src: [REVIEW_R10, ['ACMA: the RCM', 'https://www.acma.gov.au/compliance-labelling']], conf: 'low' },
+      { id: 'total', name: 'In all, to the first unit you could sell', aud: [40000, 120000], gst: false, lead: { d: [270, 450], text: 'nine to fifteen months' },
+        where: [],
+        note: 'The report\'s total, with low confidence.', src: [REVIEW_R10], conf: 'low' },
+      { id: 'unit', name: 'Each carrier after that', aud: [60, 300], gst: false, lead: { d: [0, 0], text: 'not estimated' },
+        where: [],
+        note: 'A$150–300 each when making 10, A$90–180 making 50, A$60–120 making 250. That is before the module and the radio, and before spreading the first cost over the units.', src: [REVIEW_R10], conf: 'low' },
     ],
   };
 

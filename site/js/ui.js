@@ -104,7 +104,7 @@
   const STATUS = { planned: ['Planned', 'bad'], beta: ['Young', 'warn'], eol: ['End of life', 'warn'], discontinued: ['Discontinued', 'bad'], diy: ['DIY', 'warn'], existing: ['Already on site', 'info'] };
   const statusChip = it => STATUS[it.status] ? `<span class="chip st-${STATUS[it.status][1]}">${STATUS[it.status][0]}</span>` : '';
   const grade = g => g == null ? '' : `<span class="grade" role="img" aria-label="Grade ${g} of 5" title="Grade ${g} of 5">${'●'.repeat(g)}<span>${'●'.repeat(5 - g)}</span></span>`;
-  const tempChip = it => it.temp && it.temp[0] != null ? `<span class="chip plain" title="Operating temperature">${it.temp[0]}…${it.temp[1]} °C</span>` : '';
+  const tempChip = it => it.temp && it.temp[0] != null ? `<span class="chip plain" title="${it.tempAssumed ? esc('Operating temperature, assumed. ' + it.tempAssumed) : 'Operating temperature'}">${it.temp[0]}…${it.temp[1]} °C${it.tempAssumed ? ' assumed' : ''}</span>` : '';
   function powerChip(it, role) {
     const p = Object.assign({}, it.power || {}, (it.power || {})[role] || {});
     const w = p.w != null ? p.w : null;
@@ -612,7 +612,7 @@
     if (pw.txW) add('Draw while transmitting', E.fmtW(pw.txW));
     if (pw.rxW) add('Draw while receiving', E.fmtW(pw.rxW));
     if (pw.supply) add('Supply', { '5V': '5 V (USB or header)', '12V': '12 V DC', wide: 'Wide-range DC', usb: 'USB bus power', mains: 'Mains', battery: 'Internal battery', none: 'None' }[pw.supply] || pw.supply);
-    if (it.temp && it.temp[0] != null) add('Operating temperature', `${it.temp[0]} to ${it.temp[1]} °C`);
+    if (it.temp && it.temp[0] != null) add('Operating temperature', `${it.temp[0]} to ${it.temp[1]} °C${it.tempAssumed ? ` (assumed, not the maker's figure. ${it.tempAssumed})` : ''}`);
     add('Ingress', it.ip);
     add('Certifications', (it.certs || []).join(', '));
     if (it.acma != null) add('Australian land-mobile compliance', it.acma ? 'Yes' : 'No — bench or receive only');
@@ -646,10 +646,12 @@
       ${it.src && it.src.length ? `<p class="small"><b>Sources:</b> ${it.src.map(([t, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>`).join(' · ')}</p>` : ''}
       ${ctx && ctx.slot ? `<div class="actions"><button type="button" data-act="pick" data-slot="${esc(ctx.slot)}" data-id="${esc(it.id)}" data-close="1">Choose for ${esc(lc((E.slotDef(ctx.role, ctx.slot) || {}).label || ''))}</button></div>` : ''}`;
   }
-  const HW_LABEL = { os: 'Operating system', cpu: 'Processor', ram: 'Memory (GB)', sdrCh: 'ALERT1 SDR channels it can decode at once', rtc: 'Battery clock', wdog: 'Hardware watchdog', storage: 'Boots from', band: 'Band (MHz)', rfW: 'Transmit power (W)', dataPort: 'Data / accessory port', flat: 'Passes 4,800 bit/s (flat audio)', gainDbi: 'Gain (dBi)', loss10: 'Loss per 10 m at 150 MHz (dB)', tech: 'Technology', iface: 'Outputs', res: 'Resolution', range: 'Range', w: 'Watts', ah: 'Capacity (Ah)', chem: 'Chemistry', dod: 'Usable depth of discharge', a: 'Rating (A)', mppt: 'MPPT', ppm: 'Frequency error (ppm)', bwMHz: 'Bandwidth (MHz)', adc: 'ADC bits', material: 'Material', size: 'Size', wh: 'Battery (Wh)', watts: 'Rating (W)', kinds: 'For', cycles: 'Cycle life' };
+  const HW_LABEL = { os: 'Operating system', cpu: 'Processor', ram: 'Memory (GB)', sdrCh: 'Speed for decoding (a stand-in from benchmarks of other software, unless it is the Raspberry Pi 4 itself)', core: 'Speed of one core', rtc: 'Battery clock', wdog: 'Hardware watchdog', storage: 'Boots from', band: 'Band (MHz)', rfW: 'Transmit power (W)', dataPort: 'Data / accessory port', flat: 'Passes 4,800 bit/s (flat audio)', gainDbi: 'Gain (dBi)', loss10: 'Loss per 10 m at 150 MHz (dB)', tech: 'Technology', iface: 'Outputs', res: 'Resolution', range: 'Range', w: 'Watts', ah: 'Capacity (Ah)', chem: 'Chemistry', dod: 'Usable depth of discharge', a: 'Rating (A)', mppt: 'MPPT', ppm: 'Frequency error (ppm)', bwMHz: 'Bandwidth (MHz)', adc: 'ADC bits', material: 'Material', size: 'Size', wh: 'Battery (Wh)', watts: 'Rating (W)', kinds: 'For', cycles: 'Cycle life' };
   function fmtHw(k, v) {
     if (typeof v === 'boolean') return v ? 'Yes' : 'No';
-    if (Array.isArray(v)) return k === 'band' ? `${v[0]}–${v[1]}` : v.map(x => ({ 'pi-os': 'Raspberry Pi OS', 'pi-os-cm': 'Raspberry Pi OS (Compute Module)', 'debian-arm64': 'Debian/Ubuntu (arm64)', 'debian-amd64': 'Debian/Ubuntu (x86-64)', 'debian-armhf': 'Debian (32-bit ARM)', windows: 'Windows', macos: 'macOS', 'linux-desktop': 'Linux desktop', chromeos: 'ChromeOS', crbasic: 'CRBasic', rtos: 'Firmware (no OS)', arduino: 'Arduino', micropython: 'MicroPython', 'vendor-linux': 'Vendor Linux', 'openwrt': 'OpenWrt (RutOS)', vendor: 'Vendor firmware', serial: 'serial', sdi12: 'SDI-12', ma420: '4–20 mA', rs485: 'RS-485', pulse: 'pulse', analog: 'analogue', rs232: 'RS-232' }[x] || x)).join(', ');
+    if (Array.isArray(v)) return k === 'band' ? `${v[0]}–${v[1]}` : v.map(x => ({ 'pi-os': 'Raspberry Pi OS', 'pi-os-cm': 'Raspberry Pi OS (Compute Module)', 'debian-arm64': 'Debian/Ubuntu (arm64)', 'debian-amd64': 'Debian/Ubuntu (x86-64)', 'debian-armhf': 'Debian (32-bit ARM)', torizon: 'Torizon OS (Toradex\'s own Linux; programs run in containers)', windows: 'Windows', macos: 'macOS', 'linux-desktop': 'Linux desktop', chromeos: 'ChromeOS', crbasic: 'CRBasic', rtos: 'Firmware (no OS)', arduino: 'Arduino', micropython: 'MicroPython', 'vendor-linux': 'Vendor Linux', 'openwrt': 'OpenWrt (RutOS)', vendor: 'Vendor firmware', serial: 'serial', sdi12: 'SDI-12', ma420: '4–20 mA', rs485: 'RS-485', pulse: 'pulse', analog: 'analogue', rs232: 'RS-232' }[x] || x)).join(', ');
+    if (k === 'sdrCh') { const x = Math.round(v / 8 * 100) / 100; return x === 1 ? 'A Raspberry Pi 4: the yardstick' : `About ${x} times a Raspberry Pi 4`; }
+    if (k === 'core') return `About ${v} of a Raspberry Pi 4 core (each channel is decoded on one core)`;
     if (k === 'dod') return `${Math.round(v * 100)}%`;
     if (k === 'chem') return { agm: 'Lead-acid (AGM)', gel: 'Lead-acid (gel)', lfp: 'Lithium iron phosphate', primary: 'Primary lithium (not rechargeable)' }[v] || v;
     if (k === 'storage') return { sd: 'microSD card', emmc: 'eMMC', ssd: 'SSD', nvme: 'NVMe SSD', flash: 'On-board flash' }[v] || v;
@@ -668,7 +670,7 @@
       ['Family', it => E.catLabel(it.cat)], ['Vendor', it => it.vendor], ['Price', it => { const u = E.unitPrice(it, S.settings, (it.slots && it.slots[0] || 'field:').split(':')[0]); return u == null ? 'On request' : money(u); }],
       ['ALERT1', it => (it.can || []).filter(t => /^a1-/.test(t)).join(', ') || '—'], ['ALERT2', it => (it.can || []).filter(t => /^a2-/.test(t)).join(', ') || '—'],
       ['Open source', it => it.open ? `${it.open.sw || '—'}${it.open.hw === 'open' ? ', open hardware' : ''}` : '—'], ['Grade', it => it.grade != null ? `${it.grade} of 5` : '—'],
-      ['Temperature', it => it.temp && it.temp[0] != null ? `${it.temp[0]} to ${it.temp[1]} °C` : '—'], ['Average draw', it => it.power && it.power.w != null ? E.fmtW(it.power.w) : '—'],
+      ['Temperature', it => it.temp && it.temp[0] != null ? `${it.temp[0]} to ${it.temp[1]} °C${it.tempAssumed ? ' (assumed)' : ''}` : '—'], ['Average draw', it => it.power && it.power.w != null ? E.fmtW(it.power.w) : '—'],
       ['Status', it => (STATUS[it.status] || ['Current'])[0]], ['Lifecycle', it => it.life || '—'], ['For', it => (it.pros || []).join('; ')], ['Against', it => (it.cons || []).join('; ')],
     ];
     return `<header class="dlg-h"><h2 id="dlg-title">Compare</h2><button type="button" class="ghost" data-act="close" aria-label="Close">✕</button></header>

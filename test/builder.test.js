@@ -41,7 +41,9 @@ test('every builder option is well formed and its references resolve', () => {
     // a channel is decoded on one core, so every computer needs a number of cores and a one-core speed
     const n = K.cores(p);
     assert.ok(Number.isInteger(n) && n >= 1 && n <= 64, `${p.id}: ${n} cores`);
-    assert.ok(K.oneCore(p) > 0 && Math.abs(K.oneCore(p) * n - K.capacity(p)) < 1e-9, `${p.id}: its one-core speed is its capacity divided by its cores`);
+    // ... its capacity divided by its cores, unless the review gives one core's speed apart from the whole (`hw.core`)
+    if (it.hw.core > 0) assert.equal(K.oneCore(p), it.hw.core, `${p.id}: its one-core speed is the catalogue's own figure`);
+    else assert.ok(K.oneCore(p) > 0 && Math.abs(K.oneCore(p) * n - K.capacity(p)) < 1e-9, `${p.id}: its one-core speed is its capacity divided by its cores`);
   }
 });
 
@@ -431,14 +433,35 @@ test('the review\'s computers carry its planning values: the whole computer and 
   for (const [id, x] of Object.entries(whole)) near(rec(id).hw.sdrCh / 8, x, 0.006, `${id}: times a Pi 4`);
   // the same chip gets the same speed: a BeaglePlay is a Verdin AM62 Quad (U3 F5)
   assert.equal(rec('beagleplay').hw.sdrCh, rec('toradex-verdin-am62-mallow').hw.sdrCh);
-  // one core: the i.MX 95 has six cores at about 0.73 of a Pi 4 core each, an A53 four at 0.5
-  near(K.oneCore(platform('toradex-verdin-imx95-mallow')), 0.733, 0.005, 'the i.MX 95, a core');
+  // one core: the review gives the i.MX 95 as 1.1 in all and 0.75 a core (six cores), and the same figure must show on every page; an A53 is 0.5
+  near(K.oneCore(platform('toradex-verdin-imx95-mallow')), 0.75, 0.001, 'the i.MX 95, a core');
+  assert.equal(rec('toradex-verdin-imx95-mallow').hw.core, 0.75);
   assert.equal(K.cores(platform('toradex-verdin-imx95-mallow')), 6);
   near(K.oneCore(platform('moxa-uc-4400a')), 0.65, 0.005, 'a Moxa core');
   // the ALERT2 buying rule (four cores, each at least 2.5 Pi 4 cores) is met by the N150-class boxes and nothing slower
   const four = K.planSticks(FOUR, 'auto');
   const meets = B.platforms.filter(p => K.headroom(four, {}, p).meetsRule).map(p => p.id).sort();
-  assert.deepEqual(meets, ['fanless-industrial-x86', 'lenovo-m920q-tiny-refurb', 'lenovo-thinkedge-se10n-gen2', 'mini-pc-n150', 'onlogic-cl260', 'protectli-vault-vp2430']);
+  assert.deepEqual(meets, ['lenovo-m920q-tiny-refurb', 'lenovo-thinkedge-se10n-gen2', 'mini-pc-n150', 'onlogic-cl260', 'protectli-vault-vp2430']);
+  // the general "fanless industrial x86" entry is rated as its Atom x6000E models are (the fitlet3's 1.8), so it does not claim the rule
+  assert.equal(rec('fanless-industrial-x86').hw.sdrCh, rec('compulab-fitlet3').hw.sdrCh);
+  assert.match(platform('fanless-industrial-x86').fit, /depends on the processor/);
+  assert.ok(!/FIRST CHOICE/.test(platform('fanless-industrial-x86').fit));
+  // a RevPi Connect 5 holds a Compute Module 5: the same speed
+  assert.equal(rec('revpi-connect-5').hw.sdrCh, rec('rpi-cm5-io').hw.sdrCh);
+  // a temperature nobody read from the maker says so, and the builder's warning does not call it a rating
+  for (const id of ['lenovo-m920q-tiny-refurb', 'dell-optiplex-micro', 'beagleplay']) assert.ok((rec(id).tempAssumed || '').length > 20, `${id}: its temperature is assumed, and must say so`);
+  const hot = K.build(Object.assign({}, BUILD, { platform: 'lenovo-m920q-tiny-refurb' }));
+  assert.ok(hot.warn.some(w => /No temperature rating was read/.test(w[1])) && !hot.warn.some(w => /is rated to 35/.test(w[1])), 'an assumed temperature is not a rating');
+  // the Verdins and the Luna run Torizon OS, not plain Debian (U3 F13)
+  for (const id of ['toradex-verdin-am62-mallow', 'toradex-verdin-am62-dual-mallow', 'toradex-verdin-imx95-mallow', 'toradex-luna-sl1680']) assert.deepEqual(rec(id).hw.os, ['torizon'], id);
+  const agent = rec('rpi-alert');
+  assert.match(agent.runsOn.torizon, /container/);
+  for (const os of ['debian-amd64', 'debian-arm64']) { assert.match(agent.runsOn[os], /open-alert-base/, os); assert.ok(!/install by hand/.test(agent.runsOn[os]), os); }
+  // nobody is told a maker certifies what it does not
+  for (const [name, s] of [['catalogue', JSON.stringify(rec('lenovo-thinkedge-se10n-gen2'))], ['builder', JSON.stringify(platform('lenovo-thinkedge-se10n-gen2'))]]) {
+    assert.ok(!/certified by the makers of Ubuntu/i.test(s), `${name}: the ThinkEdge's certification is Lenovo's statement`);
+    assert.match(s, /Canonical/, `${name}: says what Canonical's list showed`);
+  }
   // a speed nobody has measured says so
   for (const id of Object.keys(whole)) if (!['rpi-4-4gb'].includes(id)) assert.ok(rec(id).conf !== 'high', `${id}: its speed is a stand-in`);
 });
@@ -497,12 +520,20 @@ test('open-ALERT\'s package is the install route for every computer that is not 
   const text = pkg.steps.map(s => s.items.join(' ')).join(' ');
   assert.match(text, /open-alert-base/);
   assert.match(text, /github\.com\/cdomotor-g\/open-ALERT\/releases/);
-  assert.match(text, /nothing has yet been run with a real radio stick on a computer that is not a Raspberry Pi/);
+  assert.match(text, /nothing has yet been run with a real radio stick on a computer that is not a Raspberry Pi/i);
+  // the package's steps do not borrow the Raspberry Pi install's upkeep: no "alert" account, no updates from Flood-Net, one request for the token
+  assert.ok(!/<code>alert<\/code> account/.test(text), 'the package installs no "alert" account');
+  assert.ok(!/under-voltage/.test(text), 'under-voltage is a Raspberry Pi message');
+  assert.match(text, /new <code>open-alert-base<\/code> package/);
+  assert.equal(text.split('Request a token').length - 1, 1, 'the token is asked for once');
+  assert.ok(!/Most of these makers offer or certify/.test(text));
+  const pi = K.build(BUILD).steps.map(s => s.items.join(' ')).join(' ');
+  assert.match(pi, /under-voltage/); assert.match(pi, /<code>alert<\/code> account/);
   const ver = K.build(Object.assign({}, BUILD, { platform: 'toradex-verdin-imx95-mallow' }));
   const vtext = ver.steps.map(s => s.items.join(' ')).join(' ');
   assert.match(vtext, /Torizon OS/);
   assert.match(vtext, /firmware\/container/);
-  assert.match(vtext, /nothing has yet been run with a real radio stick/);
+  assert.match(vtext, /nothing has yet been run with a real radio stick/i);
   // a computer sold by quote is flagged, so its missing price is not mistaken for a free one
   const quote = K.build(Object.assign({}, BUILD, { platform: 'moxa-uc-4400a' }));
   assert.ok(quote.warn.some(w => /by quote/.test(w[1])), 'the quote is flagged');

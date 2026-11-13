@@ -9,7 +9,7 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const SITE = path.join(ROOT, 'site');
-const PAGES = ['index.html', 'build.html', 'trial.html'];
+const PAGES = ['index.html', 'build.html', 'trial.html', 'hardware.html'];
 
 // A PNG's width and height, from its header.
 const pngSize = f => { const b = fs.readFileSync(f); assert.equal(b.toString('ascii', 1, 4), 'PNG', `${f} is not a PNG`); return [b.readUInt32BE(16), b.readUInt32BE(20)]; };
@@ -46,13 +46,13 @@ test('every page links the manifest and the iPhone icon, and starts the offline 
 
 test('old addresses forward to the pages, keeping share links', () => {
   // published with site/ as the top folder: /site/... is an old address
-  for (const [f, target] of [['index.html', '../'], ['build.html', '../build.html'], ['trial.html', '../trial.html']]) {
+  for (const [f, target] of [['index.html', '../'], ['build.html', '../build.html'], ['trial.html', '../trial.html'], ['hardware.html', '../hardware.html']]) {
     const s = fs.readFileSync(path.join(SITE, 'site', f), 'utf8');
     assert.ok(s.includes(`location.replace('${target}' + location.search + location.hash)`), `site/site/${f} → ${target}`);
     assert.ok(s.includes(`url=${target}"`), `site/site/${f}: a fallback without JavaScript`);
   }
   // published from the branch, the repository's top folder is the site
-  for (const [f, target] of [['index.html', 'site/'], ['build.html', 'site/build.html'], ['trial.html', 'site/trial.html']]) {
+  for (const [f, target] of [['index.html', 'site/'], ['build.html', 'site/build.html'], ['trial.html', 'site/trial.html'], ['hardware.html', 'site/hardware.html']]) {
     const s = fs.readFileSync(path.join(ROOT, f), 'utf8');
     assert.ok(s.includes(`location.replace('${target}' + location.search + location.hash)`), `${f} → ${target}`);
   }

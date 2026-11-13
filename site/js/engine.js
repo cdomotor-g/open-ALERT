@@ -716,6 +716,23 @@
     }
     return best || { level: 'fail' };
   }
+  // How many SDR channels a host carries with room to spare. `hw.sdrCh` is 8
+  // times the host's speed as a whole computer in Raspberry Pi 4s (a Pi 4 is
+  // 8): a speed, not a count of channels. By the base station builder's sums
+  // (site/data/builder.js) a channel in a 1.44 MHz window on a busy day takes
+  // about 0.55 of a Pi 4 core on a busy computer (Flood-Net's four channels:
+  // 2.2 Pi 4 cores), and a computer is planned to 70%. So a Pi 4, worth four
+  // Pi 4 cores, carries 5; a Pi 3B+ 2; an N150 box 15.
+  const SDR_CH_CORE = 0.55, SDR_SAFE = 0.7;
+  function sdrChannels(host) {
+    const s = host && host.hw && host.hw.sdrCh;
+    return s > 0 ? Math.max(1, Math.floor(SDR_SAFE * (s / 2) / SDR_CH_CORE + 1e-9)) : 0;
+  }
+  // One core's speed in Pi 4 cores: each channel is decoded on one core.
+  function sdrCore(host) {
+    const hw = (host && host.hw) || {};
+    return hw.core > 0 ? hw.core : hw.sdrCh > 0 ? hw.sdrCh / 2 / (hw.cores > 0 ? hw.cores : 4) : 0;
+  }
   // Can this software (or gateway) read this receiver?
   function reads(sw, rx) {
     if (!sw || !rx) return false;
@@ -858,9 +875,10 @@
       }
       const sdrs = c.receivers.filter(p => can(p.it, 'a1-iq'));
       if (sdrs.length && (d.f.rx || []).includes('a1')) {
-        const cap = hw.sdrCh || 0;
+        const cap = sdrChannels(it);
         if (cap === 0) say('fail', 'Too slow to decode an SDR');
-        else if (cap < d.f.channels) say('warn', `Decodes about ${cap} SDR channel${cap === 1 ? '' : 's'} at once; you asked for ${d.f.channels}`);
+        else if (cap < d.f.channels) say('warn', `Carries about ${cap} SDR channel${cap === 1 ? '' : 's'} with room to spare (planned to 70% of the computer, on a busy day); you asked for ${d.f.channels}. Check it in the base station builder`);
+        else if (sdrCore(it) * SDR_SAFE < SDR_CH_CORE) say('info', 'Each of its cores is slower than a Raspberry Pi 4 core, and a channel is decoded on one core: keep each stick\'s channels close together, or one channel can take a whole core');
       }
       if (d.f.screen && hw.kiosk === false) say('warn', 'Not enough memory for the screen dashboard');
       if (d.f.survey && !hw.rtc) say('info', 'No battery clock — add an RTC for surveys');
@@ -982,7 +1000,7 @@
       k.rxA1 = a1Rx.length > 0;
       k.rxA2 = a2Rx.length > 0;
       let ch = 0;
-      for (const p of a1Rx) ch += can(p.it, 'multi-ch') ? Math.min(8, (host && host.hw && host.hw.sdrCh) || 0) * p.qty : p.qty;
+      for (const p of a1Rx) ch += can(p.it, 'multi-ch') ? Math.min(8, sdrChannels(host)) * p.qty : p.qty;
       k.a1Channels = ch;
       k.chains = c.receivers.reduce((n, p) => n + p.qty, 0);
       const outs = new Set([...(swOk ? sw.outputs || [] : []), ...((gw && gw.outputs) || [])]);

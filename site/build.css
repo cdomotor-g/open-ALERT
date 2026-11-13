@@ -160,7 +160,7 @@
   .chks { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* ── the Mallow trial ── */
+/* ── the side-by-side trial ── */
 .trialset svg { min-width: 620px; }
 .trialset .cap1 { fill: var(--text); font-size: 12px; font-weight: 600; text-anchor: middle; }
 .trialset .cap2 { fill: var(--dim); font-size: 10.5px; text-anchor: middle; }
@@ -209,15 +209,45 @@
 .trouble dd { margin: 4px 0 0 0; max-width: 920px; }
 @media (max-width: 900px) { .cards3 { grid-template-columns: minmax(0, 1fr); } }
 #results .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+/* The comparison table: two lines a computer. The first holds its figures in
+   columns that keep their width; the second runs the full width with what it
+   is built with and what the review says of it. */
 .var td, .var th { white-space: normal; }
-.var .num, .var th[scope="row"] b { white-space: nowrap; }
+.var .num { white-space: nowrap; }
 .var thead th { white-space: normal; }
-.var td:last-child { min-width: 210px; }
+.var th[scope="row"] { min-width: 150px; }
+.var th[scope="row"] .chip { margin-top: 4px; white-space: normal; }
+.var .var-sp { white-space: nowrap; }
+.var td[data-l="Speed"] { min-width: 150px; }
+.var td[data-l="Rated"] { min-width: 96px; }
+.var td[data-l="ALERT2 rule"] { min-width: 96px; }
+.var tr:not(.var-more):not(.sub) > * { border-bottom: 0; padding-bottom: 2px; }
+.var tr.var-more > td { padding-top: 2px; padding-bottom: 10px; max-width: none; }
 .var tr.pick-buy th[scope="row"] b { color: var(--ok); }
 .var tr.pick-out { opacity: .7; }
 .var td.num .small { white-space: normal; max-width: 11em; margin-left: auto; }
-.var td:nth-child(5) { white-space: nowrap; }
 .var tr.sub .grp-sub { text-transform: none; letter-spacing: 0; font-weight: normal; }
 .var tr.pick-ref th[scope="row"] b { color: var(--accent); }
+/* A table that becomes a stack of small cards on a phone: each row a card,
+   each cell under its column's name (the cell's data-l). */
+@media (max-width: 700px) {
+  .stk { min-width: 0; }
+  .stk thead { display: none; }
+  .stk, .stk tbody, .stk tfoot, .stk tr, .stk th, .stk td { display: block; width: auto; min-width: 0 !important; }
+  .stk tr { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .stk tbody tr:last-child { border-bottom: 0; }
+  .stk th, .stk td { border: 0 !important; padding: 2px 0 !important; text-align: left; white-space: normal !important; }
+  .stk td[data-l]::before { content: attr(data-l); display: block; margin-top: 7px; font-size: .74em; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+  .stk tr.sub { padding: 0; }
+  .stk tr.sub th { padding: 9px 12px !important; }
+  .stk .num .small { margin-left: 0; }
+  .stk td.num, .tbl.stk td.num { text-align: left; }
+  /* the comparison table: a computer's two lines read as one card */
+  .var.stk tr:not(.var-more):not(.sub) { border-bottom: 0; padding-bottom: 0; }
+  .var.stk tr.var-more { padding-top: 4px; }
+}
+/* long commands in the steps wrap instead of pushing the page sideways */
+.phases code, .build-steps code, .path code { overflow-wrap: anywhere; }
+.phases li, .build-steps li, .trouble dd { overflow-wrap: break-word; }
 .luna-check { margin-top: 14px; }
 .luna-check ul { margin: 6px 0; padding-left: 1.2em; }

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Other computers · open-ALERT</title>
+<meta name="description" content="Which computer other than a Raspberry Pi can run an ALERT receiving base station: every computer the hardware review looked at, compared for speed, price, power, security and where to buy it, with what an IT security review asks and the software that runs on them.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0e3b5c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="open-ALERT">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="build.css">
+<link rel="stylesheet" href="review.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+<header class="hero">
+  <div class="wrap hero-in">
+    <img src="icon.svg" width="52" height="52" alt="">
+    <div class="hero-text">
+      <h1>open-ALERT <span>other computers</span></h1>
+      <p>Which computer, other than a Raspberry Pi, can run a receiving base station, pass an IT security review, be bought in Australia at a sensible price, and leave room for ALERT2? What to buy, what to leave out, every computer compared, and where to get each one.</p>
+    </div>
+    <button type="button" class="ghost theme-btn" data-act="theme" aria-label="Colour theme" title="Colour theme"><span id="theme-label">Auto</span></button>
+  </div>
+  <nav class="wrap sitenav" aria-label="open-ALERT pages">
+    <div class="nav-group"><span class="nav-h">Plan</span>
+      <a class="nav-link" href="./#configure"><b>Sites</b><span>configure each site</span></a>
+      <a class="nav-link" href="./#network"><b>Network</b><span>add them up, check they meet</span></a>
+      <a class="nav-link" href="./#catalogue"><b>Parts</b><span>the hardware catalogue</span></a>
+    </div>
+    <div class="nav-group"><span class="nav-h">Build</span>
+      <a class="nav-link" href="build.html"><b>Base station</b><span>builder, costs, steps</span></a>
+      <a class="nav-link" href="trial.html"><b>Side-by-side trial</b><span>beside the Pi</span></a>
+      <a class="nav-link" href="hardware.html" aria-current="page"><b>Other computers</b><span>beyond the Pi</span></a>
+    </div>
+    <div class="nav-group"><span class="nav-h">Learn</span>
+      <a class="nav-link" href="./#about"><b>How it works</b><span>ALERT, the numbers, the law</span></a>
+    </div>
+  </nav>
+</header>
+
+<main id="main" class="wrap rv">
+  <noscript><p class="note bad">This page needs JavaScript to draw its tables and pictures. The review itself can be read on <a href="https://github.com/cdomotor-g/open-ALERT/blob/main/docs/hardware-review/README.md">GitHub</a>.</p></noscript>
+  <nav class="onpage" aria-label="On this page"><span class="dim small">On this page</span> <a href="#verdict">The verdict</a> <a href="#trial">The old Mallow trial</a> <a href="#security">IT security</a> <a href="#computers">The computers</a> <a href="#speed">Speed</a> <a href="#cost">What it costs</a> <a href="#software">The software</a> <a href="#custom">A board of our own</a> <a href="#radio">The radio</a> <a href="#words">The words</a> <a href="#sources">Sources</a></nav>
+
+  <p class="small dim" id="rv-intro"></p>
+
+  <section class="sect" id="verdict">
+    <h2>The verdict</h2>
+    <div id="out-verdict"></div>
+  </section>
+
+  <section class="sect" id="trial">
+    <h2>The old Mallow trial, claim by claim</h2>
+    <div id="out-claims"></div>
+  </section>
+
+  <section class="sect" id="security">
+    <h2>What IT security asks</h2>
+    <div id="out-security"></div>
+  </section>
+
+  <section class="sect" id="computers">
+    <h2>The computers compared</h2>
+    <div id="out-computers"></div>
+  </section>
+
+  <section class="sect" id="speed">
+    <h2>Speed and headroom</h2>
+    <div id="out-speed"></div>
+  </section>
+
+  <section class="sect" id="cost">
+    <h2>What it costs to get one working</h2>
+    <div id="out-cost"></div>
+  </section>
+
+  <section class="sect" id="software">
+    <h2>The software</h2>
+    <div id="out-software"></div>
+  </section>
+
+  <section class="sect" id="custom">
+    <h2>A board of our own, later</h2>
+    <div id="out-custom"></div>
+  </section>
+
+  <section class="sect" id="radio">
+    <h2>The radio</h2>
+    <div id="out-radio"></div>
+  </section>
+
+  <section class="sect" id="words">
+    <h2>What the words on this page mean</h2>
+    <div id="out-words"></div>
+  </section>
+
+  <section class="sect" id="sources">
+    <h2>Sources</h2>
+    <div id="out-sources"></div>
+    <h3 id="credits">Photo credits</h3>
+    <div id="out-credits"></div>
+  </section>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<footer class="wrap small dim">
+  <p>open-ALERT · MIT licence (the photographs keep their own licences: see the <a href="#credits">photo credits</a>) · <a href="https://github.com/cdomotor-g/open-ALERT" target="_blank" rel="noopener">source on GitHub</a> · prices indicative, read 11 and 13 November 2026: check with the seller · a plan to start from, not an endorsement.</p>
+</footer>
+
+<script src="data/review-images.js"></script>
+<script src="data/review.js"></script>
+<script src="js/review.js"></script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

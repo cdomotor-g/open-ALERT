@@ -34,7 +34,8 @@
     </div>
     <div class="nav-group"><span class="nav-h">Build</span>
       <a class="nav-link" href="build.html"><b>Base station</b><span>builder, costs, steps</span></a>
-      <a class="nav-link" href="trial.html"><b>Mallow trial</b><span>beside the Pi</span></a>
+      <a class="nav-link" href="trial.html"><b>Side-by-side trial</b><span>beside the Pi</span></a>
+      <a class="nav-link" href="hardware.html"><b>Other computers</b><span>beyond the Pi</span></a>
     </div>
     <div class="nav-group"><span class="nav-h">Learn</span>
       <a class="nav-link" id="tab-about" href="#about"><b>How it works</b><span>ALERT, the numbers, the law</span></a>
@@ -111,6 +112,7 @@
       <h3>The software in this ecosystem</h3>
       <ul>
         <li><a href="https://github.com/cdomotor-g/RPi_ALERT" target="_blank" rel="noopener">RPi ALERT</a> (MIT) — a Raspberry Pi base-station OS: RTL-SDR sticks (several ALERT1 channels each), Quansheng radios on the ALERT firmware, ELPRO ERT-A2 (ALERT2), GPS; forwards to Flood-Net.</li>
+        <li><a href="https://github.com/cdomotor-g/open-ALERT/tree/main/firmware" target="_blank" rel="noopener">open-ALERT's firmware</a> (MIT) — RPi ALERT's signed release, unchanged, wrapped as a package (<code>open-alert-base</code>) for a computer that is not a Raspberry Pi, on Debian 13 or Ubuntu 24.04. New: it has not yet met a real radio stick on such a computer. Which computer to buy, and what an IT security review asks of it, is on the <a href="hardware.html">Other computers</a> page; how to prove one beside a Pi is the <a href="trial.html">side-by-side trial</a>.</li>
         <li><a href="https://github.com/cdomotor-g/quansheng_alert_v3" target="_blank" rel="noopener">quansheng_alert_v3</a> (Apache-2.0) — turns a Quansheng UV-K5 V3 or UV-K1 into a receive-only ALERT1 decoder on USB-C; <a href="https://github.com/cdomotor-g/quansheng_alert" target="_blank" rel="noopener">quansheng_alert</a> for the older DP32G030 radios.</li>
         <li><a href="https://github.com/cdomotor-g/ALERT1v3" target="_blank" rel="noopener">FW-LAB Receiver (ALERT1v3)</a> — an RTL-SDR and GNU Radio ALERT receiver with MQTT and a web UI.</li>
         <li><a href="https://github.com/cdomotor-g/MegaNet" target="_blank" rel="noopener">Flood-Net</a> — the network's web app: the Serial Monitor in Chrome reads the same receivers from a desk PC, and its ingest takes HTTPS, MQTT and the Bureau's HFEM lines.</li>

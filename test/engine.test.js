@@ -382,3 +382,29 @@ test('network totals add up the sites', () => {
   near(net.totals.hw, (ra.cost.hw - ra.cost.delivery.total) * 3 + ra.cost.delivery.total + rb.cost.hw, 1e-9);
   assert.equal(net.totals.tx, 3);
 });
+
+// ── SDR channels: a speed, turned into channels the same way the builder sums them ──
+test('a computer\'s speed becomes channels at 70% of it: a Pi 4 carries five, a slow one says so', () => {
+  const p = P.designs.find(x => x.role === 'base' && x.f.channels === 4 && x.picks.host === 'rpi-4-4gb');
+  assert.ok(p, 'a four-channel Pi 4 base among the presets');
+  const hostFit = host => {
+    const d = E.fromPreset(p);
+    d.picks.host = [{ id: host, qty: 1 }];
+    const r = E.evaluate(d, SETTINGS);
+    return r.slots.find(s => s.def.id === 'host').picks[0].fit.reasons.map(x => x.text).join(' | ');
+  };
+  // four channels: fine on a Pi 4 and on an N150 box; a Pi 3B+, a Zero 2 W and a Verdin AM62 carry two with room to spare
+  assert.ok(!/SDR channel/.test(hostFit('rpi-4-4gb')));
+  assert.ok(!/SDR channel/.test(hostFit('onlogic-cl260')));
+  for (const id of ['rpi-3b-plus', 'rpi-zero-2w', 'toradex-verdin-am62-mallow', 'beagleplay']) assert.match(hostFit(id), /Carries about 2 SDR channels with room to spare/, id);
+  // never a fraction of a channel, and never the old wording
+  for (const it of CATALOG.filter(x => x.hw && x.hw.sdrCh > 0 && (x.slots || []).includes('base:host'))) {
+    const t = hostFit(it.id);
+    assert.ok(!/Decodes about/.test(t) && !/\d\.\d+ SDR channel/.test(t), `${it.id}: ${t}`);
+  }
+  // a computer that is not a Raspberry Pi is sent to the package, not told to install by hand; a Verdin to the container on Torizon OS
+  assert.match(hostFit('onlogic-cl260'), /open-alert-base package/);
+  assert.ok(!/install by hand/.test(hostFit('onlogic-cl260') + hostFit('moxa-uc-4400a') + hostFit('beagley-ai')));
+  assert.match(hostFit('toradex-verdin-imx95-mallow'), /Torizon OS/);
+  assert.match(E.item('rpi-alert').fw.name, /^RPi ALERT \d+\.\d+\.\d+$/);
+});

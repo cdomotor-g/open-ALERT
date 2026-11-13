@@ -146,8 +146,15 @@
     if (!n) { const m = cpu.match(/\b(single|dual|quad|hexa|six|octa|eight)[ -]?core/i); if (m) n = { single: 1, dual: 2, quad: 4, hexa: 6, six: 6, octa: 8, eight: 8 }[m[1].toLowerCase()]; }
     return n || B.model.coresDefault;
   }
-  // One core's speed, in Pi 4 cores: the whole computer divided by its cores.
-  const oneCore = p => { const n = cores(p); return n ? capacity(p) / n : 0; };
+  // One core's speed, in Pi 4 cores: the catalogue's own figure where the
+  // review gives one apart from the whole (`hw.core`: the Verdin iMX95's
+  // 0.75), else the whole computer divided by its cores.
+  const oneCore = p => {
+    const it = item(p.ref);
+    if (it && it.hw && it.hw.core > 0) return it.hw.core;
+    const n = cores(p);
+    return n ? capacity(p) / n : 0;
+  };
 
   // The verdict, and which limit bites. `use` is all the channels together as
   // a share of the whole computer; `chUse` (optional) the busiest channel as a
@@ -189,7 +196,7 @@
   const TERMS = {
     pi4core: ['Pi 4 core', 'The work one of a Raspberry Pi 4\'s four processor cores can do. Every figure here is counted in these: a computer worth 12 Pi 4 cores does the decoding of three Raspberry Pi 4s.'],
     whole: ['the whole computer', 'All the channels together, and the screen if there is one, set against everything the computer has. Plan to use no more than 70% of it, so a storm has room.'],
-    onecore: ['one core', 'Each channel is decoded on one processor core and cannot be spread over several. A channel that needs more work than one core can do falls behind and loses bursts, however many other cores sit idle. A computer\'s one-core speed here is its total divided by its number of cores; plan to use no more than 70% of a core.'],
+    onecore: ['one core', 'Each channel is decoded on one processor core and cannot be spread over several. A channel that needs more work than one core can do falls behind and loses bursts, however many other cores sit idle. A computer\'s one-core speed here is its total divided by its number of cores (or the hardware review\'s own figure for a core, where it gives one); plan to use no more than 70% of a core.'],
     window: ['window', 'The slice of the radio band one stick hands to the computer, from 240 kHz to 2.4 MHz wide. Every channel on that stick works through the whole slice, so a wider window costs more.'],
     between: ['between bursts', 'The work a channel does all the time, even with nothing on the air: picking its own channel out of the stick\'s window. RPi ALERT\'s own Raspberry Pi 4 measured 0.06 of a core a channel in a 240 kHz window, 0.27 in 1.2 MHz and 0.31 in 1.44 MHz; the other windows are worked out in proportion.'],
     busy: ['busy computer', 'With every core working, RPi ALERT\'s own Raspberry Pi 4 gave each channel about 1.6 times the share of a core it had measured for one channel on its own. Nobody has measured that on another computer, so two figures are shown: the measurement alone, and 1.6 times it. The verdict uses the higher.'],
@@ -198,6 +205,53 @@
     slots: ['every slot used', 'ALERT2 gives each station its own time slot to send in. In the version RPi ALERT reads (1.1) a slot is at least half a second, so one channel carries at most 120 frames a minute. Real networks run far below that: the link heard in Brisbane sends about 20 a minute, and a 155-site network in the United States about 31. The newer version (1.2, January 2025) allows quarter-second slots, which RPi ALERT cannot yet read in full.'],
     decoder: ['decoder', 'The part of RPi ALERT that turns radio samples into readings. Full, Lean and Light are faster and faster ways to decode a burst; "around bursts" lets a channel rest while nothing is on the air, and is off by default because its first check in the field missed some weak bursts.'],
   };
+
+  // The other words the builder and the trial use, with one home for their
+  // meanings: the hardware review's list (site/data/review.js, `terms`), which
+  // both pages load. WORDS is the ids each page's "What the words on this page
+  // mean" list prints after its own; MARKS says which words in a text get the
+  // meaning on hover (the first time each appears in it).
+  const WORDS = ['base-station', 'floodnet', 'agent', 'alert', 'older-alert', 'channel', 'stick', 'stand-in', 'alert2-rule', 'tpm', 'secure-boot', 'uefi', 'coreboot', 'fanless', 'din', 'wide-temp',
+    'hw-open', 'open-hw', 'oshwa', 'cern-ohl', 'kicad', 'module', 'emmc', 'usb', 'm2', 'arm', 'debian', 'lts', 'universe', 'torizon', 'kernel', 'package', 'container', 'image', 'signed', 'profile', 'dashboard',
+    'proxy', 'iec62443', 'gst', 'quote', 'est', 'airlink', 'ppm', 'pigtail', 'rcm', 'cispr', 'smarc'];
+  const MARKS = [
+    [/\bTPM(?: 2\.0)?\b/, 'tpm'], [/\b(?:UEFI )?Secure Boot\b|\bsecure boot\b/, 'secure-boot'], [/\bcoreboot\b/, 'coreboot'], [/\bBIOS\b|\bUEFI\b/, 'uefi'],
+    [/\bTorizon OS\b/, 'torizon'], [/\beMMC\b/, 'emmc'], [/\bOSHWA(?:-certified)?\b/, 'oshwa'], [/\bCERN-OHL-S\b/, 'cern-ohl'], [/\bKiCad\b/, 'kicad'],
+    [/\bIEC 62443(?:-4-2)?(?: Security Level 2| SL2)?\b/, 'iec62443'], [/\bDIN[- ]rail\b/, 'din'], [/\bPCIe\b/, 'm2'], [/\bUbuntu 24\.04 LTS\b|\bLTS\b/, 'lts'],
+    [/\bsigned(?:<\/i>)? release\b/, 'signed'], [/\b(?:enterprise|locked-down|standard) profile\b/, 'profile'], [/\bcontainer\b/, 'container'], [/\bx86\b/, 'arm'],
+    [/\bkernel\b/, 'kernel'], [/\bolder[- ]ALERT\b/, 'older-alert'], [/\bfanless\b/i, 'fanless'], [/\bopen[- ]hardware\b/i, 'open-hw'], [/\bby quote\b|\bquote\b/i, 'quote'],
+    [/\bpigtail\b/, 'pigtail'], [/\bppm\b/, 'ppm'], [/\bAirLink\b/, 'airlink'], [/\bRCM\b|\bRegulatory Compliance Mark\b/, 'rcm'], [/\bCISPR 32\b/, 'cispr'], [/\bSMARC\b/, 'smarc'], [/\bweb proxy\b/, 'proxy'],
+    [/\bopen-alert-base\b(?! status| bench|_)|\bpackage\b/, 'package'],
+  ];
+  // Put a meaning on the first use of each such word in a piece of HTML, leaving
+  // tags, code and links alone. `lookup(id)` gives { term, meaning } or nothing.
+  function markTerms(html, lookup) {
+    if (!lookup) return html;
+    const seen = new Set();
+    let skip = 0;
+    return String(html).split(/(<[^>]+>)/).map(part => {
+      if (part.startsWith('<')) {
+        if (/^<(code|a|pre|span class="term")\b/i.test(part)) skip++;
+        else if (/^<\/(code|a|pre|span)>/i.test(part) && skip) skip--;
+        return part;
+      }
+      if (skip) return part;
+      for (const [re, id] of MARKS) {
+        if (seen.has(id)) continue;
+        const t = lookup(id), m = t && part.match(re);
+        if (!m) continue;
+        const before = part.slice(0, m.index);
+        if ((before.match(/\u0001/g) || []).length > (before.match(/\u0002/g) || []).length) continue;   // inside a word already marked
+        seen.add(id);
+        // \u0001 … \u0002 fence a word already marked, so a later rule cannot mark inside it
+        part = `${part.slice(0, m.index)}\u0001${id}\u0003${m[0]}\u0002${part.slice(m.index + m[0].length)}`;
+      }
+      return part;
+    }).join('').replace(/\u0001([a-z0-9-]+)\u0003([^\u0002]*)\u0002/g, (x, id, w) => {
+      const t = lookup(id);
+      return `<span class="term" title="${String(t.meaning).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" style="border-bottom:1px dotted;cursor:help">${w}</span>`;
+    });
+  }
 
   // ── the bill ──────────────────────────────────────────────────────────────
   const incGst = (v, gst) => v == null ? null : (gst === false ? v * 1.1 : v);
@@ -280,7 +334,7 @@
     rows.push(row('Enclosure', enc, 1));
     if (!enc.indoor) rows.push(row('Enclosure', { id: 'enclosure-fittings', ref: 'enclosure-fittings', aud: [60, 110], gst: true, lead: { d: [2, 7], text: 'electrical wholesalers' }, where: [["Middy's", 'https://www.middys.com.au/']], conf: 'low' }, 1));
     const tmax = host.temp ? host.temp[1] : null;
-    if (tmax != null && enc.temp != null && tmax - 10 < enc.temp) warn.push([tmax < enc.temp ? 'bad' : 'warn', `${P.short} is rated to ${tmax} °C; ${enc.indoor ? 'a room' : 'a cabinet in a hut'} can reach about ${enc.temp} °C — ${tmax < enc.temp ? 'too hot' : 'little margin'}. Shade, vent it, or pick a computer rated −20/−40 to +85 °C.`]);
+    if (tmax != null && enc.temp != null && tmax - 10 < enc.temp) warn.push([tmax < enc.temp ? 'bad' : 'warn', `${host.tempAssumed ? `No temperature rating was read for ${P.short}, so ${tmax} °C is assumed` : `${P.short} is rated to ${tmax} °C`}; ${enc.indoor ? 'a room' : 'a cabinet in a hut'} can reach about ${enc.temp} °C — ${tmax < enc.temp ? 'too hot' : 'little margin'}. Shade, vent it, or pick a computer rated −20/−40 to +85 °C.`]);
 
     if (S.gps) rows.push(row('Extras', B.gps, 1));
     rows.push(row('Software', { id: 'rpi-alert', ref: 'rpi-alert', name: 'RPi ALERT (MIT) and a Flood-Net ingest token', aud: [0, 0], gst: true, lead: { d: [0, 1], text: 'download; the token is approved by a Flood-Net administrator in minutes' }, where: [['RPi ALERT on GitHub', 'https://github.com/cdomotor-g/RPi_ALERT']], note: 'Free. The Pi asks for its token; an administrator approves it from a phone.', conf: 'high' }, 1));
@@ -355,16 +409,16 @@
     const flash = {
       pi: ['Write the card with Raspberry Pi Imager and the RPi ALERT repository: <code>rpi-imager --repo https://cdomotor-g.github.io/RPi_ALERT/os_list.json</code> → <b>RPi ALERT (arm64)</b>. Accept the customisation (Wi-Fi, SSH).', 'Or, on a card already running Raspberry Pi OS: <code>curl -fsSL https://raw.githubusercontent.com/cdomotor-g/RPi_ALERT/main/os/bootstrap.sh | sudo bash</code>.'],
       cm: ['Put the board in USB-boot mode (the IO board\'s boot jumper or button — see its datasheet), connect its USB-C to a computer and run <code>rpiboot</code>: the eMMC appears as a drive.', 'Write it with Raspberry Pi Imager and the RPi ALERT repository, as for a Pi (<code>rpi-imager --repo https://cdomotor-g.github.io/RPi_ALERT/os_list.json</code>). RPi ALERT has not been tested on a Compute Module yet: note what you find.'],
-      verdin: ['Write the eMMC with Toradex Easy Installer (boot the module into recovery mode, connect USB) and choose Torizon OS. Toradex does not support plain Debian on a Verdin.', 'Run open-ALERT\'s container, which has no special privileges: use the compose file in <code>firmware/container/</code> of <a href="https://github.com/cdomotor-g/open-ALERT" target="_blank" rel="noopener">the open-ALERT repository</a> (it is being written, so it may not be there yet), with the USB bus passed through for the sticks. It carries RPi ALERT\'s signed release, unchanged. <b>Honest status:</b> nothing has yet been run with a real radio stick on a computer that is not a Raspberry Pi; record what it takes.'],
-      luna: ['Power it up with a screen on its HDMI port: if Torizon OS is already on the eMMC, it shows a pairing screen. If not, fit the USB_BOOT jumper, connect its USB-C to a computer and run the flash script from Toradex\'s Luna image (the getting-started guide, section 4).', 'Run open-ALERT\'s container, which has no special privileges (the compose file in <code>firmware/container/</code> of the open-ALERT repository, being written), with the USB bus passed through, as on a Verdin. <b>Honest status:</b> nothing has yet been run with a real radio stick on a computer that is not a Raspberry Pi, and the Luna is a sample product on the chip-maker\'s own kernel.'],
-      package: ['Put Debian 13 (Trixie) or Ubuntu 24.04 LTS on the computer from a USB stick: no desktop needed. Most of these makers offer or certify Ubuntu 24.04. On a BeagleBoard, use BeagleBoard.org\'s own Debian image.', 'Download <code>open-alert-base_….deb</code> from <a href="https://github.com/cdomotor-g/open-ALERT/releases" target="_blank" rel="noopener">open-ALERT\'s releases</a> (there are none yet: the package is built from the repository\'s <code>firmware/</code> folder until then) and install it: <code>sudo apt install ./open-alert-base_….deb</code>. It carries RPi ALERT\'s signed release, unchanged. For a network with an IT team, name the locked-down profile first: <code>sudo OPEN_ALERT_BASE_PROFILE=enterprise apt install ./open-alert-base_….deb</code> (no hotspot, nothing changed from Flood-Net, the dashboard reachable from the computer itself only).', 'Then <code>rpi-alert setup</code> to ask for a Flood-Net token, and <code>open-alert-base status</code> to see that it runs. <b>Honest status:</b> the package builds, installs and starts on Ubuntu 24.04, but nothing has yet been run with a real radio stick on a computer that is not a Raspberry Pi. Treat this build as the first test and write down what you find.'],
+      verdin: ['Write the eMMC with Toradex Easy Installer (boot the module into recovery mode, connect USB) and choose Torizon OS. Toradex does not support plain Debian on a Verdin.', 'Run open-ALERT\'s container, which has no special privileges: use the compose file in <code>firmware/container/</code> of <a href="https://github.com/cdomotor-g/open-ALERT" target="_blank" rel="noopener">the open-ALERT repository</a> (it is new and not released: so far it has only been tried with stand-ins for the radio on one PC, never on Torizon OS or an ARM computer; the firmware\'s notes say what works today), with the USB bus passed through for the sticks. It carries RPi ALERT\'s signed release, unchanged. <b>Honest status:</b> nothing has yet been run with a real radio stick on a computer that is not a Raspberry Pi; record what it takes.'],
+      luna: ['Power it up with a screen on its HDMI port: if Torizon OS is already on the eMMC, it shows a pairing screen. If not, fit the USB_BOOT jumper, connect its USB-C to a computer and run the flash script from Toradex\'s Luna image (the getting-started guide, section 4).', 'Run open-ALERT\'s container, which has no special privileges (the compose file in <code>firmware/container/</code> of the open-ALERT repository: new, not released, and never tried on Torizon OS), with the USB bus passed through, as on a Verdin. <b>Honest status:</b> nothing has yet been run with a real radio stick on a computer that is not a Raspberry Pi, and the Luna is a sample product on the chip-maker\'s own kernel.'],
+      package: ['Put Debian 13 (Trixie) or Ubuntu 24.04 LTS on the computer from a USB stick: it needs no desktop. Check which system the maker supports: OnLogic offers Ubuntu 24.04 on the CL260; Lenovo\'s sheet for the ThinkEdge names Ubuntu Server 26.04, which the package has not been tried on. On a BeagleBoard, use BeagleBoard.org\'s own Debian image.', 'Download <code>open-alert-base_….deb</code> from <a href="https://github.com/cdomotor-g/open-ALERT/releases" target="_blank" rel="noopener">open-ALERT\'s releases</a> (there were none on 13 November 2026: until the first, the package is built from the repository\'s <code>firmware/</code> folder) and install it: <code>sudo apt install ./open-alert-base_….deb</code>. It carries RPi ALERT\'s signed release, unchanged. For a network with an IT team, name the locked-down profile first: <code>sudo OPEN_ALERT_BASE_PROFILE=enterprise apt install ./open-alert-base_….deb</code> (no hotspot, nothing changed from Flood-Net, the dashboard reachable from the computer itself only).', 'Then <code>open-alert-base status</code> to see that it runs. <b>Honest status:</b> the package\'s own checks pass on Debian 13 and Ubuntu 24.04 with stand-ins for the radio, on one test computer that has no USB (<a href="https://github.com/cdomotor-g/open-ALERT/blob/main/firmware/README.md" target="_blank" rel="noopener">the firmware\'s notes</a> have the table as it stands today). Nothing has yet been run with a real radio stick on a computer that is not a Raspberry Pi. Treat this build as the first test and write down what you find.'],
       debian: ['Install Debian 13 (Trixie) from a USB stick: no desktop needed.', 'Then <code>sudo apt install git</code>, <code>git clone https://github.com/cdomotor-g/RPi_ALERT</code>, <code>sudo ./RPi_ALERT/os/install.sh</code>. The installer is plain Debian (apt, systemd, udev) but has only been run on Raspberry Pi OS: the Pi-only parts (under-voltage, boot partition settings) do nothing here.'],
     }[P.install];
     out.push({ h: 'Bench build', items: [
       ...flash,
       `Plug in one stick at a time and give each a serial of its own while the agent is stopped: <code>sudo systemctl stop ${P.install === 'package' ? 'open-alert-base' : 'rpi-alert'}; rtl_eeprom -s ALERT1</code> (letters, not a bare number), then unplug and replug it. Then the agent knows each stick wherever it is plugged.`,
       `Set each stick's channels on the dashboard (Settings → RTL-SDR) or over SSH:<br>${freqArgs.map(a => `<code>${a}</code>`).join('<br>') || '—'}`,
-      P.install === 'package' ? 'Open the dashboard from the computer itself (<code>http://127.0.0.1/</code>, or <code>http://127.0.0.1:8080/</code> with the enterprise profile, which keeps it to that computer), press <b>Request a token</b>, check the code and approve it on Flood-Net\'s <b>Admin</b> tab from your phone. Readings start within seconds.' : 'Open <code>http://rpi-alert.local/</code> (or the box\'s screen), press <b>Request a token</b>, check the code and approve it on Flood-Net\'s <b>Admin</b> tab from your phone. Readings start within seconds.',
+      P.install === 'package' ? 'Ask for a Flood-Net token. On the standard profile, open the dashboard from another computer on the same network (<code>http://&lt;the computer\'s address&gt;/</code>) and press <b>Request a token</b>. On the enterprise profile, which keeps the dashboard to the computer itself, run <code>rpi-alert setup</code> on it instead (or open <code>http://127.0.0.1:8080/</code> there, if it has a screen and a browser). Check the code and approve it on Flood-Net\'s <b>Admin</b> tab from your phone. Readings start within seconds.' : 'Open <code>http://rpi-alert.local/</code> (or the box\'s screen), press <b>Request a token</b>, check the code and approve it on Flood-Net\'s <b>Admin</b> tab from your phone. Readings start within seconds.',
       'Leave it on the bench for a day with an antenna by a window: the Overview\'s <i>Decoder busy</i> should stay under 70% and no stick should show dropped samples.',
     ] });
     const site = [];
@@ -380,18 +434,20 @@
     if (!enc.indoor) site.push('In the box: supply, computer and router on the DIN rail, every cable through an IP68 gland, a breather vent and a desiccant bag. Shade the box from the afternoon sun.');
     out.push({ h: 'On site', items: site });
     out.push({ h: 'Check it end to end', items: [
-      'On the box: the Overview shows each stick, its channels and bursts decoded; no under-voltage banner; the CPU and temperature steady.',
+      `On the box: the Overview shows each stick, its channels and bursts decoded${P.install === 'pi' || P.install === 'cm' ? '; no under-voltage banner' : ''}; the CPU and temperature steady.`,
       'On Flood-Net: the base appears on the <b>Base Stations</b> tab (it checks in every minute — Flood-Net never connects in), its readings in the <b>Message Log</b> with frequency, signal and SNR, its frames on the <b>Reception Map</b>.',
       'Pull the network for ten minutes and put it back: the readings held in the disk queue arrive, stamped with when they were heard.',
     ] });
     out.push({ h: 'Keep it going', items: [
-      'Updates and settings from Flood-Net\'s Base Stations tab; SSH keys only, the <code>alert</code> account, never a shared password.',
+      P.install === 'package' ? 'Updates: a new version of RPi ALERT arrives as a new <code>open-alert-base</code> package, built from the next signed release. Install it over the old one (<code>sudo apt install ./open-alert-base_….deb</code>); your settings are kept. The package installs no updater and no maintenance account: logins, SSH and operating-system updates are your organisation\'s own. Settings can be changed from Flood-Net\'s Base Stations tab on the standard profile only; the enterprise profile reports how it is and refuses changes.'
+        : P.install === 'verdin' || P.install === 'luna' ? 'Updates: Torizon OS has its own, and RPi ALERT\'s arrive as a new container built from the next signed release. The container is new and has never been tried on Torizon OS: the firmware\'s notes say how it is updated.'
+        : 'Updates and settings from Flood-Net\'s Base Stations tab; SSH keys only, the <code>alert</code> account, never a shared password.',
       'Once a year: look at the arrestor and earth bond, the glands and desiccant, and compare the sticks\' SNR on a shared channel — swap a stick that has gone deaf.',
     ] });
     return out;
   }
 
-  const API = { B, setCatalog, windowFor, splitInto, planSticks, load, capacity, cores, oneCore, verdict, headroom, build, TRAFFIC, A2_TRAFFIC, TERMS };
+  const API = { B, setCatalog, windowFor, splitInto, planSticks, load, capacity, cores, oneCore, verdict, headroom, build, TRAFFIC, A2_TRAFFIC, TERMS, WORDS, MARKS, markTerms };
   if (isNode) { module.exports = API; return; }
   globalThis.OA_BUILD_API = API;
   if (!document.getElementById('controls')) return;   // another page using the model only
@@ -420,8 +476,17 @@
     const m = location.hash.match(/#b=([A-Za-z0-9_-]+)/);
     if (m) { try { s = JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/'))))); } catch (e) { s = null; } }
     if (!s) { try { s = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { s = null; } }
-    return Object.assign({}, DEFAULT, s || {});
+    // Saved data that is not what this page wrote (damaged, or from a later version) must not blank the page.
+    if (!s || typeof s !== 'object' || Array.isArray(s)) s = {};
+    const out = Object.assign({}, DEFAULT, s);
+    out.channels = Array.isArray(out.channels) ? out.channels.map(Number).filter(f => f >= 136 && f <= 174) : DEFAULT.channels.slice();
+    for (const k of ['kiosk', 'arrestor', 'gps', 'a2skip']) out[k] = !!out[k];
+    out.coaxM = Math.max(1, Math.min(100, Number(out.coaxM) || DEFAULT.coaxM));
+    return out;
   }
+  // The other words: their meanings live in the hardware review's list (data/review.js), loaded by this page.
+  const RT = id => ((globalThis.OA_REVIEW && globalThis.OA_REVIEW.terms) || []).find(t => t.id === id);
+  const mark = html => markTerms(html, RT);
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* private mode */ } }
   function shareLink() {
     const b = btoa(unescape(encodeURIComponent(JSON.stringify(S)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -452,11 +517,13 @@
       const it = item(p.ref) || {};
       const F = fitOf(p, R.load), v = F.v;
       const oneChip = v.one === 'ok' ? '' : `<span class="chip st-${v.one === 'bad' ? 'bad' : 'warn'}" title="The busiest channel needs ${pc(F.cu)}% of one of its cores. A channel is decoded on one core and cannot use more.">one core ${pc(F.cu)}%</span>`;
+      const openness = (it.open && it.open.hw) || 'closed';
+      const tip = id => { const t = RT(id); return t ? ` title="${esc(t.meaning)}"` : ''; };
       return `<label class="pf${p.id === S.platform ? ' on' : ''}"><input type="radio" name="platform" value="${esc(p.id)}"${p.id === S.platform ? ' checked' : ''}>
         <span class="pf-top"><b>${esc(p.short)}</b><span class="chip plain">${esc({ board: 'board', module: 'module + carrier', box: 'boxed' }[p.kind])}</span></span>
         <span class="pf-bar" title="All the channels together would use ${pcs(F.uLow, F.u)} of this computer; the busiest channel ${pc(F.cu)}% of one of its ${cores(p)} cores"><i class="${v.cls}" style="width:${Math.min(100, F.u * 100).toFixed(0)}%"></i></span>
         <span class="small dim">${pcs(F.uLow, F.u)} CPU · ${range(incGst(p.aud[0], p.gst), incGst(p.aud[1], p.gst))} · ${days(p.lead.d)}</span>
-        <span class="chips">${oneChip}${it.temp ? `<span class="chip plain">${it.temp[0]} to ${it.temp[1]} °C</span>` : ''}<span class="chip ${it.open && it.open.hw === 'open' ? 'open' : it.open && it.open.hw === 'partial' ? 'partial' : 'closed'}">hardware ${esc((it.open && it.open.hw) || 'closed')}</span>${it.hw && it.hw.storage === 'emmc' ? '<span class="chip open">eMMC</span>' : ''}${it.hw && it.hw.storage === 'sd' ? '<span class="chip partial">SD card</span>' : ''}</span>
+        <span class="chips">${oneChip}${it.temp ? `<span class="chip plain" title="${esc(it.tempAssumed ? 'Assumed, not the maker\'s figure. ' + it.tempAssumed : 'The air temperature the maker rates it for')}">${it.temp[0]} to ${it.temp[1]} °C${it.tempAssumed ? ' assumed' : ''}</span>` : ''}<span class="chip ${openness === 'open' ? 'open' : openness === 'partial' ? 'partial' : 'closed'}"${tip('hw-open')}>hardware ${esc(openness)}</span>${it.hw && it.hw.storage === 'emmc' ? `<span class="chip open"${tip('emmc')}>eMMC</span>` : ''}${it.hw && it.hw.storage === 'sd' ? '<span class="chip partial" title="It starts from a memory card, which wears out sooner than built-in storage">SD card</span>' : ''}</span>
       </label>`;
     }).join('');
     const nCh = R.load.channels, a2Now = Math.min(Number(S.a2) || 0, nCh);
@@ -470,7 +537,8 @@
     const mounts = B.mounts.filter(m => m.for.includes(R.sdr.mount));
     $('#controls').innerHTML = `
       <fieldset><legend>1 · The computer</legend><div class="pfs">${pf}</div>
-        <p class="small dim" id="pf-fit">${esc(R.P.fit)}</p></fieldset>
+        <p class="small dim" id="pf-fit">${mark(esc(R.P.fit))}</p>
+        <p class="small dim">On each card: the bar and the first figure are all your channels together as a share of that computer; then its price and how long it takes to arrive. "Hardware open, partial or closed" says whether its design files are published: open, under a licence that lets anyone make and change it; partial, some drawings without such a licence; closed, none. The temperatures are the maker's rating, or marked "assumed" where no rating was read. "eMMC" is storage soldered to the board; "SD card" means it starts from a memory card.</p></fieldset>
       <fieldset><legend>2 · Channels to hear</legend><div class="chks">${chs}</div>
         <div class="row"><label>Add a channel (MHz) <input type="number" id="addch" step="0.0125" min="136" max="174" placeholder="151.4375" inputmode="decimal"></label><button type="button" class="ghost small" data-act="addch">Add</button></div>
         <div class="row"><label>Sticks <select name="sticks"><option value="auto"${S.sticks === 'auto' ? ' selected' : ''}>Fewest that hold them</option>${[1, 2, 3, 4].map(k => `<option value="${k}"${String(S.sticks) === String(k) ? ' selected' : ''}>${k}</option>`).join('')}</select></label>
@@ -510,7 +578,7 @@
     $('#out-warn').innerHTML = R.warn.length ? R.warn.map(([c, t]) => `<p class="note ${c === 'bad' ? 'bad' : ''}"><b class="${c}">${{ bad: 'Problem', warn: 'Check', info: 'Note' }[c]}:</b> ${esc(t)}</p>`).join('') : '<p class="note"><b class="ok">Fits:</b> nothing to flag in this build.</p>';
     $('#out-bom').innerHTML = bomView(R);
     $('#out-lead').innerHTML = leadView(R);
-    $('#out-steps').innerHTML = R.steps.map(s => `<h3>${esc(s.h)}</h3><ol>${s.items.map(i => `<li>${i}</li>`).join('')}</ol>`).join('');
+    $('#out-steps').innerHTML = R.steps.map(s => `<h3>${esc(s.h)}</h3><ol>${s.items.map(i => `<li>${mark(i)}</li>`).join('')}</ol>`).join('');
     $('#out-compare').innerHTML = compareView(R);
     save();
   }
@@ -554,7 +622,7 @@
       both: ['Both limits bite.', `All the channels together need ${pc(R.use)}% of the computer, and ${who} needs ${pc(R.chUse)}% of one core. A bigger computer has to be faster core for core, not only have more of them.`],
     }[v.limit];
     const note = `<p class="note${v.cls === 'bad' ? ' bad' : ''}"><b class="${v.cls}">${say[0]}</b> ${say[1]}</p>`;
-    const room = H.channel ? `<p class="small"><b>Room for ALERT2.</b> If one channel here had ${term('slots')} (${A2_TRAFFIC.full} frames a minute), it would need ${rng(H.needLow, H.need)} Pi 4 cores on ${term('onecore')} — <span class="${H.cls}">${pcs(H.shareLow, H.share)} of one of this computer's</span>. ${H.cls === 'bad' ? 'It could not keep up, however many cores sit idle.' : H.cls === 'warn' ? 'It could keep up, with little to spare.' : 'It could keep up.'} The rule for buying with headroom is at least ${M.rule.cores} cores, each at least ${M.rule.oneCore} times a Pi 4 core: this one has ${H.cores} at about ${f2(H.oneCore)}, and ${H.meetsRule ? '<span class="ok">meets it</span>' : '<span class="warn">falls short</span>'}.${S.a2skip ? ' Counted with the change RPi ALERT plans but has not released.' : ''}</p>` : '';
+    const room = H.channel ? `<p class="small"><b>Room for ALERT2.</b> If one channel here had ${term('slots')} (${A2_TRAFFIC.full} frames a minute), it would need ${rng(H.needLow, H.need)} Pi 4 cores on ${term('onecore')} (about 1.1–1.3 of that is decoding its messages, an estimate timed on a PC and scaled; the rest is listening in this stick's ${term('window')}) — <span class="${H.cls}">${pcs(H.shareLow, H.share)} of one of this computer's</span>. ${H.cls === 'bad' ? 'It could not keep up, however many cores sit idle.' : H.cls === 'warn' ? 'It could keep up, with little to spare.' : 'It could keep up.'} The rule for buying with headroom is at least ${M.rule.cores} cores, each at least ${M.rule.oneCore} times a Pi 4 core: this one has ${H.cores} at about ${f2(H.oneCore)}, and ${H.meetsRule ? '<span class="ok">meets it</span>' : '<span class="warn">falls short</span>'}.${S.a2skip ? ' Counted with the change RPi ALERT plans but has not released.' : ''}</p>` : '';
     const rows = L.perChannel.map(c => {
       const sh = R.oneCore ? c.need / R.oneCore : Infinity, shLo = R.oneCore ? c.needLow / R.oneCore : Infinity;
       return `<tr><th scope="row">${mhzOf(c.mhz)}${c.a2 ? ' <span class="chip a2">ALERT2</span>' : ''}<div class="dim">stick ${c.stick} · ${winOf(c.khz)}</div></th><td class="num">${rng(c.needLow, c.need)}</td><td class="num"><span class="${sh > 1 ? 'bad' : sh > M.chSafe ? 'warn' : 'ok'}">${pcs(shLo, sh)}</span></td></tr>`;
@@ -580,7 +648,10 @@
       const y = 44 + i * 34;
       svg += `<rect x="${x(mid - half)}" y="${y}" width="${x(mid + half) - x(mid - half)}" height="22" rx="5" style="fill:color-mix(in srgb, ${cols[i]} 16%, transparent);stroke:${cols[i]}"/>`;
       const lab = `Stick ${i + 1} · ${s.window.khz >= 1000 ? (s.window.khz / 1000) + ' MHz' : s.window.khz + ' kHz'}`;
-      svg += x(mid + half) + 110 < W ? `<text x="${x(mid + half) + 6}" y="${y + 15}" class="lbl">${lab}</text>` : `<text x="${x(mid - half) - 6}" y="${y + 15}" class="lbl" text-anchor="end">${lab}</text>`;
+      // beside the window where there is room (right, then left); otherwise inside it, at its left edge
+      svg += x(mid + half) + 118 < W ? `<text x="${x(mid + half) + 6}" y="${y + 15}" class="lbl">${lab}</text>`
+        : x(mid - half) - 118 > 0 ? `<text x="${x(mid - half) - 6}" y="${y + 15}" class="lbl" text-anchor="end">${lab}</text>`
+        : `<text x="${Math.max(x(mid - half), 20) + 6}" y="${y + 15}" class="lbl">${lab}</text>`;
       for (const f of s.chans) svg += `<line x1="${x(f)}" x2="${x(f)}" y1="${y + 3}" y2="${y + 19}" style="stroke:${cols[i]};stroke-width:2.5"/>`;
     });
     svg += '</svg>';
@@ -628,8 +699,8 @@
     }
     // RF: antenna, arrestor, splitter
     g += `<path d="M700 40 V150" class="mast"/><path d="M690 40 h20 M694 58 h12 M690 76 h20" class="ant"/>${t(735, 60, R.ant.ref === 'vhf-dipole-unity' ? 'dipole' : 'collinear', 'bs')}`;
-    g += `<path d="M700 150 V300 H600" class="coax"/>${t(740, 235, `${S.coaxM} m`, 'bs')}${t(740, 249, 'LMR-400', 'bs')}`;
-    if (S.arrestor) g += `<rect x="580" y="288" width="26" height="24" rx="3" class="arr"/>${t(593, 330, 'arrestor', 'bs')}<path d="M593 312 V360" class="earthw"/><path d="M582 360 h22 M586 365 h14 M590 370 h6" class="earthw"/>${t(625, 368, 'earth stake', 'bs')}`;
+    g += `<path d="M700 150 V300 H600" class="coax"/>${t(728, 235, `${S.coaxM} m`, 'bs')}${t(728, 249, 'LMR-400', 'bs')}`;
+    if (S.arrestor) g += `<rect x="580" y="288" width="26" height="24" rx="3" class="arr"/>${t(593, 280, 'arrestor', 'bs')}<path d="M593 312 V360" class="earthw"/><path d="M582 360 h22 M586 365 h14 M590 370 h6" class="earthw"/>${t(650, 366, 'earth stake', 'bs')}`;
     const fy = 300;
     if (n > 1) g += `<rect x="520" y="${fy - 10}" width="40" height="20" rx="3" class="split"/>${t(540, fy + 24, 'splitter', 'bs')}<path d="M580 ${fy} H560" class="coax"/>`;
     const feedX = n > 1 ? 520 : 580;
@@ -680,7 +751,9 @@
     let g = `<line x1="${x(1)}" x2="${x(1)}" y1="10" y2="${16 + B.platforms.length * rh}" class="full"/><text x="${x(1)}" y="8" class="tick">100%</text><line x1="${x(B.model.safe)}" x2="${x(B.model.safe)}" y1="10" y2="${16 + B.platforms.length * rh}" class="safe"/><text x="${x(B.model.safe)}" y="8" class="tick">70%</text>`;
     B.platforms.forEach((p, i) => {
       const y = 16 + i * rh, F = fitOf(p, R.load);
-      g += `<text x="${x0 - 8}" y="${y + 14}" class="rowl${p.id === S.platform ? ' cur' : ''}">${esc(p.short)}</text>`;
+      // the chart's gutter is narrow: a long name loses its bracketed note here (it is in the title and on the card)
+      const label = p.short.replace(/ \((not recommended|comparison only)\)$/, (m, w) => w === 'not recommended' ? ' (not rec.)' : ' (compare)');
+      g += `<text x="${x0 - 8}" y="${y + 14}" class="rowl${p.id === S.platform ? ' cur' : ''}">${esc(label)}<title>${esc(p.short)}</title></text>`;
       g += `<text x="${x0 - 8}" y="${y + 28}" class="rows"${F.v.one === 'ok' ? '' : ` style="fill:var(--${F.v.one});font-weight:700"`}>one channel: ${pc(F.cu)}% of a core<title>${esc(p.short)}: the busiest channel needs ${pc(F.cu)}% of one of its ${cores(p)} cores on the decoder you picked. A channel cannot use more than one core.</title></text>`;
       B.decoders.forEach((d, j) => {
         const Ld = load(R.plan, Object.assign({}, S, { decoder: d.id })), Fd = fitOf(p, Ld);
@@ -689,7 +762,7 @@
         if (x(Fd.u) - x(Fd.uLow) > 3 && x(Fd.uLow) - x0 > 2) g += `<line x1="${x(Fd.uLow)}" x2="${x(Fd.uLow)}" y1="${yb}" y2="${yb + 7}" style="stroke:var(--panel);stroke-width:1.5"/>`;
       });
     });
-    return `<div class="diagram cmpd"><svg viewBox="0 0 ${W} ${24 + B.platforms.length * rh}" role="img" aria-label="CPU each computer would use for this plan">${g}</svg></div><div class="legend small">${B.decoders.map((d, j) => `<span title="${esc(d.name)}"><i class="lg-d${j}"></i>${esc(d.short)}${d.status === 'checking' ? ' <span class="dim">(being checked)</span>' : ''}</span>`).join('')}<span class="dim">bars past 150% are cut off</span></div>
+    return `<div class="diagram cmpd"><svg viewBox="0 0 ${W} ${24 + B.platforms.length * rh}" role="img" aria-label="CPU each computer would use for this plan">${g}</svg></div><p class="small dim">"(not rec.)" is not recommended and "(compare)" is for comparison only: the hardware review's verdicts on those computers.</p><div class="legend small">${B.decoders.map((d, j) => `<span title="${esc(d.name)}"><i class="lg-d${j}"></i>${esc(d.short)}${d.status === 'checking' ? ' <span class="dim">(being checked)</span>' : ''}</span>`).join('')}<span class="dim">bars past 150% are cut off</span></div>
       <p class="small dim">A bar's length is all the channels together as a share of ${term('whole')}, on a ${term('busy')}; the notch in it is the measurement alone. Its colour is the verdict on both limits: green fits, amber is over 70% on one of them, red is over 100% — so a short bar can still be red when one channel is too much for ${term('onecore')}. Under each name is that one-core share on the decoder you picked.</p>`;
   }
 
@@ -699,7 +772,7 @@
     antenna: ['Antenna, coax and arrestor', 'A vertical VHF antenna as high and clear as the mast allows, low-loss coax (LMR-400) to the box, and a gas-tube arrestor where the coax comes in, bonded to the earth stake. With more than one stick a splitter shares the antenna.'],
     sdr: ['RTL-SDR sticks', 'Each stick hands the computer a slice of the band — its window, 240 kHz to 2.4 MHz wide — as a stream of 8-bit samples over USB. It does no decoding itself: every channel in the window is decoded in software, which is why the window\'s width matters so much to the CPU.'],
     rtl: ['rtl_sdr', 'The standard librtlsdr program, one per stick, run by the agent (<code>agent/lib/devices/sdr.js</code>). The agent tells sticks apart by USB port, tunes each so no channel sits on the DC spike or a mirror image, and restarts <code>rtl_sdr</code> if it stalls.'],
-    worker: ['A decoder thread per channel', '<code>agent/lib/devices/sdr-worker.js</code> runs Flood-Net\'s own decoder, <code>alert-dsp.js</code> — vendored verbatim, so a burst decodes on the box exactly as it does on floodwarning.net. It mixes the channel down, filters, gates on the burst, then tries 45 carrier and timing combinations. A burst nothing legacy reads is tried as ALERT2 AirLink (<code>alert2-air.js</code>). This is where the CPU goes, and each channel has one thread: it works on one processor core and can never use more. Three savings, at three stages. Done: filtering once per carrier guess, the default since RPi ALERT 0.17, decodes a burst in a third of the time. Built, but off by default: filtering a channel only around a burst — 4 to 14 times less work between bursts, but its first live check missed some of the weakest bursts. Planned: reading a frame as ALERT2 straight away on a channel known to carry it.'],
+    worker: ['A decoder thread per channel', '<code>agent/lib/devices/sdr-worker.js</code> runs Flood-Net\'s own decoder, <code>alert-dsp.js</code> — vendored verbatim, so a burst decodes on the box exactly as it does on floodwarning.net. It mixes the channel down, filters, gates on the burst, then tries 45 carrier and timing combinations. A burst the older-ALERT decoder cannot read is tried as ALERT2 AirLink (<code>alert2-air.js</code>). This is where the CPU goes, and each channel has one thread: it works on one processor core and can never use more. Three savings, at three stages. Done: filtering once per carrier guess, the default since RPi ALERT 0.17, decodes a burst in a third of the time. Built, but off by default: filtering a channel only around a burst — 4 to 14 times less work between bursts, but its first live check missed some of the weakest bursts. Planned: reading a frame as ALERT2 straight away on a channel known to carry it.'],
     agent: ['The agent', '<code>agent/lib/agent.js</code>: gathers readings and receptions from every receiver (sticks, Quansheng radios, an ELPRO ERT-A2, GPS), serves the dashboard on <code>http://rpi-alert.local/</code>, and plays chirps.'],
     queue: ['The disk queue', '<code>agent/lib/spool.js</code>: every reading goes to disk first, and is sent and deleted later. No internet for days? It waits, bounded by the card (1 GB by default). No clock yet? Held until NTP, a GPS or a battery clock gives the time.'],
     uplink: ['Uplink', '<code>agent/lib/uplink.js</code> posts batches over HTTPS to Flood-Net\'s <code>ingest_http</code>, with the box\'s own ingest token; describes each receiver with <code>report_ingest_point</code> and every frame with <code>report_receptions</code>. Out only: no port is ever opened to the box.'],
@@ -762,24 +835,25 @@
   }
   try { applyTheme(localStorage.getItem(THEME_KEY) || 'auto'); } catch (e) { applyTheme('auto'); }
 
+  // A board of your own: the review's estimates as a table, and under it each
+  // step's note, who would do it and where the figure comes from.
   function customView() {
     const rows = B.custom;
-    const W = 760, rh = 34, x0 = 300, max = Math.max(...rows.map(r => r.lead.d[1])), x = d => x0 + d / max * (W - x0 - 20);
-    let g = '';
-    for (let m = 0; m <= max; m += 30) g += `<line x1="${x(m)}" x2="${x(m)}" y1="14" y2="${18 + rows.length * rh}" class="grid"/><text x="${x(m)}" y="10" class="tick">${m / 30}mo</text>`;
-    rows.forEach((r, i) => {
-      const y = 16 + i * rh;
-      g += `<text x="${x0 - 8}" y="${y + 13}" class="rowl">${esc(r.name.length > 46 ? r.name.slice(0, 44) + '…' : r.name)}</text><text x="${x0 - 8}" y="${y + 27}" class="rows">${r.aud[1] ? esc(range(r.aud[0], r.aud[1])) + ' ex GST' : 'no hardware cost'}</text>`;
-      g += `<rect x="${x(0)}" y="${y + 6}" width="${x(r.lead.d[0]) - x(0)}" height="14" rx="3" class="lead-min"/><rect x="${x(r.lead.d[0])}" y="${y + 6}" width="${Math.max(2, x(r.lead.d[1]) - x(r.lead.d[0]))}" height="14" rx="3" class="lead-max"/>`;
-    });
-    $('#custom-chart').innerHTML = `<div class="diagram lead"><svg viewBox="0 0 ${W} ${24 + rows.length * rh}" role="img" aria-label="Time and cost of each step of the custom path">${g}</svg></div>`;
-    $('#custom-list').innerHTML = rows.map(r => `<li><b>${esc(r.name)}</b> — ${r.aud[1] ? esc(range(r.aud[0], r.aud[1])) + ' ex GST, ' : ''}${esc(days(r.lead.d))}. ${esc(r.note)}${r.src.length ? ' ' + r.src.map(([t, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>`).join(', ') : ''} <span class="chip st-warn">estimate</span></li>`).join('');
+    const est = '<span class="chip st-warn" title="An estimate: a price or a time with no quote or published figure behind it.">est.</span>';
+    const cost = r => r.aud[1] ? `${esc(range(r.aud[0], r.aud[1]))}${r.gst === false ? ' before GST' : ''} ${est}` : 'no design cost';
+    const time = r => r.lead.d[1] ? `${esc(r.lead.text)} ${est}` : `<span class="dim">${esc(r.lead.text)}</span>`;
+    $('#custom-chart').innerHTML = `<div class="table-wrap"><table class="tbl stk"><thead><tr><th>Step</th><th>What it might cost</th><th>How long</th></tr></thead><tbody>${rows.map(r => `<tr${r.id === 'total' ? ' class="grand"' : ''}><th scope="row">${esc(r.name)}</th><td data-l="What it might cost">${cost(r)}</td><td data-l="How long">${time(r)}</td></tr>`).join('')}</tbody></table></div>`;
+    const links = list => list.map(([t, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>`).join(', ');
+    $('#custom-list').innerHTML = rows.map(r => `<li><b>${esc(r.name)}.</b> ${mark(esc(r.note))}${r.where && r.where.length ? ` Who or where: ${links(r.where)}.` : ''}${r.src.length ? ` From: ${links(r.src)}.` : ''}</li>`).join('');
   }
 
-  // The same meanings the hovers give, where a finger or a keyboard can read them.
+  // The same meanings the hovers give, where a finger or a keyboard can read them:
+  // the CPU box's own words under it, and every other word under the page.
   function terms() {
     const el = $('#cpu-terms');
     if (el) el.innerHTML = Object.values(TERMS).map(([w, m]) => `<li><b>${esc(w.charAt(0).toUpperCase() + w.slice(1))}</b> — ${esc(m)}</li>`).join('');
+    const all = $('#page-terms');
+    if (all) all.innerHTML = WORDS.map(RT).filter(Boolean).map(t => `<li><b>${esc(t.term)}</b> — ${esc(t.meaning)}</li>`).join('') || '<li>The list could not be loaded.</li>';
   }
 
   function sources() {
