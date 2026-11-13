@@ -1,0 +1,105 @@
+# open-ALERT base station as a hardened container.
+#
+#   docker compose -f firmware/container/compose.yaml up -d
+#
+# Before the first start:
+#   1. Build the image:         firmware/container/build.sh        (or pull one that was published)
+#   2. Set up the host, once:   sudo firmware/container/host-setup.sh   (the radio stick's device rule)
+#      It prints the number to put in OA_USB_GID below if the computer's "plugdev" group is not 46.
+#   3. Open http://127.0.0.1:8080/ on this computer and finish setting up (Flood-Net token, location).
+#
+# Settings people change are the variables just below (put them in a file called
+# ".env" beside this one, or in the shell). Everything under "security" is the
+# point of this file: change it only knowing what it takes away.
+#
+# What it takes away:
+#   - every Linux capability (the container cannot change the network, mount, load drivers…)
+#   - gaining any privilege later (no-new-privileges: set-user-id programs do nothing)
+#   - writing to the container's own files (read-only; only /tmp, the settings and the data are writable)
+#   - the whole host (no --privileged, no host networking, no host folders but the two below)
+#   - more than OA_MEMORY of memory (768 MB: the agent measured about 75 MB with no stick and
+#     about 430 MB with one stick decoding four channels, see firmware/README.md), more than 200 processes, unlimited logs
+name: open-alert-base
+
+services:
+  base:
+    image: ${OA_IMAGE:-open-alert-base:latest}
+    container_name: open-alert-base
+    # A stable name: the station is called this in Flood-Net unless you set "name"
+    # on the dashboard. (Without it the name would be the container's random id.)
+    hostname: ${OA_HOSTNAME:-open-alert-base}
+    restart: unless-stopped
+    stop_grace_period: 20s
+
+    # ── security ────────────────────────────────────────────────────────────
+    user: "990:990"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    pids_limit: 200
+    mem_limit: ${OA_MEMORY:-768m}
+    memswap_limit: ${OA_MEMORY:-768m}
+    init: true
+
+    # ── the radio sticks ────────────────────────────────────────────────────
+    # Not "privileged". Two things are given instead:
+    #   - a rule that lets the container open USB device files (device class 189),
+    #     and nothing else on the computer: no disks, no memory, no screen;
+    #   - the folder where the computer lists them (/dev/bus/usb), read-only: a stick
+    #     plugged in later shows up here by itself. (Read-only stops anything being
+    #     created or deleted in that folder. The device files can still be opened.)
+    # The container's user also joins the group that owns the device files (the
+    # host's udev rule, host-setup.sh, makes that group "plugdev").
+    group_add:
+      - "${OA_USB_GID:-46}"
+    device_cgroup_rules:
+      - "c 189:* rmw"
+      # Serial receivers (a Quansheng radio, an ERT-A2, a GPS): take the "#" off
+      # the next two lines AND the two "devices:" lines under it, and name your
+      # ports. "dialout" owns them on most systems (OA_SERIAL_GID, usually 20).
+      # - "c 188:* rmw"     # USB-to-serial adapters (ttyUSB)
+      # - "c 166:* rmw"     # USB serial radios (ttyACM)
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb:ro
+      - oa-settings:/etc/rpi-alert
+      - oa-data:/var/lib/rpi-alert
+      # A private certificate authority (an organisation that inspects its own
+      # HTTPS): put its file next to this one as ca.crt and take the "#" off the
+      # next line and off NODE_EXTRA_CA_CERTS below.
+      # - ./ca.crt:/etc/open-alert-base/ca.crt:ro
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
+    #   - /dev/ttyACM0:/dev/ttyACM0
+    # (And add the serial group:  group_add: ["${OA_SERIAL_GID:-20}"]  — merge it into the list above.)
+
+    # ── the dashboard ───────────────────────────────────────────────────────
+    # Published on this computer only. To let your local network see it, change
+    # the left side to "8080:8080" — and set a dashboard password first
+    # (Settings → Access), since anybody who can reach it can look at it.
+    ports:
+      - "${OA_DASHBOARD:-127.0.0.1:8080}:8080"
+
+    # ── the network and the proxy ───────────────────────────────────────────
+    # Outbound HTTPS only. Behind a web proxy, set these (in .env):
+    #   OA_HTTPS_PROXY=http://proxy.example.org:3128      (name:password@ goes before the host)
+    #   OA_NO_PROXY=localhost,127.0.0.1,.example.org       (addresses that go direct)
+    environment:
+      HTTPS_PROXY: ${OA_HTTPS_PROXY:-}
+      NO_PROXY: ${OA_NO_PROXY:-}
+      # A private certificate authority, mounted above:
+      # NODE_EXTRA_CA_CERTS: /etc/open-alert-base/ca.crt
+      TZ: ${OA_TZ:-UTC}
+
+    # ── logs ────────────────────────────────────────────────────────────────
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  oa-settings:
+  oa-data:

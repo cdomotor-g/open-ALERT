@@ -1,0 +1,11 @@
+// open-ALERT base station image: updates never stop to ask a question.
+//
+// When an update brings a new version of a settings file that has been changed
+// on this computer, the changed file is kept (the new one is saved beside it
+// with ".dpkg-dist" on its name); a settings file nobody changed is replaced.
+// Without this, an automatic security update that touches such a file would
+// be held back until a person answered.
+Dpkg::Options {
+	"--force-confdef";
+	"--force-confold";
+};

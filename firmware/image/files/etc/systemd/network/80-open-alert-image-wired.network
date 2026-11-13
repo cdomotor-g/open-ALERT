@@ -1,0 +1,19 @@
+# open-ALERT base station image: the network.
+#
+# Every wired network port asks the network for an address (DHCP), for IPv4
+# and IPv6. It names no particular port, so the same disk works in another
+# computer, and in one with several ports.
+#
+# For a fixed address, do not change this file: add one of your own with a
+# name that sorts before it (the example user-data writes
+# 10-fixed-address.network). systemd-networkd uses the first file that fits.
+# Wi-Fi is not set up on this image.
+
+[Match]
+Type=ether
+
+[Network]
+DHCP=yes
+# Name look-ups that shout to the whole local network are off.
+LLMNR=no
+MulticastDNS=no

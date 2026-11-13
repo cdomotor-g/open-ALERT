@@ -1,0 +1,23 @@
+# open-ALERT base station image: this computer's own SSH host keys.
+#
+# The image holds no SSH host keys: if it did, every computer made from it
+# would have the same ones, and anybody with the image could pretend to be
+# any of them. They are made here, once, at the first start, before SSH
+# answers anybody.
+#
+# (Debian has a unit of its own for this, sshd-keygen.service, but it runs
+# only on what systemd counts as a "first boot", and a computer started from
+# an image with an empty machine-id file is not counted as one.)
+
+[Unit]
+Description=open-ALERT base station image: make this computer's own SSH host keys (first start only)
+ConditionPathExistsGlob=!/etc/ssh/ssh_host_*_key
+Before=ssh.service ssh.socket
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/ssh-keygen -A
+
+[Install]
+WantedBy=multi-user.target

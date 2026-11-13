@@ -1,0 +1,96 @@
+# open-ALERT base station on Toradex Torizon OS (a Verdin module, for example).
+#
+# The same container, hardened the same way, with the differences a small
+# board system makes. Read "The container" in firmware/README.md first; the
+# steps to load it are below. NOT YET TRIED on Torizon: only the parts it
+# shares with compose.yaml have been run (on Debian, with stand-ins for sticks).
+#
+# What differs from compose.yaml, and why. Everything about Torizon below is
+# EXPECTED from how a small, locked-down board system works, not checked:
+#   - The image comes from a registry: the board is not the place to build it.
+#     OA_IMAGE names it. Build and push one with
+#     firmware/container/build.sh --platform linux/arm64 --push.
+#   - There may be no "plugdev" group on the board. So host-setup.sh --gid 990
+#     makes a group of that number to own the stick's device files, and the
+#     container's user joins it (OA_USB_GID, 990 here). If the board's group
+#     for this already has another number, give that number instead.
+#   - Memory is limited to 768 MB, as in the plain file: measured on a PC, the agent
+#     took about 430 MB with one stick decoding four channels (75 MB with no stick),
+#     so a board with 1 GB of memory is tight. Lower OA_MEMORY only after watching it.
+#   - The dashboard is published to this board only (127.0.0.1), as in the plain
+#     file. A board has no screen, so reach the page from your computer through an
+#     SSH tunnel:  ssh -L 8080:127.0.0.1:8080 torizon@<board>   then open
+#     http://127.0.0.1:8080/ . To let the network see it instead, set
+#     OA_DASHBOARD=8080 — and set a dashboard password first (Settings → Access).
+#   - "docker compose" may not be on the board; Torizon documents its own ways to
+#     run a compose file. The file is the same either way.
+#   - The board's clock. The image tells the agent to trust the clock
+#     (RPI_ALERT_ASSUME_CLOCK=1), because inside a container the agent cannot ask
+#     the host whether the time has been set. A board with no battery clock
+#     starts with a wrong time until the network sets it; readings in that
+#     moment are stamped wrongly. If that matters to you, keep the board's
+#     time service running and start this container only after the time is set.
+#
+# Steps to load it (from your computer; the board is at 192.0.2.10, user "torizon"):
+#   1. Build for the board's processor (64-bit ARM) and put it in a registry the
+#      board can reach:
+#        firmware/container/build.sh --platform linux/arm64 --tag registry.example.org/open-alert-base:0.23.1-oa1 --push
+#   2. Copy this file and the host set-up to the board:
+#        scp firmware/container/compose.torizon.yaml firmware/container/host-setup.sh torizon@192.0.2.10:
+#   3. On the board, once:        sudo bash ./host-setup.sh --gid 990
+#      then unplug and replug the stick (or restart the board).
+#   4. On the board:
+#        OA_IMAGE=registry.example.org/open-alert-base:0.23.1-oa1 docker compose -f compose.torizon.yaml up -d
+#   5. From your computer: the SSH tunnel above, then http://127.0.0.1:8080/ .
+name: open-alert-base
+
+services:
+  base:
+    image: ${OA_IMAGE:?set OA_IMAGE to the image in your registry}
+    container_name: open-alert-base
+    hostname: ${OA_HOSTNAME:-open-alert-torizon}
+    restart: unless-stopped
+    stop_grace_period: 20s
+
+    user: "990:990"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    pids_limit: 200
+    mem_limit: ${OA_MEMORY:-768m}
+    memswap_limit: ${OA_MEMORY:-768m}
+    init: true
+
+    group_add:
+      - "${OA_USB_GID:-990}"
+    device_cgroup_rules:
+      - "c 189:* rmw"
+      # - "c 188:* rmw"
+      # - "c 166:* rmw"
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb:ro
+      - oa-settings:/etc/rpi-alert
+      - oa-data:/var/lib/rpi-alert
+      # - ./ca.crt:/etc/open-alert-base/ca.crt:ro
+
+    ports:
+      - "${OA_DASHBOARD:-127.0.0.1:8080}:8080"
+
+    environment:
+      HTTPS_PROXY: ${OA_HTTPS_PROXY:-}
+      NO_PROXY: ${OA_NO_PROXY:-}
+      # NODE_EXTRA_CA_CERTS: /etc/open-alert-base/ca.crt
+      TZ: ${OA_TZ:-UTC}
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+volumes:
+  oa-settings:
+  oa-data:

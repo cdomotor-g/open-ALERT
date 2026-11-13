@@ -1,0 +1,113 @@
+#cloud-config
+##
+## First set-up of an open-ALERT base station.
+##
+## Leave the first line above exactly as it is.
+##
+## Everything below is switched off. As it is, the computer starts and the
+## base station runs, but NOBODY CAN LOG IN: there is no account and no
+## password.
+##
+## Lines that start with two (##) are explanations. Lines that start with one
+## (#) are settings that are switched off. To switch a part on, remove the ONE
+## "#" at the very start of each of its lines and nothing else: the spaces
+## that follow it matter.
+##
+## The file is read when the computer starts for the first time. To have it
+## read again later, see the file "meta-data" beside it.
+##
+## Do not put a password or a private key in this file: it stays on the disk,
+## where anybody who holds the disk can read it.
+
+## ── 1. A name for this computer on the network ─────────────────────────────
+#hostname: base-station-01
+
+## ── 2. An administrator account, and the SSH key that opens it ─────────────
+## The account has no password. It is opened over the network with SSH and
+## the key named here, and with nothing else; "sudo" then lets it act as the
+## computer's administrator without asking for a password (it has none to ask
+## for). Put your own PUBLIC key on the last line, in place of the example:
+## it is the one line in the file your SSH program made whose name ends in
+## ".pub".
+#users:
+#  - name: admin
+#    gecos: Base station administrator
+#    groups: [sudo, adm, systemd-journal]
+#    shell: /bin/bash
+#    lock_passwd: true
+#    sudo: "ALL=(ALL) NOPASSWD:ALL"
+#    ssh_authorized_keys:
+#      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPutYourOwnPublicKeyHereNotThisOne you@your-computer
+
+## ── 3. The time zone ────────────────────────────────────────────────────────
+## Readings are always sent to Flood-Net with their time in UTC; this is for
+## the times a person reads on this computer.
+#timezone: Australia/Brisbane
+
+## ── 4. A private certificate authority ─────────────────────────────────────
+## For a network that opens HTTPS traffic for inspection and signs it again
+## with its own certificate authority: put that authority's certificate in
+## place of the middle line, every line of it starting with the same six
+## spaces.
+#ca_certs:
+#  trusted:
+#    - |
+#      -----BEGIN CERTIFICATE-----
+#      (the lines of the certificate go here)
+#      -----END CERTIFICATE-----
+
+## ── 5. Files to write: a web proxy, your own time servers, a fixed address ─
+## Switch on the line "write_files:" and then the parts you want. Each part
+## starts at a line with "- path:".
+#write_files:
+##
+## A web proxy for the base station (readings go to Flood-Net through it) …
+#  - path: /etc/open-alert-base/env
+#    append: true
+#    permissions: '0640'
+#    content: |
+#      HTTPS_PROXY=http://proxy.example.internal:3128
+#      NO_PROXY=localhost,127.0.0.1
+##
+## … and the same proxy for Debian's security updates.
+#  - path: /etc/apt/apt.conf.d/80-proxy
+#    content: |
+#      Acquire::http::Proxy "http://proxy.example.internal:3128";
+#      Acquire::https::Proxy "http://proxy.example.internal:3128";
+##
+## Your organisation's own time servers. A managed network often blocks the
+## public ones, and the base station sends nothing until its clock is set.
+#  - path: /etc/systemd/timesyncd.conf.d/10-site.conf
+#    content: |
+#      [Time]
+#      NTP=ntp1.example.internal ntp2.example.internal
+##
+## A fixed address in place of one handed out by the network (DHCP).
+#  - path: /etc/systemd/network/10-fixed-address.network
+#    content: |
+#      [Match]
+#      Type=ether
+#      [Network]
+#      Address=192.0.2.10/24
+#      Gateway=192.0.2.1
+#      DNS=192.0.2.53
+
+## ── 6. Commands to run at the end of the first start ───────────────────────
+## Switch on the line "runcmd:" and then the lines you want.
+#runcmd:
+##
+## After part 4 or 5: make the changes take effect now, not at the next start.
+#  - [systemctl, restart, systemd-timesyncd]
+#  - [networkctl, reload]
+#  - [systemctl, try-restart, open-alert-base]
+##
+## The locked-down "enterprise" profile: the dashboard moves to port 8080 and
+## answers this computer only, and Flood-Net can change nothing here. Until
+## this line has run (a minute or two into the first start) the "standard"
+## profile is in force.
+#  - [open-alert-base, profile, enterprise]
+##
+## Last of all, if you want it: never read this file again, whatever is
+## written in it later. (The disk's main partition no longer grows by itself
+## after this, which only matters if the disk is copied to a larger one.)
+#  - [touch, /etc/cloud/cloud-init.disabled]

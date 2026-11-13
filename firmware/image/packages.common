@@ -1,0 +1,55 @@
+# Every Debian package the disk image asks for by name, on every kind of processor.
+#
+# One name a line; what follows a # is why it is there. Debian's own package
+# tool (apt) adds the packages these depend on, and nothing that is only
+# "recommended": the whole list of what ended up in an image, with versions, is
+# written beside it (the .packages.tsv and .spdx.json files).
+#
+# The base is Debian's smallest ("minbase": the packages every Debian system
+# must have, and apt). The open-alert-base package is installed after these,
+# from the file firmware/deb/build-deb.sh makes.
+
+# ── starting up ──────────────────────────────────────────────────────────────
+systemd-sysv            # systemd as the computer's first program
+udev                    # finds devices as they are plugged in: the sticks, serial receivers
+kmod                    # loads and blocks kernel drivers (the TV-driver block list)
+initramfs-tools         # builds the small start-up system the kernel loads first
+zstd                    # packs that start-up system, as on any Debian 13 install
+dbus                    # how programs ask systemd questions (the agent asks whether the clock is set)
+libpam-systemd          # each login becomes a session systemd knows about
+apparmor                # Debian's own extra layer of limits on programs, on as in any Debian install
+e2fsprogs               # checks and grows the main partition
+dosfstools              # checks the EFI partition
+fdisk                   # used by the tool that grows the main partition at first start
+efibootmgr              # reads and sets the firmware's list of what to start
+mokutil                 # "mokutil --sb-state": is Secure Boot on?
+
+# ── network and time ─────────────────────────────────────────────────────────
+systemd-resolved        # looks up names, with the name servers the network hands out
+systemd-timesyncd       # sets the clock from the network; the agent waits for it
+iproute2                # "ip address": what a person uses to look at the network
+iputils-ping            # ping
+netbase                 # the standard lists of service and protocol names
+ca-certificates         # the public certificate authorities, for HTTPS
+nftables                # the firewall
+openssh-server          # SSH, for the administrator: keys only (see files/etc/ssh)
+
+# ── first set-up and upkeep ──────────────────────────────────────────────────
+cloud-init              # reads the first set-up file from the CIDATA partition
+cloud-guest-utils       # "growpart": grows the main partition to fill the disk
+sudo                    # lets the administrator account act as root
+unattended-upgrades     # installs Debian's security updates by itself
+logrotate               # keeps the update logs from growing without end
+tzdata                  # time zones
+
+# ── what the base station package needs (its own "Depends") ──────────────────
+nodejs                  # runs the RPi ALERT agent
+rtl-sdr                 # the programs that read an RTL-SDR stick
+adduser                 # makes the agent's user when the package is installed
+
+# ── for the person looking after it ──────────────────────────────────────────
+usbutils                # "lsusb": which USB devices the computer sees
+curl                    # to try an address or a proxy by hand; the agent's own "is the internet there" check
+less                    # to read long output
+nano                    # a small editor
+procps                  # "ps", "top", "free"

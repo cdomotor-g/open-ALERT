@@ -1,0 +1,12 @@
+# Packages only the image for ordinary 64-bit PCs (amd64) asks for.
+# The format is the one packages.common describes.
+
+# ── the signed boot chain ────────────────────────────────────────────────────
+# With UEFI Secure Boot on, a PC's firmware starts only programs signed by a
+# key it trusts. The chain: the firmware trusts Microsoft's key; Microsoft has
+# signed Debian's "shim"; shim trusts Debian's key; Debian has signed GRUB (the
+# boot menu) and the kernel. All four come from Debian's archive as they are.
+linux-image-amd64       # Debian's kernel, signed by Debian
+shim-signed             # the first program the firmware starts, signed by Microsoft for Debian
+grub-efi-amd64          # GRUB, the boot menu, and its tools
+grub-efi-amd64-signed   # the GRUB program itself, signed by Debian

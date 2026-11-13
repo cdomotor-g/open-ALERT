@@ -22,7 +22,7 @@ Why this exists, and which computers were looked at, is in the
 | Form | For | Where |
 |---|---|---|
 | A native package, `open-alert-base` | Any Debian 13 or Ubuntu 24.04 computer, an ordinary 64-bit PC or a 64-bit ARM board | `deb/` — described on this page |
-| A hardened container | Toradex's Torizon OS, and any computer that runs containers | `container/` — its section is added when that part is finished |
+| A hardened container | Toradex's Torizon OS, and any computer that runs containers | `container/` — described under [The container](#the-container) |
 | Ready-to-flash disk images | A computer that is to be a base station and nothing else | `image/` — its section is added when that part is finished |
 
 All three start from the same checked release (`PIN`, `keys/`, `lib/`).
@@ -37,6 +37,7 @@ All three start from the same checked release (`PIN`, `keys/`, `lib/`).
 | `lib/verify-ed25519.js` | The signature check written for Node.js alone, for a computer that has no OpenSSL 3 |
 | `deb/` | Builds the native package |
 | `test/lib.sh`, `test/deb.sh` | The checks for the release check and for the native package |
+| `container/`, `test/container.sh` | The container (its image recipe, its compose files, the one-time set-up of the computer it runs on) and its checks |
 | `bench/` | A benchmark: how many channels a computer will carry (it has its own notes) |
 | `../dist/` | Where builds and test logs go. Not kept in git |
 
@@ -479,3 +480,174 @@ Where the design left something open, this is what was chosen and why.
   helper, which is not installed here. The other 30 files are run.
 - **The benchmark is built into the package when `bench/open-alert-bench.js` is there** and
   parses; `--no-bench` leaves it out.
+
+## The container
+
+**Tested on 13 November 2026 on one x86-64 computer (Ubuntu 24.04, Docker 29, Docker Compose 5),
+with stand-ins for the radio stick and for Flood-Net. No real stick, no ARM computer, no
+Torizon, no second person's review. See [what is not yet proved](#the-container-what-is-not-yet-proved).**
+
+A *container* is a program run inside a box of its own: it sees only the files, devices and
+network it is given. The same agent as the package, from the same checked release, in a box that
+can do very little. Use it for Toradex's Torizon OS, or for any computer that already runs
+containers (Docker, or Podman with a compose file).
+
+### What is in `container/`
+
+| File | What it is |
+|---|---|
+| `Dockerfile` | The recipe. Step one fetches the pinned release and checks it, with the same `lib/fetch-agent.sh` the package uses; the finished image holds only the unpacked agent. A failed check stops the build |
+| `build.sh` | Builds it (`--platform linux/arm64`, `--tag`, `--push`, `--base-image`, `--release-dir`) |
+| `compose.yaml` | The hardened way to run it on an ordinary container computer |
+| `compose.torizon.yaml` | The same for Toradex Torizon OS, with the steps to load it |
+| `host-setup.sh` | What the *computer* needs once: the device rule for the stick, and the block on the TV driver. `--remove` takes both away, `--check` only looks |
+| `config.default.json`, `healthcheck.js` | The settings a new container starts with; the check Docker runs to ask "is the dashboard answering?" |
+
+### What the image is
+
+- Debian 13 (`debian:trixie-slim`) with the system's own Node.js 20, `rtl-sdr` (the program that
+  reads a stick), `ca-certificates` and `node-undici` (what the web-proxy start-up file needs on
+  Node.js 20). 269 MB on disk, about 67 MB to download. It builds for `linux/amd64` and
+  `linux/arm64` from the same file; only the amd64 one has been built.
+- The agent is the release's, file for file (the check compares every file), in the same folder
+  as the package puts it. The agent's own tests are **not** in the image (the package carries
+  them so a buyer can run them; an image has no use for them).
+- It runs as the ordinary user number 990, never root. There is no compiler, `git`, `curl`,
+  `sudo` or package list in it, and no file that can switch to another user (the few that could,
+  `su` and `mount`, have that ability taken off). `RPI_ALERT_PRIV` points at nothing, so the agent
+  can ask root for nothing, and `RPI_ALERT_ASSUME_CLOCK=1`: inside a box the agent cannot ask the
+  computer whether its clock has been set from the network, so it trusts the clock, and **the
+  computer must keep correct time**.
+- The settings (`/etc/rpi-alert`) and what the agent has heard and not yet sent
+  (`/var/lib/rpi-alert`) are two volumes, which are folders that outlive the container. A new
+  settings volume starts with `config.default.json`: dashboard on port 8080; the Wi-Fi hotspot,
+  self-recovery, the screen and the sound off (none of them can work in a box); remote management
+  on `report` (Flood-Net is told how the station is, and can change nothing). RPi ALERT's updater
+  does not apply here: **an update is a new image** built from the next signed release.
+- Labels a registry shows (title, description, source, licence, version, revision, created, base
+  image), and a health check on the dashboard.
+
+### Building it
+
+```
+firmware/container/build.sh                     # for this computer; the release is downloaded and checked
+firmware/container/build.sh --platform linux/arm64 --tag registry.example.org/open-alert-base:0.23.1-oa1 --push
+```
+
+The base image can be fixed to one exact version: `docker buildx imagetools inspect
+debian:trixie-slim` prints its *digest* (a fingerprint, `sha256:…`); pass
+`--base-image debian:trixie-slim@sha256:<that>`. Do it again, and run
+`firmware/test/container.sh`, when you want Debian's newer fixes. With no network, hand the
+build the two release files with `--release-dir`: they are checked just the same.
+
+### Running it: `compose.yaml`
+
+1. Build the image (above). 2. Once, on the computer: `sudo firmware/container/host-setup.sh` —
+it gives the stick's device file to the group `plugdev` and keeps the kernel's TV driver off the
+stick, and prints the group's number (put it in a file `.env` beside `compose.yaml` as
+`OA_USB_GID=<number>` if it is not 46). Unplug and replug the stick. 3. `docker compose -f
+firmware/container/compose.yaml up -d`, then open `http://127.0.0.1:8080/` **on that computer**.
+
+What the file takes away, and what the checks show it does:
+
+| In `compose.yaml` | Meaning |
+|---|---|
+| `cap_drop: [ALL]` | The process has none of the special powers Linux splits root into (set the clock, change the network, load drivers…) |
+| `no-new-privileges` | Nothing it starts can gain a power it did not have |
+| `read_only: true`, `/tmp` in memory with no running of programs | The container's own files cannot be changed; it writes only its two volumes and `/tmp` |
+| Not `privileged`, no host network, no host folders except `/dev/bus/usb` read-only | A box of its own, with one door to the radio |
+| `device_cgroup_rules: c 189:* rmw` and `group_add` | The stick: the box may open USB device files (class 189) and nothing else on the computer. Instead of `--privileged` |
+| `ports: 127.0.0.1:8080:8080` | The dashboard is reachable from the computer itself only. To let a local network in, change the left side, and set a dashboard password first |
+| `restart: unless-stopped`, 10 MB × 3 log files, 768 MB of memory, 200 processes, a fixed `hostname` | Comes back after a crash or a restart; cannot fill the disk with logs; cannot take all the memory |
+| `HTTPS_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS` (commented) | A web proxy and a private certificate authority: put them in `.env` / take the `#` off, as written in the file |
+| Serial receivers (`c 188`, `c 166`, `devices:`) | Written as comments for people who have a Quansheng radio, an ERT-A2 or a GPS: not on by default |
+
+The agent's own command line is `docker exec open-alert-base rpi-alert status` (and `setup`,
+`token`, `help`).
+
+### On Torizon: `compose.torizon.yaml`
+
+The file and the steps are at the top of the file itself. What differs: the image comes from a
+registry (build and push it with `build.sh --platform linux/arm64 --push`), because the board is
+not the place to build; there may be no `plugdev` group, so `host-setup.sh --gid 990` makes one
+with the number the file expects; and the dashboard is reached through an SSH tunnel, since a
+board has no screen and the port is, as above, published to the board only. **None of that is
+tried: only what the file shares with `compose.yaml` has run, on Debian.**
+
+### How it is checked: `firmware/test/container.sh`
+
+```
+firmware/test/container.sh --tarball <release file> --sig <its signature>   # about 3 minutes
+```
+
+It builds the image from the release files given (no download), runs the real `compose.yaml` with
+the stand-ins (the agent's own test stand-ins for `rtl_sdr` and for Flood-Net, mounted in for the
+test only; the image does not carry them), and checks the rest. Nothing is privileged; nothing
+uses this computer's network.
+
+### The container: what has been tested, where
+
+On the computer named at the top of this section. **98 passed, none failed, none skipped**
+(13 November 2026, 20:34 UTC; shellcheck clean on the three scripts).
+
+| What | Result |
+|---|---|
+| The release check inside the build: a changed tarball stops the build with the check's own message | Passed |
+| The build prints no warning from Docker's own checks of the recipe | Passed |
+| The labels, the user (990), the two volumes, the health check, no root helper, the clock setting | Passed |
+| No compiler, `git`, `curl`, `wget`, `sudo`; no package lists; no set-user-id file; no `test`, `scripts` or `os` folder from the release | Passed |
+| The agent in the image is the release's, file for file; its files cannot be written by its own user | Passed |
+| Both compose files are read by Docker Compose and every hardening line above is in them (each checked by reading the resolved file); the Torizon file refuses to start with no image named | Passed |
+| `host-setup.sh` in a scratch folder: written, repeated (nothing rewritten), checked, removed, repeated; another group name; bad option and bad name refused; without the administrator account it says so and changes nothing; its rule and block list are the package's, line for line | Passed |
+| `compose.yaml` run: the dashboard through the published port (and not on the computer's other address); version 0.23.1; the agent finds the stand-in stick; decoded readings reach the Flood-Net stand-in | Passed |
+| The agent's process: user 990; every capability set zero; no-new-privileges on; the system-call filter on; only port 8080 open by the agent | Passed |
+| Read-only root (writes to `/usr`, `/etc`, the agent's folder and `/var` refused; `/tmp`, settings and data writable); `/tmp` cannot run programs; no helper behind `RPI_ALERT_PRIV` | Passed |
+| Docker's health check says healthy; `rpi-alert status` works inside | Passed |
+| `compose stop`: ends in under 15 seconds with the signal's status; the data is kept; start again answers; the agent killed inside is brought back by the restart policy | Passed |
+| **The USB device rule**, tried with a device file of the USB class made for the purpose (this computer has no USB): without the rule, Docker refuses the open; with the rule but not the group, the file's own permission refuses; with the compose file's two lines the open reaches the kernel (which has no USB driver here, so it answers "no such device"); a read-only `/dev/bus/usb` does not stop that; a disk device is refused even with the rule | Passed |
+| The web proxy, with a private certificate authority: with no proxy set nothing reaches Flood-Net's stand-in; through a proxy the readings arrive, over HTTPS, under a name only the proxy can find; with and without a name and password (the password is not in the log); `NO_PROXY` is honoured (a station-list address is fetched without the proxy) | Passed |
+
+Numbers, measured there (a stand-in stick, so not what a real station will use):
+
+| | |
+|---|---|
+| Image size | 269 MB on disk, about 67 MB compressed. 15 s to build with Debian's packages already downloaded |
+| The agent with **no stick** | 74 MB of memory (the whole container 23 MB as Docker counts it) |
+| The agent with **one stick**, four channels (the agent's defaults), the stand-in sending a burst every few seconds | 300 to 340 MB a minute after it started, 430 to 470 MB a few minutes later, then about level over a further 8 minutes (watched once, on the same computer). Docker's memory limit in `compose.yaml` is 768 MB for that reason. The stand-in `rtl_sdr` is a Node.js program and takes about 100 MB on top, which the real one is expected not to |
+
+### The container: what is not yet proved
+
+- **A real USB stick through the device rule.** The rule was tried on a made-up device file. A
+  real stick, the real `rtl_sdr` opening it, and the stick keeping working for days: not tried.
+  This is the first thing to try on real hardware.
+- **Unplug and replug.** The read-only `/dev/bus/usb` folder is expected to show a stick plugged
+  in later, and the agent to find it again; neither has been seen.
+- **The host-setup rule on a real udev**, and the TV driver block against a real stick, on
+  Debian, Ubuntu or Torizon. The rule is the package's, which udev's checker read without a
+  complaint; no udev applied it to a device.
+- **Serial receivers** (Quansheng, ERT-A2, GPS) in a container.
+- **Torizon itself.** `compose.torizon.yaml` has never been loaded on a Torizon board; its
+  statements about Torizon (no `plugdev` group, how compose is run, the memory) are expectations.
+- **ARM.** The recipe has no compiled code of its own, but no arm64 image has been built or
+  run. The automatic build is to do that on GitHub's ARM machines.
+- **Podman.** The compose file is written for Docker; it has not been tried with Podman.
+- **A real web proxy and inspecting network**, as for the package.
+- **The clock.** The image trusts the computer's clock. The computer's own time service is not
+  part of it.
+- **A long run.** Memory was watched for eight minutes. Days of running, a full disk, a network
+  that comes and goes: not tried.
+- **Docker's own limits on a real board**, for example whether the board's kernel supports the
+  memory limit and the device rule.
+
+### Choices made here
+
+- **User number 990**, not a name only: the number is what the settings volume's files carry, and
+  a computer's own user list does not matter inside the box.
+- **Settings and data are volumes** whose first contents come from the image, rather than a
+  start-up script that writes a settings file: no shell program runs before the agent.
+- **The proxy start-up file is always loaded**; it does nothing unless `HTTPS_PROXY` is set. It is
+  the package's own file, copied in the build.
+- **No `curl` in the image.** The agent uses it for one optional "is Flood-Net answering" check
+  and carries on without it.
+- **The memory limit is 768 MB**, from the measurement above, so that the agent's own growth is not cut off.
+- **The test mounts the agent's own test stand-ins in** and leaves them out of the image.

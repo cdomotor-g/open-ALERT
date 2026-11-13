@@ -1,0 +1,5 @@
+open-ALERT base station (the RPi ALERT agent on Debian 13).
+There is no default password: no account can log in until one is named in
+the file "user-data" in this disk's CIDATA partition (see README.txt there).
+This computer's address: \4   dashboard: http://\4/
+

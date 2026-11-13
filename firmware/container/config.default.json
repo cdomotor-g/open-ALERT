@@ -1,0 +1,8 @@
+{
+  "web": { "port": 8080 },
+  "remote": { "mode": "report" },
+  "hotspot": { "mode": "off" },
+  "recover": { "mode": "off" },
+  "kiosk": { "mode": "off" },
+  "audio": { "mode": "off" }
+}

@@ -1,0 +1,13 @@
+# Packages only the image for 64-bit ARM computers (arm64) asks for.
+# The format is the one packages.common describes.
+#
+# This image is for ARM computers that start the way a PC does (UEFI firmware:
+# ARM servers, "SystemReady" boards, virtual machines). A board that starts
+# from its maker's own boot loader needs its maker's image instead; the native
+# package and the container are the forms for those.
+
+# ── the signed boot chain (the same four parts as on a PC) ───────────────────
+linux-image-arm64       # Debian's kernel, signed by Debian
+shim-signed             # the first program the firmware starts, signed by Microsoft for Debian
+grub-efi-arm64          # GRUB, the boot menu, and its tools
+grub-efi-arm64-signed   # the GRUB program itself, signed by Debian

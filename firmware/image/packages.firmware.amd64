@@ -1,0 +1,12 @@
+# Packages from the "non-free-firmware" part of Debian's archive, for the PC image.
+# The format is the one packages.common describes.
+#
+# These are not programs that run on Debian: they are files the hardware's
+# makers publish, which Debian passes on unchanged and without their source.
+# Debian's own installer has put them on every PC it installs since Debian 12.
+# "build-image.sh --no-firmware" builds an image with none of them, from the
+# "main" part of the archive alone.
+
+intel-microcode         # fixes Intel publishes for faults in its processors, security faults among them
+amd64-microcode         # the same from AMD
+firmware-realtek        # some Realtek network ports, common on small PCs, do not work fully without it

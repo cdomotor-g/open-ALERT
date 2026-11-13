@@ -1,0 +1,7 @@
+# Part of the first set-up of an open-ALERT base station: see README.txt.
+#
+# The set-up in "user-data" is applied once for each name on the line below.
+# To have a changed user-data applied again on a computer that has already
+# started once, change the name to any other (base-station-2, say), save, and
+# start the computer again.
+instance-id: base-station-1
