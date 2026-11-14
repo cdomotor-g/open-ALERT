@@ -1,5 +1,26 @@
+diff --git a/README.md b/README.md
+index 5540d26..510e281 100644
+--- a/README.md
++++ b/README.md
+@@ -37,6 +37,7 @@ itself after an unplug or a power cut.
+ | **Screen, keyboard, mouse** | Plug in a monitor and the dashboard comes up full screen (cage + Chromium); unplug it and the kiosk stops. Everything is settable from it: *Show the settings*, at its foot, unfolds them. |
+ | **No network at all** | Its own Wi-Fi network comes up after three minutes with none — join **RPi-ALERT-…** from a phone and open `http://10.42.0.1/` — and gives way the moment Ethernet or a known Wi-Fi network is there. |
+ | **Headless** | The same dashboard on `http://rpi-alert.local/` from any computer on the network, `rpi-alert setup` / `status` / `top` over SSH (PuTTY), or an `rpi-alert.conf` file dropped on the SD card's boot partition. |
++| **On an organisation's network** | Four settings (0.24) for a base station on a council's or an agency's own network, each as before until it is set, and each set only on the base station itself: the dashboard kept to one address or off the network (`web.bind`), answering to the name your DNS gives it (`web.hosts`), behind a reverse proxy that gives it HTTPS (`web.behindProxy`), and asking for a login before anything is read (`web.requireLogin`). Every login attempt, accepted or refused, is a line in the log with the caller's address. [docs/configuration.md](docs/configuration.md#the-dashboard-on-a-managed-network) |
+ | **Managed from MegaNet** | Checks in with MegaNet's **Base Stations** tab once a minute — MegaNet never connects to it — so its health is on one list with every other base station, and an administrator can change its settings, restart it, install updates and read its log from there — and see a waterfall of what its sticks hear, from a spectrum row a stick sent with each check-in. Never the token, where readings go, the web password or SSH keys; `report` or `off` on the Pi narrows or ends it. [docs/remote-management.md](docs/remote-management.md) |
+ | **Getting in, years later** | The same maintenance account on every Pi, **`alert`**, with no password: SSH keys only, each a person's, listed on the Pi — from the SD card, a team's GitHub accounts, or MegaNet's team keys. Nobody leaves with the only password. Locked out? `alert_password` on the SD card. [docs/access.md](docs/access.md) |
+ | **Chirps** | A speaker on the audio jack plays each burst: an SDR's real demodulated audio, or a re-synthesised ALERT burst for radios and ERT-A2s. |
+@@ -81,6 +82,8 @@ with a key you gave it on the set-up page. Details: [docs/install.md](docs/insta
+ | 1, 2, Zero, Zero W | 32-bit | — too slow; radios and ERT-A2 only | — | Pi 1/2 ✓ |
+ 
+ Hardware notes, including the RTL-SDR V4 and power supplies: [docs/hardware.md](docs/hardware.md).
++Not a Raspberry Pi? The agent itself runs on any Debian or Ubuntu computer:
++[docs/hardware.md](docs/hardware.md#computers-that-are-not-a-raspberry-pi).
+ 
+ ## The repository
+ 
 diff --git a/agent/README.md b/agent/README.md
-index e6dd10f..07a570d 100644
+index e6dd10f..4fd97d2 100644
 --- a/agent/README.md
 +++ b/agent/README.md
 @@ -30,7 +30,7 @@ lib/state.js               receiver ids, what each port was, and every RTL-SDR s
@@ -7,12 +28,12 @@ index e6dd10f..07a570d 100644
  lib/recorder.js            recordings: every burst on chosen channels kept as 240 ksps IQ (.iq8 + .json), newest first
  lib/audio.js               live SDR audio, re-synthesised bursts, beeps — via aplay
 -lib/bootconf.js            /boot/firmware/rpi-alert.conf
-+lib/bootconf.js            /boot/firmware/rpi-alert.conf (off a Pi: /etc/rpi-alert/rpi-alert.conf)
++lib/bootconf.js            /boot/firmware/rpi-alert.conf (off a Pi: /etc/rpi-alert.conf)
  lib/web/server.js, web/    the dashboard, API and SSE; web/qr.js draws QR codes (page and CLI); web/channels.js reads
                             and writes channel lists ("151.5, 152.4 EIF": page, CLI and the boot-partition file);
                             web/sdr-plan.js picks a stick's window and where to tune (DC spike, mirror images) for
 diff --git a/agent/bin/rpi-alert b/agent/bin/rpi-alert
-index 75cb454..ef774d7 100755
+index 75cb454..760868d 100755
 --- a/agent/bin/rpi-alert
 +++ b/agent/bin/rpi-alert
 @@ -12,7 +12,10 @@
@@ -27,7 +48,17 @@ index 75cb454..ef774d7 100755
  //   rpi-alert sdr                    the RTL-SDR sticks: number, name, channels, USB port, state
  //   rpi-alert sdr <stick> <setting> <value>
  //                                    a stick's own setting: freq (the channels it hears, MHz:
-@@ -274,6 +277,8 @@ async function config(sub, key, value) {
+@@ -57,7 +60,8 @@
+ //   rpi-alert log [n]                the agent's recent log (journalctl -u rpi-alert for all of it)
+ //   rpi-alert test-audio [alert|alert2|beep]
+ //   rpi-alert send-now               retry MegaNet now (skip any back-off)
+-//   rpi-alert import-boot-config     apply /boot/firmware/rpi-alert.conf (root; done at every boot)
++//   rpi-alert import-boot-config     apply /boot/firmware/rpi-alert.conf — off a Pi, /etc/rpi-alert.conf
++//                                    (root; done at every boot)
+ //   rpi-alert version
+ //
+ // Everything but `daemon`, `import-boot-config` and the SSH keys of `sudo
+@@ -274,8 +278,12 @@ async function config(sub, key, value) {
      if (!key) throw new Error('rpi-alert config set <key> <value>');
      let v = value;
      try { v = JSON.parse(value); } catch (_) {}
@@ -35,9 +66,13 @@ index 75cb454..ef774d7 100755
 +    if (key === 'web.hosts' && typeof v === 'string') v = /^(none|)$/i.test(v.trim()) ? [] : v.toLowerCase().split(/[\s,;]+/).filter(Boolean);
      const r = await post('/api/config', { config: patchFor(key, v) });
      console.log(r.changed.length ? 'Saved: ' + r.changed.join(', ') : 'Unchanged.');
++    // The address and the port are taken when the agent starts.
++    if (r.changed.some(k => k === 'web.bind' || k === 'web.port')) console.log('The dashboard moves there when the agent next starts: sudo systemctl restart rpi-alert');
      return;
+   }
+   throw new Error('rpi-alert config get [key] | set <key> <value>');
 diff --git a/agent/lib/bootconf.js b/agent/lib/bootconf.js
-index 6f97311..853c427 100644
+index 6f97311..f533c72 100644
 --- a/agent/lib/bootconf.js
 +++ b/agent/lib/bootconf.js
 @@ -27,6 +27,12 @@
@@ -53,15 +88,14 @@ index 6f97311..853c427 100644
  //   timezone = Australia/Brisbane
  //   hostname = rpi-alert
  //   wifi_ssid = …                     a Wi-Fi network to join (Raspberry Pi Imager can do this too)
-@@ -61,16 +67,27 @@
+@@ -61,16 +67,26 @@
  // Once applied the file is renamed rpi-alert.conf.applied with the secrets
  // blanked out, and what happened is appended to rpi-alert-boot.log beside it.
  // To change something later, write a new rpi-alert.conf.
 +//
 +// A computer that is not a Raspberry Pi has no such partition: there the same
-+// file is /etc/rpi-alert/rpi-alert.conf, looked for when no boot partition
-+// holds one. The agent owns that directory and this runs as root, so the file
-+// is applied only if it is root's own (ETC_CONF, below).
++// file is /etc/rpi-alert.conf, looked for when no boot partition holds one
++// (ETC_CONF, below).
  
  const fs = require('node:fs');
  const path = require('node:path');
@@ -74,16 +108,16 @@ index 6f97311..853c427 100644
 -const BOOT_DIRS = ['/boot/firmware', '/boot'];
 +const BOOT_DIRS = (process.env.RPI_ALERT_BOOT_DIRS || '/boot/firmware:/boot').split(':');
  const NAMES = ['rpi-alert.conf', 'rpi-alert.txt', 'rpi-alert.conf.txt'];
-+// The same file where there is no boot partition (0.24). It can give the alert
-+// account a key or a password, and the agent — the part that faces the
-+// network — owns this directory: so it is read only if root wrote it (not a
-+// link, not a file of the agent's, not one others may write), and its applied
-+// copy and log go to the agent's user, which no later boot takes for root's.
-+const ETC_CONF = process.env.RPI_ALERT_ETC_CONF || '/etc/rpi-alert/rpi-alert.conf';
++// The same file where there is no boot partition (0.24). It is applied as
++// root, and can give the alert account a key or a password: so it is root's
++// own, in /etc — beside /etc/rpi-alert rather than in it, as the Bluetooth
++// GPS's is below: the agent, the part that faces the network, owns that
++// directory, and a file there could be one it put there.
++const ETC_CONF = process.env.RPI_ALERT_ETC_CONF || '/etc/rpi-alert.conf';
  // Every key that carries a secret, under every spelling the parser accepts
  // (see the `case` list below) — redactText matches the exact normalised key, so
  // an alias left out here would leave its value in plain text on the card
-@@ -172,6 +189,29 @@ function toPatch(kv) {
+@@ -172,6 +188,29 @@ function toPatch(kv) {
        case 'kiosk': case 'display': set('kiosk.mode', no(v) ? 'off' : yes(v) ? 'on' : String(v).trim().toLowerCase()); break;
        case 'timezone': case 'time_zone': set('system.timezone', v.trim()); system.timezone = v.trim(); break;
        case 'web_password': case 'password': set('web.passwordHash', hashPassword(v)); break;
@@ -113,7 +147,7 @@ index 6f97311..853c427 100644
        case 'hostname': system.hostname = v.trim().toLowerCase(); break;
        case 'wifi_ssid': case 'wifi': system.wifiSsid = v; break;
        case 'wifi_password': case 'wifi_psk': system.wifiPassword = v; break;
-@@ -277,15 +317,7 @@ function applySystem(s, log) {
+@@ -277,15 +316,7 @@ function applySystem(s, log) {
      const r = sh('timedatectl', ['set-timezone', s.timezone]);
      log(r.ok ? 'time zone ' + s.timezone : 'could not set time zone ' + s.timezone + ': ' + r.out);
    }
@@ -130,7 +164,7 @@ index 6f97311..853c427 100644
    if (s.btGps) applyBtGps(s.btGps, log);
    if (s.access) applyAccess(s.access, log);
    if (s.ssh) applySsh(s.ssh, log);
-@@ -300,6 +332,21 @@ function applySystem(s, log) {
+@@ -300,6 +331,21 @@ function applySystem(s, log) {
    }
  }
  
@@ -152,58 +186,50 @@ index 6f97311..853c427 100644
  // SSH on or off. On a card's first boot this runs before the host keys exist:
  // Raspberry Pi OS makes them later in the boot (cloud-init's ssh module, or
  // regenerate_ssh_host_keys, ordered only Before=ssh.service), and sshd will
-@@ -442,12 +489,23 @@ function main(args) {
+@@ -429,10 +475,11 @@ function withBtGpsPort(current, btGps) {
+   return btGps && btGps.address ? rest.concat(BT_GPS_PORT) : rest;
+ }
+ 
+-function redactText(text) {
++// where: what the secrets were removed from — the card, or (in /etc) the file.
++function redactText(text, where) {
+   return String(text).split(/\r?\n/).map(l => {
+     const m = /^(\s*)([A-Za-z][\w.-]*)(\s*[=:]\s*)(.*)$/.exec(l);
+-    if (m && SECRET.has(m[2].toLowerCase().replace(/-/g, '_')) && m[4].trim()) return m[1] + m[2] + m[3] + '(applied — removed from the card)';
++    if (m && SECRET.has(m[2].toLowerCase().replace(/-/g, '_')) && m[4].trim()) return m[1] + m[2] + m[3] + '(applied — removed from ' + (where || 'the card') + ')';
+     return l;
+   }).join('\n');
+ }
+@@ -442,7 +489,10 @@ function main(args) {
    if (!file) {
      for (const d of BOOT_DIRS) for (const n of NAMES) { const f = path.join(d, n); if (!file && fs.existsSync(f)) file = f; }
    }
 -  if (!file) { console.log('no rpi-alert.conf on the boot partition — nothing to apply'); return; }
-+  // No boot partition, or nothing on it: the file in /etc/rpi-alert, if root put one there.
-+  let etc = false;
-+  if (!file) { try { fs.lstatSync(ETC_CONF); file = ETC_CONF; etc = true; } catch (_) {} }
++  // No boot partition, or nothing on it: root's file in /etc.
++  const etc = !file && fs.existsSync(ETC_CONF);
++  if (etc) file = ETC_CONF;
 +  if (!file) { console.log('no rpi-alert.conf on the boot partition or at ' + ETC_CONF + ' — nothing to apply'); return; }
    const dir = path.dirname(file);
    const logLines = [];
    const log = (s) => { logLines.push(s); console.log(s); };
-+  let text;
-+  if (etc) {
-+    try { text = readNoFollow(file, 256 * 1024, { rootsOwn: true }); }
-+    catch (e) {
-+      console.log(e.message + '. A settings file in ' + dir + ' is applied only when it is root\'s own: sudo install -m 600 -o root -g root <your file> ' + file);
-+      return;
-+    }
-+  }
-   log('— ' + new Date().toISOString() + ' applying ' + file);
--  const text = fs.readFileSync(file, 'utf8');
-+  if (!etc) text = fs.readFileSync(file, 'utf8');
-   const { patch, system, notes } = toPatch(parse(text));
-   notes.forEach(n => log('note: ' + n));
-   const cfg = new Config().load();
-@@ -479,11 +537,26 @@ function main(args) {
+@@ -479,6 +529,15 @@ function main(args) {
        log('site survey "' + system.survey.name + '" starts at this power-up');
      } catch (e) { log('could not start the survey: ' + e.message); }
    } else if (system.survey) log('note: survey_hours / survey_readings without survey = <name> — no survey started');
-+  const applied = '# Applied ' + new Date().toISOString() + ' — see rpi-alert-boot.log\n' + redactText(text);
-+  const logFile = path.join(dir, 'rpi-alert-boot.log');
 +  if (etc) {
-+    // In the agent's own directory: never through a link, and given to its
-+    // user, so neither file can be put back as root's settings.
-+    const mine = { mode: 0o600, owner: 'dir' };
++    // In /etc: root's eyes only, and no log beside it — what happened is what
++    // this printed, in the journal (journalctl -u rpi-alert-boot-config).
 +    try {
-+      writeAtomic(path.join(dir, 'rpi-alert.conf.applied'), applied, mine);
++      writeAtomic(file + '.applied', '# Applied ' + new Date().toISOString() + ' — see journalctl -u rpi-alert-boot-config\n' + redactText(text, 'this file'), { mode: 0o600 });
 +      fs.unlinkSync(file);
 +    } catch (e) { log('could not rename ' + file + ': ' + e.message); }
-+    let before = '';
-+    try { before = readNoFollow(logFile, 4 * 1024 * 1024).slice(-64 * 1024); } catch (_) {}
-+    try { writeAtomic(logFile, before + logLines.join('\n') + '\n', mine); } catch (_) {}
 +    return;
 +  }
    try {
--    fs.writeFileSync(path.join(dir, 'rpi-alert.conf.applied'), '# Applied ' + new Date().toISOString() + ' — see rpi-alert-boot.log\n' + redactText(text));
-+    fs.writeFileSync(path.join(dir, 'rpi-alert.conf.applied'), applied);
+     fs.writeFileSync(path.join(dir, 'rpi-alert.conf.applied'), '# Applied ' + new Date().toISOString() + ' — see rpi-alert-boot.log\n' + redactText(text));
      fs.unlinkSync(file);
-   } catch (e) { log('could not rename ' + file + ': ' + e.message); }
--  try { fs.appendFileSync(path.join(dir, 'rpi-alert-boot.log'), logLines.join('\r\n') + '\r\n'); } catch (_) {}
-+  try { fs.appendFileSync(logFile, logLines.join('\r\n') + '\r\n'); } catch (_) {}
+@@ -486,4 +545,4 @@ function main(args) {
+   try { fs.appendFileSync(path.join(dir, 'rpi-alert-boot.log'), logLines.join('\r\n') + '\r\n'); } catch (_) {}
  }
  
 -module.exports = { parse, toPatch, redactText, withBtGpsPort, applySsh, main, moveBtGpsConf, BT_GPS_PORT, BT_GPS_CONF, MULTI };
@@ -248,7 +274,7 @@ index 751d577..48e130f 100644
          // No systemd (a development machine): trust the clock, as every PC does.
          if (err.code === 'ENOENT') { this.setNtp(true); return; }
 diff --git a/agent/lib/config.js b/agent/lib/config.js
-index 13a0fe0..f28e86d 100644
+index 13a0fe0..d815302 100644
 --- a/agent/lib/config.js
 +++ b/agent/lib/config.js
 @@ -7,6 +7,7 @@
@@ -309,15 +335,20 @@ index 13a0fe0..f28e86d 100644
    need(KIOSK_MODES.includes((c.kiosk || {}).mode), 'kiosk.mode: one of ' + KIOSK_MODES.join(', '));
    const tz = (c.system || {}).timezone;
    need(tz === '' || /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(tz), 'system.timezone: e.g. Australia/Brisbane');
-@@ -352,6 +378,17 @@ function validate(c) {
+@@ -352,6 +378,22 @@ function validate(c) {
    return errs;
  }
  
 +// An address the dashboard can be told to listen on: one address. "Every
-+// interface" is the empty setting, not 0.0.0.0 or :: — beside an address the
-+// agent also listens on 127.0.0.1, and those two would take it for themselves.
++// interface" is the empty setting, never an address — not 0.0.0.0 or ::, under
++// any spelling: beside an address the agent also listens on 127.0.0.1, which
++// "every address" cannot be had beside.
 +function bindOk(v) {
-+  return typeof v === 'string' && net.isIP(v) !== 0 && v !== '0.0.0.0' && !/^[0:]+$/.test(v);
++  if (typeof v !== 'string' || !net.isIP(v)) return false;
++  if (net.isIPv4(v)) return v !== '0.0.0.0';
++  // An IPv6 address as a URL spells it: :: for every way of writing none, and
++  // ::ffff:0:0 for IPv4's 0.0.0.0 inside it. (One with a %zone is not none.)
++  try { return !['[::]', '[::ffff:0:0]'].includes(new URL('http://[' + v + ']/').hostname); } catch (_) { return true; }
 +}
 +// More names for the dashboard: names only — an address needs no listing.
 +function hostsOk(list) {
@@ -327,7 +358,7 @@ index 13a0fe0..f28e86d 100644
  // A stick's channels, its own first: [{ freqHz, format }], each more channel
  // in the stick's format unless it names one. own: the stick's entry in
  // receivers.sdrDevices, or null for what every stick shares.
-@@ -457,7 +494,10 @@ class Config extends EventEmitter {
+@@ -457,7 +499,10 @@ class Config extends EventEmitter {
          // Lists replace rather than merge, and a missing endpoint list means the default.
          if (!Array.isArray(merged.meganet.endpoints) || !merged.meganet.endpoints.length) merged.meganet.endpoints = MEGANET_ENDPOINTS.slice();
          const errs = validate(merged);
@@ -339,7 +370,7 @@ index 13a0fe0..f28e86d 100644
          this.data = errs.length ? repair(merged) : merged;
          const ch = channelErrors(this.data);
          if (ch.length) this.loadError = (this.loadError ? this.loadError + '; ' : '') + 'channels one stick cannot hear together (only those that fit are decoded): ' + ch.join('; ');
-@@ -503,6 +543,11 @@ class Config extends EventEmitter {
+@@ -503,6 +548,11 @@ class Config extends EventEmitter {
    }
  }
  
@@ -351,7 +382,7 @@ index 13a0fe0..f28e86d 100644
  // Fields that fail validation go back to their defaults, one by one.
  function repair(c) {
    const d = defaults();
-@@ -521,7 +566,7 @@ function repair(c) {
+@@ -521,7 +571,7 @@ function repair(c) {
      setPath(trial, p, getPath(out, p));
      return validate(trial).length === 0;
    };
@@ -360,7 +391,7 @@ index 13a0fe0..f28e86d 100644
    return validate(out).length ? d : out;
  }
  function leafPaths(o, pre) {
-@@ -546,4 +591,5 @@ function changedPaths(a, b) {
+@@ -546,4 +596,5 @@ function changedPaths(a, b) {
  module.exports = {
    Config, defaults, validate, stickErrors, channelsOf, channelErrors, merge, maskToken, hashPassword, checkPassword, getPath, setPath,
    CONFIG_PATH, DECODERS, WATCHES, MEGANET_ENDPOINTS, MEGANET_APIKEY, ALERT_CHANNELS_HZ, SDR_FORMATS, FORMAT_NAMES, STICK_FIELDS, PORT_TYPES, AUDIO_MODES, KIOSK_MODES, LOC_SOURCES, REMOTE_MODES,
@@ -379,46 +410,8 @@ index b80591c..89defa5 100644
    hotspot: 'its own Wi-Fi network and its password',
    remote: 'what MegaNet may do',
    version: null,
-diff --git a/agent/lib/safe-fs.js b/agent/lib/safe-fs.js
-index fa33dcf..508ddb2 100644
---- a/agent/lib/safe-fs.js
-+++ b/agent/lib/safe-fs.js
-@@ -8,7 +8,10 @@
- // and root following it would read or overwrite whatever it points at. So:
- //
- //   readNoFollow   refuses a link, a device or a FIFO, and a file with a second
--//                  name (a hard link), and reads at most maxBytes.
-+//                  name (a hard link), and reads at most maxBytes. Asked for
-+//                  root's own ({ rootsOwn: true }), it also refuses a file
-+//                  that is somebody else's or that others may write — for a
-+//                  file root will act on the word of.
- //   writeAtomic    writes a new file under a name nobody can have planted
- //                  (random, created exclusively, never through a link), sets
- //                  its mode and — as root, when asked — its owner on the open
-@@ -29,7 +32,7 @@ function refuse(file, why) {
-   return e;
- }
- 
--function readNoFollow(file, maxBytes) {
-+function readNoFollow(file, maxBytes, opts) {
-   const max = maxBytes || 1024 * 1024;
-   let fd;
-   try { fd = fs.openSync(file, C.O_RDONLY | NOFOLLOW | NONBLOCK); }
-@@ -39,6 +42,12 @@ function readNoFollow(file, maxBytes) {
-     if (!st.isFile()) throw refuse(file, 'is not a plain file');
-     if (st.nlink > 1) throw refuse(file, 'has more than one name (a hard link)');
-     if (st.size > max) throw refuse(file, 'is larger than ' + max + ' bytes');
-+    if (opts && opts.rootsOwn) {
-+      // Root's — or, run by hand as somebody else, that somebody's own.
-+      const me = typeof process.getuid === 'function' ? process.getuid() : 0;
-+      if (st.uid !== 0 && st.uid !== me) throw refuse(file, 'is not root\'s file');
-+      if (st.mode & 0o022) throw refuse(file, 'can be written by others');
-+    }
-     const buf = Buffer.alloc(Math.min(st.size, max));
-     let got = 0;
-     while (got < buf.length) {
 diff --git a/agent/lib/web/server.js b/agent/lib/web/server.js
-index 5b56bd1..c345ad2 100644
+index 5b56bd1..302ce20 100644
 --- a/agent/lib/web/server.js
 +++ b/agent/lib/web/server.js
 @@ -11,10 +11,18 @@
@@ -440,7 +433,7 @@ index 5b56bd1..c345ad2 100644
  const crypto = require('node:crypto');
  const { execFile } = require('node:child_process');
  const logm = require('../log');
-@@ -28,9 +36,94 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
+@@ -28,9 +36,96 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
    '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
  const SESSION_MS = 7 * 24 * 3600 * 1000;
  
@@ -499,18 +492,20 @@ index 5b56bd1..c345ad2 100644
 +// machine's own only if it carries none of the headers a proxy adds — under
 +// any spelling, repeated or empty; if its connection has never carried one
 +// (a proxy sends many callers down one connection, and a request hidden in
-+// another's body rides behind it); and if it asks for this machine by its own
++// another's body rides behind it); if it asks for this machine by its own
 +// name, as the command and the screen do, and a browser on the far side of a
-+// proxy does not.
++// proxy does not; and if it is not in HTTP/1.0, which nothing on this machine
++// speaks and nginx, left as it comes, does.
 +//
 +// That is as far as the agent can see. A proxy that adds none of its headers
-+// and asks for 127.0.0.1 by name sends what the rpi-alert command sends: the
-+// proxy has to do its part, and docs/configuration.md says what that is and
-+// how to check it.
++// and asks for 127.0.0.1 by name in HTTP/1.1 sends what the rpi-alert command
++// sends, and whoever is behind it can make it send that: the proxy has to do
++// its part, and docs/configuration.md says what that is and how to check it.
 +function isLocal(req, web) {
 +  if (!fromLoopback(req)) return false;
 +  if (!(web && web.behindProxy)) return !req.headers['x-forwarded-for'];
 +  if ((req.socket && req.socket.rpaProxy) || forwarded(req)) return false;
++  if (req.httpVersion === '1.0') return false;
 +  return asksThisMachine(req);
 +}
 +
@@ -538,7 +533,7 @@ index 5b56bd1..c345ad2 100644
  }
  
  // Reject a Host the Pi is not known by, so a website the operator visits cannot
-@@ -40,13 +133,18 @@ function isLocal(req) {
+@@ -40,13 +135,18 @@ function isLocal(req) {
  // with the attacker's own domain in Host, which none of those match. Reaching
  // the Pi by a bare IP is not a rebinding vector (the attacker cannot serve their
  // page from it), so IP literals are allowed.
@@ -558,7 +553,7 @@ index 5b56bd1..c345ad2 100644
    return false;
  }
  
-@@ -54,6 +152,12 @@ function hostAllowed(req) {
+@@ -54,6 +154,15 @@ function hostAllowed(req) {
  // socket and starve a small Pi of memory and file descriptors (appraisal M-7).
  const MAX_SSE = 24;
  const MAX_SSE_PER_IP = 6;
@@ -568,10 +563,13 @@ index 5b56bd1..c345ad2 100644
 +const PROXY_DOUBT_MS = 10 * 60 * 1000;
 +// Tries from a locked-out address are not checked, and are logged as a count this often.
 +const LOCKED_NOTE_MS = 60000;
++// Wrong passwords are counted for this many addresses at most: past it, the
++// one counted longest is forgotten, so made-up addresses cannot fill the memory.
++const MAX_FAIL_ADDRESSES = 5000;
  
  function cookies(req) {
    const out = {};
-@@ -73,29 +177,98 @@ class WebServer {
+@@ -73,29 +182,99 @@ class WebServer {
      this.clients = new Set();
      this.server = null;
      this.port = null;
@@ -580,6 +578,7 @@ index 5b56bd1..c345ad2 100644
 +    this.bindTimer = null;
 +    this.bindRetryMs = BIND_RETRY_MS;
 +    this.lockedNoteMs = LOCKED_NOTE_MS;
++    this.maxFails = MAX_FAIL_ADDRESSES;
 +    this.proxyDoubtAt = 0;
 +    this.stopped = false;
    }
@@ -676,7 +675,7 @@ index 5b56bd1..c345ad2 100644
  
    // ── live events ─────────────────────────────────────────────────────────
  
-@@ -111,7 +284,17 @@ class WebServer {
+@@ -111,7 +290,17 @@ class WebServer {
      let devTimer = null;
      a.on('devices', () => { if (!devTimer) devTimer = setTimeout(() => { devTimer = null; this.broadcast('devices', {}); }, 500); });
      logm.on((line) => this.broadcast('log', line, true));
@@ -695,7 +694,7 @@ index 5b56bd1..c345ad2 100644
    }
  
    broadcast(type, data, needAuth) {
-@@ -127,14 +310,35 @@ class WebServer {
+@@ -127,14 +316,35 @@ class WebServer {
      res.end(s);
    }
  
@@ -735,7 +734,7 @@ index 5b56bd1..c345ad2 100644
    }
  
    body(req) {
-@@ -159,28 +363,47 @@ class WebServer {
+@@ -159,28 +369,48 @@ class WebServer {
    async handle(req, res) {
      const url = new URL(req.url, 'http://x');
      const p = url.pathname;
@@ -781,6 +780,7 @@ index 5b56bd1..c345ad2 100644
        const s = await a.status();
 -      s.auth = { authed, local: isLocal(req), passwordSet: !!a.config.get().web.passwordHash };
 +      s.auth = { authed, local, passwordSet: !!web.passwordHash };
++      if (all) s.auth.all = true;   // for the page: when its live stream is refused, the login has ended
        // The auto-generated password is shown only to a local caller — the kiosk
        // screen or the CLI over the loopback — never over the network (H-4).
 -      if (isLocal(req)) { const pw = webpw.initial(a.config); if (pw) s.auth.initialPassword = pw; }
@@ -788,7 +788,7 @@ index 5b56bd1..c345ad2 100644
        if (!authed) redactPlace(s);
        return this.json(res, 200, s);
      }
-@@ -192,11 +415,6 @@ class WebServer {
+@@ -192,11 +422,6 @@ class WebServer {
      }
      if (p === '/api/history' && req.method === 'GET') return this.json(res, 200, a.history.get(url.searchParams.get('since')));
      if (p === '/api/events') return this.sse(req, res, authed);
@@ -800,7 +800,7 @@ index 5b56bd1..c345ad2 100644
      if (p === '/api/stations/search') return this.json(res, 200, { stations: a.stations.search(url.searchParams.get('q'), 12), register: a.stations.status() });
  
      // Everything below needs to be allowed in.
-@@ -360,7 +578,8 @@ class WebServer {
+@@ -360,7 +585,8 @@ class WebServer {
      // a chosen host, so the network must not be able to do it even once signed
      // in (security appraisal H-4). Only an actual change is refused; a form
      // echoing the current values saves as before.
@@ -810,7 +810,7 @@ index 5b56bd1..c345ad2 100644
        const cur = this.agent.config.get().meganet;
        const changes = (k) => k in patch.meganet && JSON.stringify(patch.meganet[k]) !== JSON.stringify(cur[k]);
        if (changes('endpoints') || changes('apikey')) {
-@@ -373,6 +592,17 @@ class WebServer {
+@@ -373,6 +599,17 @@ class WebServer {
        if (!t || t.includes('…')) delete patch.meganet.token; else patch.meganet.token = t;
        if (body.clearToken) patch.meganet.token = '';
      }
@@ -828,7 +828,7 @@ index 5b56bd1..c345ad2 100644
      if (patch.web) delete patch.web.passwordHash;
      const r = this.agent.config.update(patch);
      if (!r.ok) return this.json(res, 400, { error: 'Not saved: ' + r.errors.join('; '), errors: r.errors });
-@@ -383,42 +613,75 @@ class WebServer {
+@@ -383,42 +620,81 @@ class WebServer {
      const cfg = this.agent.config;
      const pw = String(body.password || '');
      if (body.remove) {
@@ -856,7 +856,8 @@ index 5b56bd1..c345ad2 100644
 +  // than the one before (30 s, 60 s, 90 s, …) until a right password from it
 +  // or a restart of the agent. A locked-out address's tries are not checked
 +  // at all — the right password is refused too. There is no limit across
-+  // addresses.
++  // addresses: somebody with many addresses gets four tries from each. The
++  // counts are in memory, for the 5000 addresses counted most recently.
 +  //
 +  // Every attempt is logged (0.24) — accepted or refused, with the caller's
 +  // address, never anything that was typed — at the level of the other things
@@ -891,6 +892,11 @@ index 5b56bd1..c345ad2 100644
        const n = (f ? f.n : 0) + 1;
 -      this.fails.set(ip, { n, until: n >= 5 ? Date.now() + 30000 * (n - 4) : 0 });
 +      const lock = n >= 5 ? 30000 * (n - 4) : 0;
++      if (!f && this.fails.size >= this.maxFails) {
++        const [oldest, o] = this.fails.entries().next().value;
++        clearTimeout(o.timer);
++        this.fails.delete(oldest);
++      }
 +      this.fails.set(ip, Object.assign(f || {}, { n, until: lock ? Date.now() + lock : 0 }));
 +      this.log.warn('login refused from ' + from + ': ' + (hash ? 'wrong password' : 'no password is set') + ' (' + n + ' in a row'
 +        + (lock ? '; locked out for ' + lock / 1000 + ' s' : '') + ')');
@@ -917,7 +923,7 @@ index 5b56bd1..c345ad2 100644
        let perIp = 0;
        for (const c of this.clients) if (c._ip === ip) perIp++;
        if (this.clients.size >= MAX_SSE || perIp >= MAX_SSE_PER_IP) {
-@@ -430,6 +693,8 @@ class WebServer {
+@@ -430,6 +706,8 @@ class WebServer {
      res.write('retry: 3000\n\n');
      res.authed = authed;
      res._ip = ip;
@@ -926,7 +932,7 @@ index 5b56bd1..c345ad2 100644
      this.clients.add(res);
      req.on('close', () => this.clients.delete(res));
    }
-@@ -488,4 +753,4 @@ function parseWifi(text) {
+@@ -488,4 +766,4 @@ function parseWifi(text) {
    return [...seen.values()].sort((a, b) => b.signal - a.signal);
  }
  
@@ -1005,10 +1011,10 @@ index 5e2623a..941f27a 100644
 +  } finally { if (prev === undefined) delete process.env.RPI_ALERT_ASSUME_CLOCK; else process.env.RPI_ALERT_ASSUME_CLOCK = prev; }
 +});
 diff --git a/agent/test/config.test.js b/agent/test/config.test.js
-index f1fe18f..4ca6703 100644
+index f1fe18f..7f8c383 100644
 --- a/agent/test/config.test.js
 +++ b/agent/test/config.test.js
-@@ -180,3 +180,24 @@ test('settings: the narrowest and widest window automatic may take (0.20), share
+@@ -180,3 +180,27 @@ test('settings: the narrowest and widest window automatic may take (0.20), share
    assert.deepEqual([patch.receivers.sdr.sampleRateMin, patch.receivers.sdr.sampleRateMax], [0, 960000]);
    assert.ok(c.update(patch).ok, 'the SD card\'s patch passes validation');
  });
@@ -1025,20 +1031,23 @@ index f1fe18f..4ca6703 100644
 +    ['nmcli', 'connection', 'up', 'rpi-alert-wifi'],
 +  ]);
 +  assert.deepEqual(said, ['Wi-Fi network "Depot" added (joins when in range)']);
-+  // No device is named anywhere in what the agent runs: NetworkManager chooses it.
-+  for (const f of ['bootconf.js', 'hotspot.js', 'keeper.js', 'system.js']) {
-+    assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '..', 'lib', f), 'utf8').replace(/^\s*\/\/.*$/gm, ''), /wlan\d/, f);
-+  }
++  // No device is named anywhere in what a base station runs: NetworkManager chooses it.
++  const root = path.join(__dirname, '..', '..');
++  const scripts = (dir) => fs.readdirSync(path.join(root, dir), { withFileTypes: true })
++    .flatMap(e => (e.isDirectory() ? scripts(path.join(dir, e.name)) : [path.join(dir, e.name)]));
++  const all = scripts('agent/lib').concat(scripts('agent/bin'), scripts('os/libexec'), 'os/install.sh');
++  assert.ok(all.includes(path.join('agent', 'lib', 'bootconf.js')) && all.includes(path.join('os', 'libexec', 'rpi-alert-priv')));
++  for (const f of all) assert.doesNotMatch(fs.readFileSync(path.join(root, f), 'utf8').replace(/^\s*(\/\/|#).*$/gm, ''), /wlan\d/, f);
 +  const open = []; boot.applyWifi({ wifiSsid: 'Open' }, () => {}, { run: (c, a) => { open.push(a); return { ok: false, out: 'no' }; } });
 +  assert.equal(open.length, 2, 'not added: not brought up');
 +  assert.ok(!open[1].includes('wifi-sec.psk'));
 +});
 diff --git a/agent/test/managed-network.test.js b/agent/test/managed-network.test.js
 new file mode 100644
-index 0000000..df5e8fb
+index 0000000..f2a3965
 --- /dev/null
 +++ b/agent/test/managed-network.test.js
-@@ -0,0 +1,617 @@
+@@ -0,0 +1,740 @@
 +'use strict';
 +// 0.24 — the dashboard of a base station on a managed network, where somebody
 +// whose job it is asks what listens, who is let in, and what is on record.
@@ -1169,8 +1178,8 @@ index 0000000..df5e8fb
 +  assert.ok(c.update({ web: { bind: '' } }).ok, 'and back to every interface');
 +  const bad = (web, re) => assert.match(c.update({ web }).errors.join('; '), re, JSON.stringify(web));
 +  bad({ bind: 'eth0' }, /web\.bind: one of this machine's addresses/);
-+  bad({ bind: '0.0.0.0' }, /web\.bind/);
-+  bad({ bind: '::' }, /web\.bind/);
++  // "Every interface" is the empty setting, never an address, however it is spelt.
++  for (const every of ['0.0.0.0', '::', '0::0', '0:0:0:0:0:0:0:0', '::ffff:0.0.0.0', '::0.0.0.0']) bad({ bind: every }, /web\.bind/);
 +  bad({ bind: 'bs01.council.example' }, /web\.bind/);
 +  bad({ hosts: 'bs01.council.example' }, /web\.hosts: a list/);
 +  bad({ hosts: ['two words'] }, /web\.hosts/);
@@ -1375,6 +1384,9 @@ index 0000000..df5e8fb
 +    assert.equal(local('127.0.0.1', Object.assign({ Origin: page }, cli)), false, 'Origin ' + JSON.stringify(page));
 +    assert.equal(local('127.0.0.1', Object.assign({ Referer: page }, cli)), false, 'Referer ' + JSON.stringify(page));
 +  }
++  // nginx, left as it comes, adds no header, asks for 127.0.0.1 by name — and speaks HTTP/1.0, which nothing on this machine does.
++  const v = (httpVersion, web) => isLocal(Object.assign(reqOf('127.0.0.1', cli), { httpVersion }), web);
++  assert.deepEqual([v('1.0', on), v('1.1', on), v('1.0', { behindProxy: false })], [false, true, true]);
 +  // From the network nothing is this machine's own, whatever it says of itself.
 +  for (const a of ['192.168.1.20', '::ffff:192.168.1.20', '203.0.113.7', 'fe80::1', '127.0.0.2', '']) assert.equal(local(a, { Host: 'localhost' }), false, a);
 +  assert.equal(forwarded(reqOf('127.0.0.1', { Host: 'localhost', 'User-Agent': 'node', Accept: '*/*', Cookie: 'x-forwarded-for=1', 'Accept-Language': '*' })), false, 'the command\'s own headers are none of them');
@@ -1481,10 +1493,15 @@ index 0000000..df5e8fb
 +    // The command's own connection, which has carried none: let in each time.
 +    const own = await onOneConnection(s.port, [get(''), get('', true)]);
 +    assert.deepEqual(own.map(r => r.status), [200, 200]);
++    // nginx with no settings of its own: no header, 127.0.0.1 for a name, HTTP/1.0. A visitor — and the log says so.
++    const http10 = 'GET /api/config HTTP/1.0\r\nHost: 127.0.0.1:' + s.port + '\r\nConnection: close\r\n\r\n';
++    assert.deepEqual((await onOneConnection(s.port, [http10])).map(r => r.status), [401]);
++    assert.equal(s.said('warn', /asking for "127\.0\.0\.1", carried none of a reverse proxy's headers/).length, 1);
 +    // With the setting off, as before 0.24: each request on its own.
 +    s.config.update({ web: { behindProxy: false } });
 +    const before = await onOneConnection(s.port, [get('X-Forwarded-For: 203.0.113.7\r\n'), get('', true)]);
 +    assert.deepEqual(before.map(r => r.status), [401, 200]);
++    assert.deepEqual((await onOneConnection(s.port, [http10])).map(r => r.status), [200]);
 +  } finally { s.stop(); }
 +});
 +
@@ -1505,6 +1522,66 @@ index 0000000..df5e8fb
 +    assert.equal((await from('203.0.113.7')).status, 503, 'the seventh from one address');
 +    assert.equal((await from('203.0.113.8')).status, 200, 'another address is not held back by it');
 +  } finally { open.forEach(o => o.close()); s.stop(); }
++});
++
++// A real nginx, where there is one: as it comes, and set up as docs/configuration.md says.
++const NGINX = ['/usr/sbin/nginx', '/usr/bin/nginx', '/usr/local/sbin/nginx', '/usr/local/bin/nginx'].find(f => fs.existsSync(f));
++
++test('behindProxy: behind nginx itself — as it comes its callers are visitors; set up as the docs say, each is a visitor with its own address', { skip: !NGINX && 'no nginx here' }, async (t) => {
++  const s = await station({ behindProxy: true, hosts: ['bs01.council.example'] });
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rpa-nginx-'));
++  const bare = await freePort(), good = await freePort();
++  fs.writeFileSync(path.join(dir, 'nginx.conf'), [
++    'daemon off;', 'pid ' + dir + '/nginx.pid;', 'error_log ' + dir + '/error.log;',
++    typeof process.getuid === 'function' && process.getuid() === 0 ? 'user root;' : '',
++    'events {}',
++    'http {',
++    '  access_log off;',
++    ['client_body', 'proxy', 'fastcgi', 'uwsgi', 'scgi'].map(k => '  ' + k + '_temp_path ' + dir + '/' + k + ';').join('\n'),
++    // nginx with no more than where to pass requests on to.
++    '  server { listen 127.0.0.1:' + bare + '; location / { proxy_pass http://127.0.0.1:' + s.port + '; } }',
++    // As docs/configuration.md gives it.
++    '  server { listen 127.0.0.1:' + good + '; location / {',
++    '    proxy_pass http://127.0.0.1:' + s.port + ';',
++    '    proxy_set_header Host $http_host;',
++    '    proxy_set_header X-Forwarded-For $remote_addr;',
++    '    proxy_set_header X-Forwarded-Proto $scheme;',
++    '  } }',
++    '}', ''].join('\n'));
++  const nginx = require('node:child_process').spawn(NGINX, ['-e', path.join(dir, 'error.log'), '-c', path.join(dir, 'nginx.conf')], { stdio: 'ignore' });
++  let gone = false; nginx.on('exit', () => { gone = true; }); nginx.on('error', () => { gone = true; });
++  try {
++    const up = await until(async () => gone || ((await ask(bare, { path: '/' })).status !== 0 && (await ask(good, { path: '/' })).status !== 0), 8000);
++    if (!up || gone) return t.skip('nginx would not start here');
++    const named = (extra) => Object.assign({ Host: 'bs01.council.example' }, extra || {});
++
++    // As it comes: no header of its own, 127.0.0.1 for a name — and HTTP/1.0. A visitor, whatever name the caller asks for; and the log says the proxy is not doing its part.
++    for (const h of [named(), { Host: 'localhost' }, { Host: '127.0.0.1' }]) assert.equal((await ask(bare, { path: '/api/config', headers: h })).status, 401, 'as it comes, asking for ' + h.Host);
++    assert.equal((await ask(bare, { headers: named() })).json.auth.local, false);
++    assert.equal(s.said('warn', /asking for "127\.0\.0\.1", carried none of a reverse proxy's headers/).length, 1);
++
++    // As the docs say: a visitor, known by the address nginx saw — not one the caller made up.
++    const out = await ask(good, { headers: named() });
++    assert.deepEqual([out.status, out.json.auth.local, out.json.auth.authed], [200, false, false]);
++    assert.equal((await ask(good, { path: '/api/config', headers: named() })).status, 401);
++    assert.equal((await ask(good, { path: '/api/config', headers: { Host: 'evil.example' } })).status, 403, 'the Host guard, through the proxy');
++    const wrong = await ask(good, { path: '/api/login', headers: named({ 'X-Forwarded-For': '203.0.113.99', Origin: 'http://bs01.council.example' }), body: { password: 'wrong' } });
++    assert.equal(wrong.status, 401, 'the browser\'s Host was passed on, so its Origin matches: checked, not refused as cross-site');
++    assert.equal(s.logins()[0][1], 'login refused from 127.0.0.1 (through the proxy): wrong password (1 in a row)');
++    const login = await ask(good, { path: '/api/login', headers: named(), body: { password: PASSWORD } });
++    const cookie = login.headers['set-cookie'][0].split(';')[0];
++    assert.equal((await ask(good, { path: '/api/config', headers: named({ Cookie: cookie }) })).status, 200, 'logged in, through the proxy');
++    // The live stream comes through at once, not held back by the proxy.
++    const live = await stream(good, named()).ready;
++    assert.equal(live.status, 200);
++    assert.ok(await until(() => /retry: 3000/.test(live.text), 3000), 'its first line is there');
++    s.web.broadcast('tick', { t: 1 });
++    assert.ok(await until(() => /event: tick/.test(live.text), 3000), 'and what follows');
++    live.close();
++
++    // Beside it, the rpi-alert command asks the agent itself, and needs no login.
++    assert.equal((await ask(s.port, { path: '/api/config' })).status, 200);
++  } finally { nginx.kill(); s.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
 +});
 +
 +// ── a log line for every login attempt ───────────────────────────────────────
@@ -1561,6 +1638,23 @@ index 0000000..df5e8fb
 +    // The command on the machine itself needs no login; if it tries one, it is its own address.
 +    assert.equal((await tryLogin(PASSWORD)).status, 200);
 +    assert.equal(s.log[s.log.length - 1][1], 'login accepted from 127.0.0.1');
++  } finally { s.stop(); }
++});
++
++test('login: wrong passwords are counted for so many addresses and no more — the one counted longest is forgotten', async () => {
++  const s = await station({ behindProxy: true }, { maxFails: 3 });
++  const wrong = (addr) => ask(s.port, { path: '/api/login', headers: { 'X-Forwarded-For': addr }, body: { password: 'wrong' } });
++  try {
++    for (const a of ['198.51.100.1', '198.51.100.2', '198.51.100.3']) assert.equal((await wrong(a)).status, 401);
++    assert.equal((await wrong('198.51.100.2')).status, 401);
++    assert.deepEqual([...s.web.fails.keys()], ['198.51.100.1', '198.51.100.2', '198.51.100.3']);
++    // A fourth address: the first is forgotten, the others keep their counts.
++    assert.equal((await wrong('198.51.100.4')).status, 401);
++    assert.deepEqual([...s.web.fails.keys()], ['198.51.100.2', '198.51.100.3', '198.51.100.4']);
++    assert.equal(s.web.fails.get('198.51.100.2').n, 2);
++    assert.equal((await wrong('198.51.100.1')).status, 401);
++    assert.equal(s.log[s.log.length - 1][1], 'login refused from 198.51.100.1 (through the proxy): wrong password (1 in a row)');
++    assert.equal(s.web.fails.size, 3);
 +  } finally { s.stop(); }
 +});
 +
@@ -1655,106 +1749,123 @@ index 0000000..df5e8fb
 +  } finally { s.stop(); }
 +});
 +
++// The rpi-alert command itself, as somebody logged in on the base station runs it.
++function cli(port, args) {
++  return new Promise((resolve) => {
++    require('node:child_process').execFile(process.execPath, [path.join(__dirname, '..', 'bin', 'rpi-alert')].concat(args),
++      { env: Object.assign({}, process.env, { RPI_ALERT_PORT: String(port) }), encoding: 'utf8', timeout: 30000 },
++      (err, stdout, stderr) => resolve({ code: err ? err.code || 1 : 0, stdout, stderr }));
++  });
++}
++
++test('the rpi-alert command on the base station: reads and sets with all four on, and is how they are set', async () => {
++  const s = await station({ bind: '127.0.0.1', behindProxy: true, requireLogin: 'all' });
++  try {
++    const st = await cli(s.port, ['status', '--json']);
++    assert.equal(st.code, 0, st.stderr);
++    assert.deepEqual(JSON.parse(st.stdout).auth, { authed: true, local: true, passwordSet: true, all: true });
++    const get = await cli(s.port, ['config', 'get', 'web.requireLogin']);
++    assert.deepEqual([get.code, get.stdout.trim()], [0, 'all'], get.stderr);
++    // Names as they are typed: one, several, none.
++    const set = await cli(s.port, ['config', 'set', 'web.hosts', 'BS01.council.example, alert.council.example']);
++    assert.deepEqual([set.code, set.stdout.trim()], [0, 'Saved: web.hosts'], set.stderr);
++    assert.deepEqual(s.config.get().web.hosts, ['bs01.council.example', 'alert.council.example']);
++    assert.equal((await cli(s.port, ['config', 'set', 'web.hosts', 'none'])).code, 0);
++    assert.deepEqual(s.config.get().web.hosts, []);
++    // The other three, back to as they were before 0.24.
++    for (const [key, value, now] of [['web.requireLogin', 'settings', 'settings'], ['web.behindProxy', 'false', false], ['web.bind', '', '']]) {
++      const r = await cli(s.port, ['config', 'set', key, value]);
++      // Where it listens is taken when the agent starts, and the command says so; the others hold from the next request.
++      assert.deepEqual([r.code, r.stdout.trim().split('\n')], [0, ['Saved: ' + key].concat(key === 'web.bind' ? 'The dashboard moves there when the agent next starts: sudo systemctl restart rpi-alert' : [])], key + ' ' + r.stderr);
++      assert.deepEqual(s.config.get().web[key.split('.')[1]], now);
++    }
++    // A value that cannot be: refused with the reason, and nothing changed.
++    const bad = await cli(s.port, ['config', 'set', 'web.bind', 'eth0']);
++    assert.notEqual(bad.code, 0);
++    assert.match(bad.stderr + bad.stdout, /web\.bind: one of this machine's addresses/);
++    assert.equal(s.config.get().web.bind, '');
++  } finally { s.stop(); }
++});
++
 +test.after(() => { fs.rmSync(TMP, { recursive: true, force: true }); });
 diff --git a/agent/test/root-files.test.js b/agent/test/root-files.test.js
-index 7ebc536..60f450b 100644
+index 7ebc536..8c8865c 100644
 --- a/agent/test/root-files.test.js
 +++ b/agent/test/root-files.test.js
-@@ -133,3 +133,92 @@ test('an oversize log for MegaNet keeps its newest lines and says how many were
+@@ -133,3 +133,71 @@ test('an oversize log for MegaNet keeps its newest lines and says how many were
    assert.equal(fitResult(small), small);
    assert.equal(fitResult({ blob: 'x'.repeat(MAX_RESULT_BYTES + 10) }).truncated, true);
  });
 +
 +// ── the settings file where there is no boot partition (0.24) ────────────────
++// /etc/rpi-alert.conf: root's own, beside the agent's directory and never in
++// it — it can give the alert account a key, and the agent could put a file in
++// a directory of its own.
 +
-+function importer(conf, mode) {
-+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rpa-etc-'));
-+  const etc = path.join(dir, 'etc'), bootDir = path.join(dir, 'boot');
-+  fs.mkdirSync(etc); fs.mkdirSync(bootDir);
++function importer(conf) {
++  const dir = tmp();
++  const etc = path.join(dir, 'etc'), mine = path.join(etc, 'rpi-alert'), bootDir = path.join(dir, 'boot');
++  fs.mkdirSync(mine, { recursive: true }); fs.mkdirSync(bootDir);
 +  const file = path.join(etc, 'rpi-alert.conf');
-+  if (conf != null) { fs.writeFileSync(file, conf, { mode: mode || 0o600 }); fs.chmodSync(file, mode || 0o600); }
-+  const env = Object.assign({}, process.env, { RPI_ALERT_CONFIG: path.join(etc, 'config.json'), RPI_ALERT_ETC_CONF: file, RPI_ALERT_BOOT_DIRS: bootDir, RPI_ALERT_DATA: path.join(dir, 'data') });
++  if (conf != null) fs.writeFileSync(file, conf, { mode: 0o600 });
++  const env = Object.assign({}, process.env, { RPI_ALERT_CONFIG: path.join(mine, 'config.json'), RPI_ALERT_ETC_CONF: file, RPI_ALERT_BOOT_DIRS: bootDir, RPI_ALERT_DATA: path.join(dir, 'data') });
 +  const run = () => require('node:child_process').spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'rpi-alert'), 'import-boot-config'], { env, encoding: 'utf8' });
-+  const settings = () => JSON.parse(fs.readFileSync(path.join(etc, 'config.json'), 'utf8'));
-+  return { dir, etc, bootDir, file, run, settings };
++  const settings = () => JSON.parse(fs.readFileSync(path.join(mine, 'config.json'), 'utf8'));
++  return { dir, etc, mine, bootDir, file, run, settings };
 +}
 +
-+test('settings file: /etc/rpi-alert/rpi-alert.conf is applied where no boot partition holds one', () => {
++test('settings file: /etc/rpi-alert.conf is applied where no boot partition holds one', () => {
 +  const i = importer('name = Council depot\nweb_bind = 127.0.0.1\nweb_require_login = all\nhotspot = off\nself_recovery = off\nremote_management = report\nweb_password = hunter2hunter2\n');
 +  const r = i.run();
 +  assert.equal(r.status, 0, r.stderr);
 +  assert.match(r.stdout, /applying .*etc\/rpi-alert\.conf/);
++  assert.match(r.stdout, /settings changed: .*web\.bind/);
 +  const c = i.settings();
 +  assert.deepEqual([c.name, c.web.bind, c.web.requireLogin, c.hotspot.mode, c.recover.mode, c.remote.mode], ['Council depot', '127.0.0.1', 'all', 'off', 'off', 'report']);
-+  // As on a card: applied once, the secrets blanked, what happened beside it.
++  // As on a card: applied once, and the secrets blanked in what is left of it.
 +  assert.equal(fs.existsSync(i.file), false);
 +  const applied = fs.readFileSync(i.file + '.applied', 'utf8');
-+  assert.match(applied, /^# Applied /);
-+  assert.match(applied, /web_password = \(applied — removed from the card\)/);
++  assert.match(applied, /^# Applied .* — see journalctl -u rpi-alert-boot-config\n/);
++  assert.match(applied, /web_password = \(applied — removed from this file\)/);
 +  assert.ok(!applied.includes('hunter2'));
-+  assert.equal(fs.statSync(i.file + '.applied').mode & 0o777, 0o600);
-+  assert.match(fs.readFileSync(path.join(i.etc, 'rpi-alert-boot.log'), 'utf8'), /settings changed: .*web\.bind/);
++  assert.equal(fs.statSync(i.file + '.applied').mode & 0o777, 0o600, 'root\'s eyes only');
++  // What happened is in the journal, where it was printed: nothing else is left in /etc.
++  assert.deepEqual(fs.readdirSync(i.etc).sort(), ['rpi-alert', 'rpi-alert.conf.applied']);
 +  // Nothing there: nothing happens, and it says where it looked.
 +  const again = i.run();
 +  assert.equal(again.status, 0);
 +  assert.match(again.stdout, /no rpi-alert\.conf on the boot partition or at .*rpi-alert\.conf — nothing to apply/);
-+  // A second file adds to the log rather than replacing it.
-+  fs.writeFileSync(i.file, 'name = Council depot 2\n', { mode: 0o600 });
-+  assert.equal(i.run().status, 0);
-+  assert.equal(fs.readFileSync(path.join(i.etc, 'rpi-alert-boot.log'), 'utf8').match(/applying/g).length, 2);
 +});
 +
 +test('settings file: a boot partition\'s file comes first, and is applied as it always was', () => {
 +  const i = importer('name = From etc\n');
-+  fs.writeFileSync(path.join(i.bootDir, 'rpi-alert.conf'), 'name = From the card\r\n');
++  fs.writeFileSync(path.join(i.bootDir, 'rpi-alert.conf'), 'name = From the card\r\nweb_password = hunter2hunter2\r\n');
 +  assert.equal(i.run().status, 0);
 +  assert.equal(i.settings().name, 'From the card');
-+  assert.ok(fs.existsSync(path.join(i.bootDir, 'rpi-alert.conf.applied')) && fs.existsSync(path.join(i.bootDir, 'rpi-alert-boot.log')));
++  assert.match(fs.readFileSync(path.join(i.bootDir, 'rpi-alert.conf.applied'), 'utf8'), /^# Applied .* — see rpi-alert-boot\.log\n[^]*web_password = \(applied — removed from the card\)/);
++  assert.match(fs.readFileSync(path.join(i.bootDir, 'rpi-alert-boot.log'), 'utf8'), /settings changed: name, web password\r\n/);
 +  assert.ok(fs.existsSync(i.file), 'the other waits for a boot with no card file');
 +  assert.equal(i.run().status, 0);
 +  assert.equal(i.settings().name, 'From etc');
 +});
 +
-+test('settings file: in the agent\'s own directory only root\'s own file is applied — never a link, another\'s file, or one others may write', () => {
-+  // The directory is the agent's, and this file can give the alert account a key: so the agent must not be able to write one.
-+  const secret = path.join(tmp(), 'shadow'); fs.writeFileSync(secret, 'ssh_key = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlanted attacker\n');
-+  const refused = (i, why) => {
-+    const r = i.run();
-+    assert.equal(r.status, 0, r.stderr);
-+    assert.match(r.stdout, why);
-+    assert.match(r.stdout, /is applied only when it is root's own/);
-+    assert.equal(fs.existsSync(path.join(i.etc, 'config.json')), false, 'nothing was applied');
-+    assert.equal(fs.existsSync(i.file + '.applied'), false);
-+    assert.ok(fs.lstatSync(i.file), 'and it is left where it was, to be looked at');
-+  };
-+  const link = importer(null);
-+  fs.symlinkSync(secret, link.file);
-+  refused(link, /is a link — not read/);
-+  const hard = importer(null);
-+  fs.linkSync(secret, hard.file);
-+  refused(hard, /more than one name/);
-+  refused(importer('name = Open to all\n', 0o666), /can be written by others — not read/);
-+  refused(importer('name = Open to a group\n', 0o660), /can be written by others/);
-+  assert.equal(fs.readFileSync(secret, 'utf8').includes('Planted'), true);
-+  // The same check, by itself.
-+  const mine = importer('name = Mine\n');
-+  assert.equal(readNoFollow(mine.file, 1024, { rootsOwn: true }), 'name = Mine\n');
-+  if (typeof process.getuid === 'function' && process.getuid() === 0) {
-+    // As root (as at boot): a file the agent's user wrote is not root's word.
-+    const theirs = importer('alert_password = let-me-in-please\n');
-+    fs.chownSync(theirs.file, 65534, 65534);
-+    refused(theirs, /is not root's file — not read/);
-+    // And the applied copy of root's own file goes to the directory's owner, so it cannot be put back as root's.
-+    const kept = importer('name = Kept\n');
-+    fs.chownSync(kept.etc, 65534, 65534);
-+    assert.equal(kept.run().status, 0);
-+    assert.equal(fs.statSync(kept.file + '.applied').uid, 65534);
-+    fs.renameSync(kept.file + '.applied', kept.file);
-+    assert.match(kept.run().stdout, /is not root's file — not read/, 'put back under the settings file\'s name, it is not applied again');
-+  }
++test('settings file: one in the agent\'s own directory is never applied', () => {
++  // Whatever it is — root's file moved there, a link, the agent's own: that directory is not looked in.
++  const i = importer(null);
++  fs.writeFileSync(path.join(i.mine, 'rpi-alert.conf'), 'ssh_key = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlanted attacker\nname = Planted\n');
++  const r = i.run();
++  assert.equal(r.status, 0, r.stderr);
++  assert.match(r.stdout, /nothing to apply/);
++  assert.equal(fs.existsSync(path.join(i.mine, 'config.json')), false);
++  assert.ok(fs.existsSync(path.join(i.mine, 'rpi-alert.conf')), 'and it is left where it was');
++  // The systemd unit that runs this at boot looks where the code looks, and nowhere in that directory.
++  const unit = fs.readFileSync(path.join(__dirname, '..', '..', 'os', 'files', 'systemd', 'rpi-alert-boot-config.service'), 'utf8');
++  assert.match(unit, /^ConditionPathExists=\|\/etc\/rpi-alert\.conf$/m);
++  assert.doesNotMatch(unit, /^ConditionPathExists=.*\/etc\/rpi-alert\//m);
++  assert.equal(require('../lib/bootconf').ETC_CONF, process.env.RPI_ALERT_ETC_CONF || '/etc/rpi-alert.conf');
 +});
 diff --git a/agent/web/app.js b/agent/web/app.js
-index e5446db..04f9d9f 100644
+index e5446db..9b83f4c 100644
 --- a/agent/web/app.js
 +++ b/agent/web/app.js
 @@ -43,7 +43,7 @@ async function api(path, opts) {
@@ -1762,7 +1873,7 @@ index e5446db..04f9d9f 100644
    let body = null;
    try { body = await res.json(); } catch (_) {}
 -  if (res.status === 401 && body && body.login) { askLogin(); throw new Error('log in first'); }
-+  if (res.status === 401 && body && body.login) { askLogin(body.all); throw new Error('log in first'); }
++  if (res.status === 401 && body && body.login) { if (body.all) S.loginAll = true; askLogin(body.all); throw new Error('log in first'); }
    if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
    return body;
  }
@@ -1778,17 +1889,27 @@ index e5446db..04f9d9f 100644
    if (!d.open) d.showModal();
  }
  $('#login-cancel').addEventListener('click', () => $('#login').close());
-@@ -1671,7 +1673,8 @@ $('#login-form').addEventListener('submit', async (e) => {
+@@ -1670,8 +1672,9 @@ $('#login-form').addEventListener('submit', async (e) => {
+   e.preventDefault();
    try {
      await api('/api/login', { method: 'POST', body: { password: $('#login-pw').value } });
-     $('#login').close(); $('#login-pw').value = '';
+-    $('#login').close(); $('#login-pw').value = '';
 -    await refresh(); loadConfig(); connectEvents();
++    $('#login').close(); $('#login-pw').value = ''; $('#login-status').textContent = '';
 +    // The readings and the graphs too: where everything needs a login, none came before it.
 +    await refresh(); loadConfig(); loadReadings(); loadHistory(); connectEvents();
    } catch (err) { $('#login-status').textContent = err.message; $('#login-status').className = 'status small bad'; }
  });
  
-@@ -1783,10 +1786,15 @@ async function refresh() {
+@@ -1772,6 +1775,7 @@ function wireSurvey() {
+ async function refresh() {
+   try {
+     S.status = await api('/api/status');
++    S.loginAll = !!(S.status.auth && S.status.auth.all);
+     // The kiosk is left open for months: a new version, installed from
+     // Flood-Net or overnight, is its page too once the agent is back.
+     if (KIOSK && S.version && S.status.version && S.status.version !== S.version) { location.reload(); return; }
+@@ -1783,10 +1787,15 @@ async function refresh() {
      if (S.config) { if (foldOpen('ports')) renderPortOverrides(); if (foldOpen('sdr')) sdrRender(); if (foldOpen('hotspot')) renderHotspot(); }
      if (foldOpen('recover')) renderRecover();
    } catch (e) {
@@ -1805,7 +1926,21 @@ index e5446db..04f9d9f 100644
  function connectEvents() {
    if (S.sse) S.sse.close();
    const es = new EventSource('/api/events');
-@@ -2027,7 +2035,7 @@ window.addEventListener('resize', debounce(() => renderCharts(true), 200));
+@@ -1808,7 +1817,12 @@ function connectEvents() {
+   es.addEventListener('remote', () => refresh());
+   es.addEventListener('survey', () => { refresh(); if (S.tab === 'survey') loadSurvey(true); });
+   es.addEventListener('log', (e) => { S.logLines.push(JSON.parse(e.data)); if (S.logLines.length > 600) S.logLines.splice(0, 100); if (S.tab === 'log') logPaced(); });
+-  es.onerror = () => { $('#host').textContent = 'reconnecting…'; };
++  es.onerror = () => {
++    $('#host').textContent = 'reconnecting…';
++    // Refused, not dropped, where nothing is shown without a login
++    // (web.requireLogin): the login has ended, or never was — ask for it.
++    if (es.readyState === 2 && S.loginAll) refresh();
++  };
+ }
+ 
+ // ── software updates ────────────────────────────────────────────────────────
+@@ -2027,7 +2041,7 @@ window.addEventListener('resize', debounce(() => renderCharts(true), 200));
    // Read at once where no password is asked (this Pi's own screen, or logged
    // in): the folds' lines and forms are filled. Elsewhere, a fold opened asks.
    if (S.status && S.status.auth && S.status.auth.authed) loadConfig().catch(() => {});
@@ -1827,16 +1962,453 @@ index 51c51d6..25e73a5 100644
      <label>Password <input type="password" id="login-pw" autocomplete="current-password"></label>
      <div class="row-actions"><button id="login-go" value="go">Log in</button><button type="button" class="ghost" id="login-cancel">Not now</button><span class="status small" id="login-status"></span></div>
    </form>
+diff --git a/atlas.json b/atlas.json
+index c5692f0..0ac37da 100644
+--- a/atlas.json
++++ b/atlas.json
+@@ -32,12 +32,12 @@
+   "status": {
+     "phase": "beta",
+     "updated": "2026-11-11",
+-    "summary": "Version 0.23 gets a base station back online by itself: when no Flood-Net door answers it finds out what kind of trouble it is, joins its Wi-Fi again by name, renews the connection, restarts its networking and, as the last resort, reboots the Pi — each reboot in one outage after a longer wait — and keeps a record of every outage that survives the reboot and goes to Flood-Net's Base Stations tab. The agent's main loop has a watchdog of its own, a refused token is tried again every quarter of an hour, and a request can no longer hang. Out of one base station cut off for a night on 10 November 2026. 18 Bateson runs one RTL-SDR stick with five channels; the bench test with a V4 stick, a Quansheng radio and an ERT-A2 has not been done.",
++    "summary": "Version 0.24 is for a base station on an organisation's own network, where somebody asks what listens, who is let in and what is on record: the dashboard can be kept to one address or off the network, answer to the name the organisation's DNS gives it, sit behind a reverse proxy that gives it HTTPS, and ask for a login before anything is read — four settings, each as before until it is set and each set only on the base station itself — and every login attempt is a line in the log with the caller's address. The agent no longer names the Pi's Wi-Fi device, reads its settings file from /etc/rpi-alert.conf where there is no boot partition, and trusts the clock in a container: it runs on any Debian or Ubuntu computer, where open-ALERT's firmware layer is the supported way to install it. 0.23 gets a base station back online by itself when it loses touch with Flood-Net. 18 Bateson runs one RTL-SDR stick with five channels; the bench test with a V4 stick, a Quansheng radio and an ERT-A2 has not been done.",
+     "now": [
++      "v0.24.0: on a managed network — the dashboard on one address or off the network, under the name DNS gives it, behind a reverse proxy, a login for everything; every login attempt in the log; no wlan0; /etc/rpi-alert.conf; the clock in a container",
+       "v0.23.1: gets back online by itself — rejoin Wi-Fi, renew, restart networking, reboot as the last resort; a record of every outage; the agent's own watchdog; a slow database is waited out, not treated as an outage",
+       "v0.22.2: security fixes — root never follows a link in the agent's directories; signed-only rollback; no automatic downgrade; GPS time bounded",
+       "v0.22.0: a 288 kHz window; the Overview's plots at the top",
+-      "v0.21.0: the web page — settings folded into the Overview's cards, a tab for each kind of log, the last 10 bursts",
+       "Next CPU step: wake the around-bursts watch for the weakest bursts and check again; Check to compare ALERT2 too; Compare light at 18 Bateson (#3; MegaNet #259)"
+     ],
+     "next": [
+@@ -57,7 +57,7 @@
+       "Read-only root file system; GPS-disciplined time with chrony",
+       "Record the next N seconds; a searchable readings table; listen from a phone",
+       "Upload Flood-Net's station table to a Quansheng radio from the Overview",
+-      "Cellular backhaul, UPS HAT status, HTTPS for the web page"
++      "Cellular backhaul, UPS HAT status, HTTPS in the agent itself (0.24: behind a reverse proxy)"
+     ],
+     "blocked": [
+       {
+diff --git a/docs/configuration.md b/docs/configuration.md
+index c09556a..b28b3d5 100644
+--- a/docs/configuration.md
++++ b/docs/configuration.md
+@@ -7,7 +7,7 @@ mode 0600 because it holds the ingest token):
+ |---|---|
+ | **The web page** — `http://rpi-alert.local/` or the Pi's own screen | everyone; every setting is there |
+ | **`rpi-alert` over SSH** (PuTTY on Windows) | headless, scripted |
+-| **`rpi-alert.conf`** on the SD card's boot partition | setting a card up before the Pi ever boots |
++| **`rpi-alert.conf`** on the SD card's boot partition (on a computer with none: `/etc/rpi-alert.conf`) | setting a card up before the Pi ever boots |
+ | editing `config.json` | not needed; the others validate what they are given |
+ 
+ ## The web page
+@@ -235,7 +235,171 @@ administrator signed in to MegaNet anywhere approves the request on MegaNet's **
+ itself) always may. From other computers: anyone, until a web password is set — the page says so
+ in a banner — then only someone who has logged in. The ingest token is never sent back out, to
+ anyone; the page shows `mgn_ab…wxyz`. Where a receiver is (it may be someone's house) is hidden
+-from visitors who are not logged in.
++from visitors who are not logged in. Four settings narrow this for a base station on an
++organisation's network: the next section.
++
++## The dashboard on a managed network
++
++Four settings (0.24) for a base station on an organisation's own network — a council's, an
++agency's — where somebody whose job it is asks what listens, who is let in and what is on record.
++Each is as it was before 0.24 until it is set. Each is set **on the base station itself** — in
++`rpi-alert.conf`, with `rpi-alert config set` over SSH, or in `config.json` — never from another
++computer's browser, even logged in, and never from Flood-Net: a login from the network must not be
++a way to open what the owner closed.
++
++| Setting | In `rpi-alert.conf` | As it comes | Set |
++|---|---|---|---|
++| `web.bind` | `web_bind = 127.0.0.1` | empty: every address the computer has | the dashboard answers on that one address, and to the computer itself |
++| `web.hosts` | `web_hosts = bs01.council.example` | none | the dashboard also answers to these names |
++| `web.behindProxy` | `web_behind_proxy = yes` | `false` | a reverse proxy on the same computer publishes the dashboard: what it passes on is never taken for the base station itself |
++| `web.requireLogin` | `web_require_login = all` | `settings` | `all`: nothing is read without a login |
++
++```
++rpi-alert config set web.bind 127.0.0.1          then: sudo systemctl restart rpi-alert
++rpi-alert config set web.hosts bs01.council.example      several with commas between; none for none
++rpi-alert config set web.behindProxy true
++rpi-alert config set web.requireLogin all
++```
++
++`web.bind` is taken when the agent starts; the other three hold from the next request.
++
++**Where it listens (`web.bind`).** Left empty, the dashboard answers on every address the computer
++has, as before. Given an address, it answers on that address and on `127.0.0.1` — where the
++`rpi-alert` command, the Pi's own screen and the updater ask — and nowhere else, so
++`web.bind = 127.0.0.1` keeps it off the network altogether. It is one address, as numbers (IPv4 or
++IPv6). An address the computer does not have — not yet, because the network has not given it, or
++ever, because it was mistyped — does not stop the agent receiving and sending. The dashboard is
++then on `127.0.0.1` alone, the log
++says so (`cannot listen on http://10.0.0.5/ (EADDRNOTAVAIL: this machine does not have that
++address) — the dashboard is on this machine only (127.0.0.1) until it can`), and the agent asks for
++the address again every 30 seconds and takes it when it is there. It never falls back to every
++address. To open a dashboard that is on `127.0.0.1` alone from your own computer, go through SSH:
++`ssh -L 8080:127.0.0.1:80 alert@<base station>`, then `http://localhost:8080/` (whoever has a shell
++on the base station is let in without the password, as on its own screen) — or publish it with a
++reverse proxy, below.
++
++**The names it answers to (`web.hosts`).** The dashboard refuses a request for a name it does not
++know (`unrecognised Host header`), so that a web page somewhere else cannot point a name of its own
++at the base station and read it through your browser. It knows its addresses, `localhost`, any
++`.local` name and the computer's own host name. `web.hosts` adds up to 16 more: the name your DNS
++gives it. Whole names, no wildcards.
++
++**Behind a reverse proxy (`web.behindProxy`).** The dashboard is plain HTTP. For HTTPS with your
++organisation's certificate, put a reverse proxy on the same computer, set `web.bind = 127.0.0.1` so
++that the proxy is the only way in from the network, and turn this on. It matters because the agent
++takes a request from the computer's own address (`127.0.0.1`, `::1`) for the base station itself —
++its screen, or the `rpi-alert` command — and lets it in with no password; and through a proxy on
++the same computer, every caller arrives from that address. With `web.behindProxy` on:
++
++- A request that carries `X-Forwarded-For`, `Forwarded`, `X-Real-IP` or any other header a proxy
++  adds (`Via`, `X-Forwarded-Proto`, `X-Forwarded-Host`, …) is never the base station itself —
++  whatever the header says, however it is spelt, empty or sent twice — and neither is anything
++  that follows it on the same connection.
++- The caller's address — in the log, and for the limits on logins and live streams — is the last
++  one in `X-Forwarded-For`: the one the proxy itself saw. That header is believed only because the
++  request came from the computer's own address; sent straight from the network it is ignored.
++- When the proxy says the caller came over HTTPS (`X-Forwarded-Proto: https`), the login's cookie
++  is marked `Secure`.
++- A request from the computer's own address with none of those headers is still the base station
++  itself — that is how `rpi-alert` and the updater ask — as long as it asks for `127.0.0.1`,
++  `localhost` or `::1` by name, in HTTP/1.1, and, when a browser sent it, from a page of that name.
++  Every program and every user on the computer itself can send that, as before: who has a shell
++  there has the base station anyway.
++
++What the proxy has to do — **the agent cannot do this part for it**:
++
++1. **Add `X-Forwarded-For` to every request it passes on**, on every route, the live stream
++   (`/api/events`) included. A proxy that adds nothing sends, for a caller who asks it for
++   `localhost`, exactly what the `rpi-alert` command sends, and that caller is let in as the base
++   station itself. The agent catches what it can of this — a request for another name, one a
++   browser sent from a page of another name, one in HTTP/1.0 — treats it as a visitor's and says so
++   in the log (`carried none of a reverse proxy's headers … Treated as a visitor`), but somebody who
++   sets out to can get past all three.
++2. **Pass the browser's `Host` on unchanged**, and list that name in `web.hosts`. A change is only
++   accepted from the page it came from: the `Origin` the browser sends must match the `Host` the
++   agent sees, so a proxy that puts its own target in `Host` gets `cross-site request refused` on
++   every login.
++3. **Connect to `127.0.0.1` (or `::1`) on the same computer.** From anywhere else — another
++   computer, a container with an address of its own — its callers are all visitors, which is safe,
++   but `X-Forwarded-For` is not believed, so they share one address: one lock-out, and one
++   allowance of live streams, between them.
++4. Send `X-Forwarded-Proto`, so that the cookie is `Secure`; and leave `/api/events` unbuffered
++   (the agent asks nginx for that itself, with `X-Accel-Buffering: no`).
++
++Tried against the agent on 11 November 2026 (Ubuntu 24.04's packages), and nginx in the tests where
++it is installed:
++
++- **nginx 1.24** adds no such header unless told to, and puts its own target in `Host`. As it
++  comes, its callers are visitors only because it also speaks HTTP/1.0 to the agent — do not rely
++  on that. Its three lines:
++
++  ```nginx
++  location / {
++      proxy_pass http://127.0.0.1:8080;
++      proxy_set_header Host $http_host;
++      proxy_set_header X-Forwarded-For $remote_addr;
++      proxy_set_header X-Forwarded-Proto $scheme;
++  }
++  ```
++
++  A `location` with a `proxy_set_header` of its own drops the ones set outside it: repeat all three
++  in each. One that did not (`/api/events`, passed on in HTTP/1.1) gave the live stream to anybody.
++- **Caddy 2.6** does all of it as it comes: `reverse_proxy 127.0.0.1:8080`.
++- **HAProxy 2.8** passes `Host` on but adds no header unless told to: `option forwardfor`, and
++  `http-request set-header X-Forwarded-Proto https`. Without them, a caller who asked for
++  `localhost` was let in as the base station itself.
++
++Then check it, from another computer: `curl -s https://bs01.council.example/api/status` must say
++`"local":false` (or, with a login for everything, `log in first`), and neither
++`curl -s https://bs01.council.example/api/config` nor
++`curl -s -H 'Host: localhost' https://bs01.council.example/api/config` may show the settings — the
++agent's answer is `log in first`; to the second the proxy may give one of its own. If the proxy
++answers on port 80 itself, move the agent off it: `rpi-alert config set web.port 8080`.
++
++**A login for everything (`web.requireLogin`).** `settings`, as before: looking needs no password —
++the status (without where the base station is, or its addresses), the readings, the graphs, the
++live stream and the station search answer anyone — and the settings need one. `all`: none of them
++answers without a login (`401`, `log in first`), nor does any other route; only the page itself,
++which is the same in every copy of RPi ALERT and holds no data, and the login are served, and the
++page asks for the password before it shows anything. The `rpi-alert` command and the Pi's own
++screen still need none. A live stream lasts as long as the login it was opened with: logged out, a
++new password, or seven days, and it ends. With no password set there is no login to give, so nobody
++is let in from another computer (the agent makes a password the first time it starts, shown by
++`rpi-alert status`).
++
++**Logins on record.** Every login attempt is a line in the agent's log, as a warning — in
++`journalctl -u rpi-alert`, on the Log tab and in the log Flood-Net can ask for — with the caller's
++address and never anything that was typed:
++
++```
++WARN  [web] login accepted from 10.20.0.15
++WARN  [web] login refused from 10.20.0.15: wrong password (1 in a row)
++WARN  [web] login refused from 10.20.0.15: wrong password (5 in a row; locked out for 30 s)
++WARN  [web] login refused from 10.20.0.15: locked out for another 27 s after 5 wrong passwords — not checked
++WARN  [web] login refused from 10.20.0.15: 12 more tries while locked out — not checked
++WARN  [web] login accepted from 203.0.113.7 (through the proxy)
++```
++
++A locked-out address's tries are the one place where a line stands for several — the first, then
++a count each minute — so that nobody can fill the log with them. The agent sends its log nowhere
++by itself: forwarding the journal to your own collector is the operating system's job
++(`systemd-journal-upload`, rsyslog).
++
++**How wrong passwords are limited.** By address, and only so: the first four wrong passwords from
++an address cost nothing; from the fifth, each locks that address out for 30 seconds longer than the
++one before (30 s, 60 s, 90 s, …), during which nothing from it is checked — the right password is
++refused too — until a right password from it, or a restart of the agent, clears the count. There is
++no limit across addresses: somebody with many addresses gets four tries from each, held back only
++by the work of checking a password (scrypt). The counts are in memory, for the 5,000 addresses
++counted most recently. The password itself is 6 characters or more — ten letters and digits, when
++the agent made it.
++On a network where that is not enough, keep the dashboard off it (`web.bind`) or put it behind a
++proxy that limits requests itself.
++
++**A setting that cannot be read.** One of these that is in `config.json` but makes no sense — an
++address mistyped, `"yes"` for `true` — does not go back to "as it comes", as other settings do: it
++becomes the cautious value (`127.0.0.1`, `true`, `all`), and the agent's log says so when it
++starts. A setting that is not there at all is as it comes.
+ 
+ ## The command line
+ 
+@@ -248,6 +412,7 @@ rpi-alert request-token          ask MegaNet for the token: a code and a QR code
+ rpi-alert token [mgn_…]          check a token against MegaNet and save it
+ rpi-alert config get [key]       e.g. rpi-alert config get receivers.sdr
+ rpi-alert config set key value   e.g. rpi-alert config set receivers.sdr.freqHz 151525000
++                                 (web.bind, web.hosts, web.behindProxy, web.requireLogin: above)
+ rpi-alert sdr                    the RTL-SDR sticks: number, name, channels, USB port, state
+ rpi-alert sdr 1                  one stick: where it is tuned, and each channel with its receiver id
+ rpi-alert sdr 2 freq 151.525     one stick's own setting: freq (the channels it hears, MHz), format, gain (dB or auto),
+@@ -277,6 +442,15 @@ sudo systemctl restart rpi-alert
+ renamed `rpi-alert.conf.applied` with secrets blanked; results in `rpi-alert-boot.log`.
+ Example with every key: [os/boot/rpi-alert.conf.example](../os/boot/rpi-alert.conf.example).
+ 
++**A computer with no boot partition** (0.24) — one that is not a Raspberry Pi — reads the same
++file from **`/etc/rpi-alert.conf`**, when no boot partition holds one: at boot, or at once with
++`sudo rpi-alert import-boot-config`. It is root's file, in `/etc` beside the agent's folder
++`/etc/rpi-alert` and not in it, because it is applied as root and can give the `alert` account a
++key or a password, and the agent — the part that faces the network — can write in its own folder:
++a file there is never applied. Put it there as root (`sudo install -m 600 my-settings
++/etc/rpi-alert.conf`). Once applied it becomes `/etc/rpi-alert.conf.applied` (root's, secrets
++blanked); what happened is in `journalctl -u rpi-alert-boot-config`.
++
+ | Key | Value | Setting |
+ |---|---|---|
+ | `token` | `mgn_…` | `meganet.token` |
+@@ -301,6 +475,10 @@ Example with every key: [os/boot/rpi-alert.conf.example](../os/boot/rpi-alert.co
+ | `audio_device`, `audio_volume` | ALSA name; 0–100 | `audio.*` |
+ | `kiosk` | auto / on / off | `kiosk.mode` |
+ | `web_password` | text | stored hashed (scrypt) |
++| `web_bind` | an address, `localhost`, or `all` | `web.bind` (0.24): the address the dashboard listens on — [on a managed network](#the-dashboard-on-a-managed-network) |
++| `web_hosts` | names, or none | `web.hosts`: more names the dashboard answers to |
++| `web_behind_proxy` | yes / no | `web.behindProxy`: a reverse proxy on the same computer publishes the dashboard |
++| `web_require_login` | all / settings | `web.requireLogin`: `all` — nothing is read without a login |
+ | `meganet`, `send_receptions` | yes / no | `meganet.enabled`, `meganet.receptions` |
+ | `timezone` | e.g. Australia/Brisbane | system time zone |
+ | `hostname` | e.g. mt-stuart-base | system hostname (after a reboot) |
+@@ -355,6 +533,10 @@ Example with every key: [os/boot/rpi-alert.conf.example](../os/boot/rpi-alert.co
+ | `receivers.sdrDevices[]` | — | Each stick's own settings: `{ key, name, enabled, freqHz, format, moreChannels, sampleRate, sampleRateMin, sampleRateMax, gainDb, ppm, biasTee, squelchDb }`, `key` being the stick's as the Receivers page and `rpi-alert sdr` show it (`sdr-serial:00000001`, `sdr-port:1-1.4`); a setting left out is the shared one (`moreChannels: []` is none). A stick given a `freqHz` of its own while on MegaNet's channels keeps them around it, as above (a stick on 162 MHz: none fit, so that channel alone). Entries 0.4 wrote by `{ serial }` alone still apply, to every stick with that serial |
+ | `audio.enabled`, `audio.mode`, `audio.device`, `audio.volume` | true, auto, default, 80 | The chirps |
+ | `web.port` | 80 | The dashboard (8080 if 80 is refused) |
++| `web.bind` | empty | 0.24: the one address the dashboard listens on, beside `127.0.0.1`; empty is every address. Taken when the agent starts. [On a managed network](#the-dashboard-on-a-managed-network), as the three below |
++| `web.hosts` | `[]` | Up to 16 more names the dashboard answers to, beside its addresses, `localhost`, `.local` names and the host name |
++| `web.behindProxy` | false | A reverse proxy on the same computer publishes the dashboard: a request it passed on is never the base station itself, and its caller's address is the one the proxy saw |
++| `web.requireLogin` | `settings` | `settings`: looking needs no login, the settings do. `all`: nothing is read without one |
+ | `kiosk.mode` | auto | auto: full-screen dashboard while a monitor is connected and the Pi has ≥ 900 MB |
+ | `system.timezone` | — | Set from the page; an ERT-A2's ALERT2 frame times are local (off the air they are UTC) |
+ | `remote.mode` | manage | manage · report · off — what MegaNet's Base Stations tab may do. Set only on the Pi: MegaNet cannot change it |
+@@ -366,4 +548,5 @@ Example with every key: [os/boot/rpi-alert.conf.example](../os/boot/rpi-alert.co
+ 
+ Environment variables (for development and tests): `RPI_ALERT_CONFIG`, `RPI_ALERT_DATA`,
+ `RPI_ALERT_DEV`, `RPI_ALERT_SYSFS`, `RPI_ALERT_PRIV`, `RPI_ALERT_ASSUME_CLOCK=1`,
+-`RPI_ALERT_LOG_LEVEL=debug`, `RPI_ALERT_PORT` (the CLI).
++`RPI_ALERT_LOG_LEVEL=debug`, `RPI_ALERT_PORT` (the CLI), `RPI_ALERT_BOOT_DIRS` and
++`RPI_ALERT_ETC_CONF` (where `rpi-alert.conf` is looked for).
+diff --git a/docs/hardware.md b/docs/hardware.md
+index 489e547..5c39480 100644
+--- a/docs/hardware.md
++++ b/docs/hardware.md
+@@ -20,6 +20,26 @@ receivers. For sites with dirty power, a UPS HAT keeps the Pi up through brownou
+ only when it is non-empty, the journal capped at 64 MB). An industrial or high-endurance card is
+ worth it for a remote site.
+ 
++## Computers that are not a Raspberry Pi
++
++The agent itself runs on any Debian or Ubuntu computer with Node.js 18.17 or newer — Debian 12 and
++13, Ubuntu 24.04 (Ubuntu 22.04's own Node.js is too old) — an ordinary 64-bit PC or an ARM board.
++It is plain JavaScript with no compiled parts and no npm packages, its whole test suite passes on a
++PC (Ubuntu 24.04, Node.js 18 and 22), and what only a Pi has — the under-voltage warning, the
++board's name, a Pi 5's clock battery — is simply left out where it is not there. What is written
++for a Pi is what goes round the agent: the SD-card images, and `os/install.sh`, which is made for
++Raspberry Pi OS (it makes the `alert` account, caps the system's journal, and counts on
++NetworkManager for Wi-Fi and the hotspot) and has not been run on anything else. So the supported
++way to install RPi ALERT on another computer is
++[open-ALERT](https://github.com/cdomotor-g/open-ALERT)'s firmware layer, which takes a signed
++RPi ALERT release unchanged and puts its own service round it; that layer's own notes say what it
++has been tried on. From 0.24 the agent has what that needs of it: it leaves the choice of Wi-Fi
++device to NetworkManager, reads its settings file from `/etc/rpi-alert.conf` where there is no boot
++partition, trusts the clock where systemd does not run the computer (a container), and has the
++dashboard's settings for an organisation's network
++([configuration.md](configuration.md#the-dashboard-on-a-managed-network)). **Not yet tried:** a
++real RTL-SDR stick on a computer that is not a Pi, and any ARM board that is not one.
++
+ ## RTL-SDR sticks
+ 
+ Any RTL2832U stick works through `librtlsdr`'s `rtl_sdr`; the agent decodes the IQ with MegaNet's
+diff --git a/docs/how-it-works.md b/docs/how-it-works.md
+index 13c19e4..c5d12a3 100644
+--- a/docs/how-it-works.md
++++ b/docs/how-it-works.md
+@@ -37,7 +37,7 @@ Chromium. The image turns off Bluetooth and triggerhappy, and caps the journal a
+ | Piece | What it is |
+ |---|---|
+ | `rpi-alert.service` | The agent, as user `rpi-alert` (groups dialout, plugdev, audio, video), port 80 through `CAP_NET_BIND_SERVICE`. `Restart=always`. A main loop that hangs is killed and restarted after three minutes (0.23): the agent asks systemd for a watchdog itself (`WATCHDOG_USEC=` over the notify socket, `NotifyAccess=all`) and feeds it every half minute — so where the message cannot get through, no watchdog is armed, rather than one that kills a healthy agent. |
+-| `rpi-alert-boot-config.service` | Applies `rpi-alert.conf` from the boot partition before the agent starts. |
++| `rpi-alert-boot-config.service` | Applies `rpi-alert.conf` from the boot partition before the agent starts — or, where no boot partition holds one (0.24), root's `/etc/rpi-alert.conf`. |
+ | `rpi-alert-kiosk.service` | cage + Chromium on tty7, started and stopped *by the agent* as a monitor is connected and disconnected (`/sys/class/drm/*/status`), so a headless Pi spends no memory on it. |
+ | `/opt/rpi-alert/libexec/rpi-alert-priv` | The only thing the agent may run as root (sudoers): a fixed list of verbs — kiosk, reboot, Wi-Fi, hostname, time zone, set the clock from GPS, updates, SSH access status and settings — each argument checked. |
+ | Files root touches | `/etc/rpi-alert` and `/var/lib/rpi-alert` belong to the agent's user, so root — the SD card's settings at boot, the installer, `sudo rpi-alert` — reads and writes there only through [`safe-fs.js`](../agent/lib/safe-fs.js): never through a link, always a fresh file renamed into place. What root alone reads is root's: the Bluetooth GPS's settings in `/etc/rpi-alert-btgps.conf`, the update's outcome in `/var/lib/rpi-alert-update/status.json` (readable by all; the agent reads it itself). |
+@@ -246,6 +246,12 @@ the root helper) and remembers both in `/var/lib/rpi-alert/clock.json`. It is wh
+ survey with no internet and no GPS time what it hears across a power cut. The Quansheng radio's own
+ clock is set from the Pi's once it is trusted.
+ 
++Where systemd does not run the computer — a container, whose host keeps the time — there is nobody
++to ask, and the clock is taken to be right. Since 0.24 that holds when systemd's tools are installed
++there too (no `/run/systemd/system`): before, `timedatectl` was found, could only fail, and every
++reading was held for a clock nobody would vouch for. `RPI_ALERT_ASSUME_CLOCK=1` says the same by
++hand.
++
+ A GPS's time is believed only when it is plausible, because a receiver can be wrong (GPS
+ week-rollover bugs read about 20 years back) or a device on a serial port can lie. The sentence must
+ carry its checksum and a valid fix, with every date and time field in range; the time must not be
+@@ -278,8 +284,17 @@ restarts; updates; the log. Nothing listens for MegaNet. [remote-management.md](
+   It is made on the Pi (when it asks MegaNet for one) and MegaNet only ever stores its hash.
+ - The web page: the Pi's own screen and shell are trusted; from the network, a password once set
+   (scrypt-hashed; sessions are HttpOnly SameSite=Strict cookies; changes must be JSON — which a
+-  cross-site form cannot send — and same-origin; login attempts are rate-limited). It is plain HTTP
+-  on the local network, like any router's set-up page; do not expose port 80 to the internet.
++  cross-site form cannot send — and same-origin). Wrong passwords are counted for each address: from
++  the fifth, that address is locked out, for longer each time; there is no limit across addresses.
++  Every login attempt, accepted or refused, is a line in the log with the caller's address (0.24).
++  It is plain HTTP on the local network, like any router's set-up page; do not expose port 80 to
++  the internet.
++- On an organisation's network (0.24), four settings, each as before until set and each set only
++  on the base station itself: `web.bind` keeps the web page to one address, or off the network;
++  `web.hosts` names it; `web.behindProxy` puts it behind a reverse proxy that gives it HTTPS, and
++  stops what the proxy passes on being taken for the Pi's own screen; `web.requireLogin` asks for a
++  login before anything is read. What the proxy must do, and how wrong passwords are limited:
++  [configuration.md](configuration.md#the-dashboard-on-a-managed-network).
+ - A token is a credential for the whole network's write access (MegaNet's docs say so). Revoke it on
+   MegaNet's Admin tab the day the Pi leaves your control.
+ 
+diff --git a/docs/install.md b/docs/install.md
+index d8efa78..aef3035 100644
+--- a/docs/install.md
++++ b/docs/install.md
+@@ -6,7 +6,8 @@ walks through the first two and writes the card's settings for you.
+ ## What you need
+ 
+ - A Raspberry Pi (a **Pi 4** is the recommended base station; see [hardware.md](hardware.md)),
+-  its proper power supply, and a microSD card of 8 GB or more.
++  its proper power supply, and a microSD card of 8 GB or more. (The three routes below are for a
++  Pi. For another computer: [hardware.md](hardware.md#computers-that-are-not-a-raspberry-pi).)
+ - A receiver: an RTL-SDR stick with a VHF antenna, a Quansheng UV-K5 V3/UV-K1 on the ALERT
+   receiver firmware (USB-C cable), or an ELPRO ERT-A2 (USB-serial cable to its RS-232 port,
+   or its USB port).
+diff --git a/docs/remote-management.md b/docs/remote-management.md
+index ff1294d..b01eece 100644
+--- a/docs/remote-management.md
++++ b/docs/remote-management.md
+@@ -59,7 +59,7 @@ done — and each written in the Pi's log and on its web page:
+ |---|---|
+ | `status` | send the whole status now |
+ | `log` | the last 1–400 lines of the agent's log |
+-| `config.set` | change settings, through the same checks as the web page. **Never** the ingest token, the endpoints, the API key or the station register's address (only `meganet.enabled` and `meganet.receptions` of the MegaNet settings), the web page's password or port, or `remote.*` — MegaNet cannot widen its own reach. And a stick's frequency correction changes only when the patch says so (0.15.2): `receivers.sdrDevices` is replaced whole, so each stick's correction is worked out before and after — as `devices/sdr.js` finds it: its entry by key, else a 0.4 entry by its serial, else the shared one — and a patch that would change one without giving that stick a `ppm` (or changing the shared one it already followed) is refused, naming the stick and what it would have lost. A patch written by hand gives `ppm` in the entry of every stick with a correction of its own — the same to keep it, another to change it. A stick that loses its correction goes on decoding, and every carrier it measures is off by it |
++| `config.set` | change settings, through the same checks as the web page. **Never** the ingest token, the endpoints, the API key or the station register's address (only `meganet.enabled` and `meganet.receptions` of the MegaNet settings), the web page's password or port, where it listens or who it lets in (`web.*`), or `remote.*` — MegaNet cannot widen its own reach. And a stick's frequency correction changes only when the patch says so (0.15.2): `receivers.sdrDevices` is replaced whole, so each stick's correction is worked out before and after — as `devices/sdr.js` finds it: its entry by key, else a 0.4 entry by its serial, else the shared one — and a patch that would change one without giving that stick a `ppm` (or changing the shared one it already followed) is refused, naming the stick and what it would have lost. A patch written by hand gives `ppm` in the entry of every stick with a correction of its own — the same to keep it, another to change it. A stick that loses its correction goes on decoding, and every carrier it measures is off by it |
+ | `device.restart`, `device.rescan`, `device.forget` | restart a receiver; look for receivers; forget an unplugged one |
+ | `send-now`, `stations.refresh` | send what is queued now; download the station register again |
+ | `agent.restart`, `reboot` | done once the answer has reached MegaNet (or after a minute, if it cannot) |
+diff --git a/docs/roadmap.md b/docs/roadmap.md
+index 65a16b1..97fbeab 100644
+--- a/docs/roadmap.md
++++ b/docs/roadmap.md
+@@ -193,7 +193,21 @@ filters the stick's whole stream on its own (one stick, several channels, is don
+   its monotonic times, and the network's own readings of the same stations, at the same values, say
+   when that was — a match of a dozen frames at one consistent offset would place the lot, where today
+   they are dropped.
+-- **HTTPS** for the web page (self-signed, or via MegaNet).
++- **HTTPS** for the web page in the agent itself (self-signed, or via MegaNet). Since 0.24 a
++  reverse proxy on the same computer can give it HTTPS (`web.behindProxy`).
++- **On an organisation's network, further** (done in 0.24: the dashboard's address, names, a
++  reverse proxy in front of it, a login for everything, every login attempt in the log —
++  [configuration.md](configuration.md#the-dashboard-on-a-managed-network)). Left from the same
++  review of what an IT security reviewer would ask (November 2026): a door of its own for the
++  reverse proxy — a second port on which nothing is ever taken for the base station itself — so
++  that it no longer rests on the proxy adding its header on every route; a limit on wrong passwords
++  across addresses, not only for each; `os/install.sh` options (or a second, small installer) that
++  leave out the `alert` account and its sudo rule, the hourly key fetch, the cap on the whole
++  system's journal and Avahi; the `rtl-sdr-blog` build pinned to a version, or dropped where the
++  distribution's own library knows the V4; a web proxy for the agent's own requests (it does not
++  honour `HTTPS_PROXY` as shipped); a check-in that says how the base station is without its
++  addresses, accounts and key fingerprints; and "this Pi" in the page's and the command's words on
++  a computer that is not one.
+ 
+ ## MegaNet side
+ 
+diff --git a/os/boot/rpi-alert.conf.example b/os/boot/rpi-alert.conf.example
+index 4595a58..79a152d 100644
+--- a/os/boot/rpi-alert.conf.example
++++ b/os/boot/rpi-alert.conf.example
+@@ -9,6 +9,9 @@
+ # The flasher page writes this file for you:
+ #   https://cdomotor-g.github.io/RPi_ALERT/
+ #
++# On a computer with no such partition (not a Raspberry Pi), the same file is
++# /etc/rpi-alert.conf, put there as root.
++#
+ # Lines starting with # are ignored. Everything can also be set later on the
+ # Pi's web page (http://rpi-alert.local/) or with `rpi-alert setup` over SSH.
+ 
+@@ -77,6 +80,24 @@ request_token = yes
+ # ── Web page password (stored hashed; removed from the card) ───────────────
+ #web_password = choose-something
+ 
++# ── The web page on an organisation's network ───────────────────────────────
++# Each is as before until it is set, and none can be changed from another
++# computer's browser. docs/configuration.md, "The dashboard on a managed
++# network", has what each does.
++# The address the web page listens on. 127.0.0.1: this computer only — off the
++# network; `rpi-alert` over SSH still reaches it. all: every address, as when
++# this line is absent.
++#web_bind = 127.0.0.1
++# More names the web page answers to: the one your DNS gives this base station.
++#web_hosts = bs01.council.example
++# yes: a reverse proxy on this computer publishes the web page over HTTPS. It
++# must add X-Forwarded-For to every request it passes on, and pass the
++# browser's Host on unchanged.
++#web_behind_proxy = yes
++# all: nothing is shown without the web page password. settings (as when this
++# line is absent): looking needs none, the settings do.
++#web_require_login = all
++
+ # ── Getting in later: SSH ───────────────────────────────────────────────────
+ # Every RPi ALERT has the maintenance account "alert": no password, SSH keys
+ # only. Give it yours (a line each — these replace the ones a card gave before;
 diff --git a/os/files/systemd/rpi-alert-boot-config.service b/os/files/systemd/rpi-alert-boot-config.service
-index c8c2368..52975dd 100644
+index c8c2368..83992e8 100644
 --- a/os/files/systemd/rpi-alert-boot-config.service
 +++ b/os/files/systemd/rpi-alert-boot-config.service
 @@ -9,6 +9,8 @@ ConditionPathExists=|/boot/firmware/rpi-alert.conf
  ConditionPathExists=|/boot/firmware/rpi-alert.txt
  ConditionPathExists=|/boot/firmware/rpi-alert.conf.txt
  ConditionPathExists=|/boot/rpi-alert.conf
-+# A computer with no boot partition: the same file, root's own, in /etc/rpi-alert.
-+ConditionPathExists=|/etc/rpi-alert/rpi-alert.conf
++# A computer with no boot partition: the same file, root's own, in /etc.
++ConditionPathExists=|/etc/rpi-alert.conf
  
  [Service]
  Type=oneshot

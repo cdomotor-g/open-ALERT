@@ -1,0 +1,1784 @@
+diff --git a/.github/workflows/firmware.yml b/.github/workflows/firmware.yml
+new file mode 100644
+index 0000000..4eea7e9
+--- /dev/null
++++ b/.github/workflows/firmware.yml
+@@ -0,0 +1,571 @@
++name: firmware
++
++# Builds and checks everything under firmware/ — the native package, the
++# container and the disk images — on GitHub's own computers, for ordinary
++# 64-bit PCs (x86-64) and for 64-bit ARM. Nothing here uses a real radio
++# stick: see "What has been tested, and where" in firmware/README.md.
++#
++# It runs when a push changes something under firmware/ (or this file), and
++# when a person starts it by hand (Actions → firmware → Run workflow). Nothing
++# else starts it.
++#
++# Started by hand WITH a release tag, and only then, it also publishes: the
++# container to ghcr.io/<owner>/open-alert-base, and a GitHub release under that
++# tag with the package, the disk images, their checksums, a bill of materials
++# for each, and GitHub's signed record of where each file was built
++# ("build provenance"). It publishes only what passed its checks in the same
++# run.
++#
++# The only actions used are GitHub's own (actions/…): checkout, the two that
++# keep and fetch a job's files, and the one that writes build provenance.
++# Each is pinned to one exact commit; its version is in the comment beside
++# it. To move one, look the new commit up
++# (git ls-remote https://github.com/actions/NAME refs/tags/vX.Y.Z) and change
++# both. Signing in to the container registry is one line of "docker login",
++# not an action.
++#
++# This file has not yet run on GitHub: its first push is its first run. See
++# "How it is built and checked automatically" in firmware/README.md.
++
++on:
++  push:
++    # Branches are named so that a tag being made does not start a run.
++    branches: ['**']
++    paths:
++      - 'firmware/**'
++      - '.github/workflows/firmware.yml'
++  workflow_dispatch:
++    inputs:
++      release_tag:
++        description: 'Publish a release under this tag (for example firmware-0.23.1-oa1). Leave empty to build and check only.'
++        required: false
++        default: ''
++        type: string
++      prerelease:
++        description: 'Mark the release "pre-release". Leave on until an image has started on a real computer and heard a real stick.'
++        required: false
++        default: true
++        type: boolean
++
++# No job may do anything it does not ask for by name.
++permissions: {}
++
++# A newer push stops an older run of the same branch. A release run is never
++# stopped half-way by a push: it has a group of its own.
++concurrency:
++  group: firmware-${{ github.ref }}-${{ inputs.release_tag || 'check' }}
++  cancel-in-progress: ${{ github.event_name == 'push' }}
++
++env:
++  RELEASE_TAG: ${{ inputs.release_tag }}
++
++jobs:
++  # ── (a) the scripts ────────────────────────────────────────────────────────
++  scripts:
++    name: Scripts (shellcheck)
++    runs-on: ubuntu-24.04
++    timeout-minutes: 10
++    permissions:
++      contents: read
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++      - name: Every shell script under firmware/ passes shellcheck
++        run: |
++          set -euo pipefail
++          command -v shellcheck >/dev/null || { sudo apt-get update -qq; sudo apt-get install -y --no-install-recommends shellcheck; }
++          files=()
++          while IFS= read -r f; do
++            if head -n 1 "$f" | grep -Eq '^#!.*[/ ](ba)?sh( |$)'; then files+=("$f"); fi
++          done < <(git ls-files firmware)
++          echo "shellcheck $(shellcheck --version | awk '/^version:/ {print $2}') on ${#files[@]} scripts:"
++          printf '  %s\n' "${files[@]}"
++          LC_ALL=C.UTF-8 shellcheck -x "${files[@]}"
++      - name: The release tag, if one was given, is a plain name
++        if: ${{ inputs.release_tag != '' }}
++        run: |
++          set -euo pipefail
++          printf '%s' "$RELEASE_TAG" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$' \
++            || { echo "::error::The release tag may hold letters, digits, dots, dashes and underscores only (no \"+\": the same name is given to the container, and a container's tag may not hold one). Got: $RELEASE_TAG"; exit 1; }
++
++  # ── (b) the native package ─────────────────────────────────────────────────
++  package:
++    name: Package (${{ matrix.arch }})
++    strategy:
++      fail-fast: false
++      matrix:
++        include:
++          - { arch: amd64, runner: ubuntu-24.04 }
++          - { arch: arm64, runner: ubuntu-24.04-arm }
++    runs-on: ${{ matrix.runner }}
++    timeout-minutes: 75
++    permissions:
++      contents: read
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++      - name: Tools
++        run: |
++          sudo apt-get update -qq
++          sudo apt-get install -y --no-install-recommends shellcheck lintian openssl
++      # The two files are handed to each script by option. They are not put in
++      # the variables the scripts read by themselves (OA_AGENT_TARBALL,
++      # OA_AGENT_SIG): test/deb.sh checks what the release check does when it
++      # is given a tarball without a signature, and such a variable would hand
++      # it one behind its back.
++      - name: The pinned RPi ALERT release, downloaded once and checked (hash and signature)
++        run: |
++          set -euo pipefail
++          firmware/lib/fetch-agent.sh --verify-only --download-dir "$RUNNER_TEMP/release"
++          tarball=$(find "$RUNNER_TEMP/release" -name '*-src.tar.gz' | head -n 1)
++          echo "PINNED_TARBALL=$tarball" >> "$GITHUB_ENV"
++          echo "PINNED_SIG=$tarball.sig" >> "$GITHUB_ENV"
++      - name: Build the package
++        run: firmware/deb/build-deb.sh --tarball "$PINNED_TARBALL" --sig "$PINNED_SIG" --lintian
++      - name: Check it (firmware/test/deb.sh — Debian 13, Ubuntu 24.04, Debian 12; about 20 minutes)
++        run: |
++          set -euo pipefail
++          deb=$(find dist -maxdepth 1 -name 'open-alert-base_*_all.deb' | head -n 1)
++          rc=0
++          firmware/test/deb.sh --deb "$deb" --tarball "$PINNED_TARBALL" --sig "$PINNED_SIG" 2>&1 | tee "$RUNNER_TEMP/deb-test.txt" || rc=$?
++          {
++            echo "### Package checks on ${{ matrix.arch }}"
++            echo '```'
++            grep -E '^[0-9]+ passed, |^FAIL  |^skip  ' "$RUNNER_TEMP/deb-test.txt" || true
++            echo '```'
++          } >> "$GITHUB_STEP_SUMMARY"
++          exit "$rc"
++      - name: Keep the package
++        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
++        with:
++          name: package-${{ matrix.arch }}
++          path: dist/open-alert-base_*_all.deb
++          if-no-files-found: error
++          retention-days: 14
++      - name: Keep the logs
++        if: ${{ always() }}
++        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
++        with:
++          name: logs-package-${{ matrix.arch }}
++          path: dist/test-logs/
++          if-no-files-found: ignore
++          retention-days: 14
++
++  # The package holds no compiled code: built on a PC and on an ARM computer
++  # it must be the same file, byte for byte.
++  package-same:
++    name: Package is the same file from both kinds of computer
++    needs: package
++    runs-on: ubuntu-24.04
++    timeout-minutes: 5
++    permissions: {}
++    steps:
++      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
++        with:
++          pattern: package-*
++          path: packages
++      - run: |
++          set -euo pipefail
++          sha256sum packages/package-amd64/*.deb packages/package-arm64/*.deb
++          cmp packages/package-amd64/*.deb packages/package-arm64/*.deb
++
++  # ── (c) the container ──────────────────────────────────────────────────────
++  container:
++    name: Container (${{ matrix.arch }})
++    strategy:
++      fail-fast: false
++      matrix:
++        include:
++          - { arch: amd64, runner: ubuntu-24.04 }
++          - { arch: arm64, runner: ubuntu-24.04-arm }
++    runs-on: ${{ matrix.runner }}
++    timeout-minutes: 60
++    permissions:
++      contents: read
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++      - name: Tools
++        run: |
++          sudo apt-get update -qq
++          sudo apt-get install -y --no-install-recommends shellcheck openssl socat
++          # The check script itself is helped by Node.js on this computer;
++          # GitHub's computers have one, and this is for the day one does not.
++          command -v node >/dev/null || sudo apt-get install -y --no-install-recommends nodejs
++      - name: The pinned RPi ALERT release, downloaded once and checked (hash and signature)
++        run: |
++          set -euo pipefail
++          firmware/lib/fetch-agent.sh --verify-only --download-dir "$RUNNER_TEMP/release"
++          tarball=$(find "$RUNNER_TEMP/release" -name '*-src.tar.gz' | head -n 1)
++          echo "PINNED_TARBALL=$tarball" >> "$GITHUB_ENV"
++          echo "PINNED_SIG=$tarball.sig" >> "$GITHUB_ENV"
++      - name: Build and check the container (firmware/test/container.sh)
++        run: |
++          set -euo pipefail
++          rc=0
++          firmware/test/container.sh --tarball "$PINNED_TARBALL" --sig "$PINNED_SIG" 2>&1 | tee "$RUNNER_TEMP/container-test.txt" || rc=$?
++          {
++            echo "### Container checks on ${{ matrix.arch }}"
++            echo '```'
++            grep -E '^[0-9]+ passed, |^FAIL  |^skip  ' "$RUNNER_TEMP/container-test.txt" || true
++            echo '```'
++          } >> "$GITHUB_STEP_SUMMARY"
++          exit "$rc"
++      - name: Keep the logs
++        if: ${{ always() }}
++        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
++        with:
++          name: logs-container-${{ matrix.arch }}
++          path: dist/test-logs/
++          if-no-files-found: ignore
++          retention-days: 14
++
++  # ── (d) the disk images ────────────────────────────────────────────────────
++  image-amd64:
++    name: Disk image for PCs (amd64) — build, then start it with Secure Boot on
++    runs-on: ubuntu-24.04
++    timeout-minutes: 90
++    permissions:
++      contents: read
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++      - name: Tools (Debian's installer-into-a-folder, disk tools, QEMU and its UEFI firmware)
++        run: |
++          sudo apt-get update -qq
++          sudo apt-get install -y --no-install-recommends mmdebstrap debian-archive-keyring fdisk dosfstools mtools \
++            e2fsprogs xz-utils jq openssl socat sbsigntool qemu-system-x86 ovmf
++      - name: Let this job use the processor's own virtualisation (KVM), where GitHub's computer has it
++        run: |
++          if [ -e /dev/kvm ]; then
++            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
++            sudo udevadm control --reload-rules
++            sudo udevadm trigger --name-match=kvm
++          else
++            echo "No /dev/kvm here: the start test will emulate the processor, slowly."
++          fi
++      - name: The pinned RPi ALERT release, downloaded once and checked (hash and signature)
++        run: |
++          set -euo pipefail
++          firmware/lib/fetch-agent.sh --verify-only --download-dir "$RUNNER_TEMP/release"
++          tarball=$(find "$RUNNER_TEMP/release" -name '*-src.tar.gz' | head -n 1)
++          echo "PINNED_TARBALL=$tarball" >> "$GITHUB_ENV"
++          echo "PINNED_SIG=$tarball.sig" >> "$GITHUB_ENV"
++      - name: Build the image (firmware/image/build-image.sh)
++        run: |
++          set -euo pipefail
++          sudo firmware/image/build-image.sh --arch amd64 --tarball "$PINNED_TARBALL" --sig "$PINNED_SIG"
++          sudo chown -R "$(id -u):$(id -g)" dist
++      - name: Start it and check it (firmware/test/image.sh)
++        run: |
++          set -euo pipefail
++          rc=0
++          firmware/test/image.sh --arch amd64 2>&1 | tee "$RUNNER_TEMP/image-test.txt" || rc=$?
++          {
++            echo "### Disk image for PCs: start test"
++            echo '```'
++            grep -E '^[0-9]+ passed, |^FAIL  |^skip  |EXPOSURE SCORE|a login prompt on the serial console' "$RUNNER_TEMP/image-test.txt" || true
++            echo '```'
++          } >> "$GITHUB_STEP_SUMMARY"
++          exit "$rc"
++      - name: Keep the image, its checksum and its lists of contents
++        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
++        with:
++          name: image-amd64
++          path: |
++            dist/open-alert-base-*-amd64-uefi.img.xz
++            dist/open-alert-base-*-amd64-uefi.img.xz.sha256
++            dist/open-alert-base-*-amd64-uefi.packages.tsv
++            dist/open-alert-base-*-amd64-uefi.spdx.json
++          if-no-files-found: error
++          compression-level: 0
++          retention-days: 14
++      - name: Keep the logs
++        if: ${{ always() }}
++        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
++        with:
++          name: logs-image-amd64
++          path: dist/test-logs/
++          if-no-files-found: ignore
++          retention-days: 14
++
++  # The ARM image is built on an ARM computer (the build does not cross over).
++  # Its start test has never been run by anybody: the first runs of this job
++  # are its first runs. So a failed start test does not fail the whole run —
++  # but an ARM image whose start test did not pass is not published.
++  image-arm64:
++    name: Disk image for 64-bit ARM (arm64) — build, then try to start it
++    runs-on: ubuntu-24.04-arm
++    timeout-minutes: 120
++    permissions:
++      contents: read
++    outputs:
++      started: ${{ steps.start.outcome }}
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++      - name: Tools
++        run: |
++          sudo apt-get update -qq
++          sudo apt-get install -y --no-install-recommends mmdebstrap debian-archive-keyring fdisk dosfstools mtools \
++            e2fsprogs xz-utils jq openssl socat sbsigntool qemu-system-arm qemu-efi-aarch64
++      - name: The pinned RPi ALERT release, downloaded once and checked (hash and signature)
++        run: |
++          set -euo pipefail
++          firmware/lib/fetch-agent.sh --verify-only --download-dir "$RUNNER_TEMP/release"
++          tarball=$(find "$RUNNER_TEMP/release" -name '*-src.tar.gz' | head -n 1)
++          echo "PINNED_TARBALL=$tarball" >> "$GITHUB_ENV"
++          echo "PINNED_SIG=$tarball.sig" >> "$GITHUB_ENV"
++      - name: Build the image (firmware/image/build-image.sh)
++        run: |
++          set -euo pipefail
++          sudo firmware/image/build-image.sh --arch arm64 --tarball "$PINNED_TARBALL" --sig "$PINNED_SIG"
++          sudo chown -R "$(id -u):$(id -g)" dist
++      - name: Try to start it (firmware/test/image.sh; QEMU emulating an ARM computer)
++        id: start
++        continue-on-error: true
++        run: |
++          set -euo pipefail
++          rc=0
++          firmware/test/image.sh --arch arm64 2>&1 | tee "$RUNNER_TEMP/image-test.txt" || rc=$?
++          {
++            echo "### Disk image for ARM: start test"
++            echo '```'
++            grep -E '^[0-9]+ passed, |^FAIL  |^skip  |EXPOSURE SCORE|a login prompt on the serial console' "$RUNNER_TEMP/image-test.txt" || true
++            echo '```'
++          } >> "$GITHUB_STEP_SUMMARY"
++          exit "$rc"
++      - name: Say so plainly if it did not start
++        if: ${{ steps.start.outcome != 'success' }}
++        run: echo "::warning::The ARM disk image was built but did NOT pass its start test. It will not be published. See the logs of this job."
++      - name: Keep the image, its checksum and its lists of contents
++        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
++        with:
++          name: image-arm64
++          path: |
++            dist/open-alert-base-*-arm64-uefi.img.xz
++            dist/open-alert-base-*-arm64-uefi.img.xz.sha256
++            dist/open-alert-base-*-arm64-uefi.packages.tsv
++            dist/open-alert-base-*-arm64-uefi.spdx.json
++          if-no-files-found: error
++          compression-level: 0
++          retention-days: 14
++      - name: Keep the logs
++        if: ${{ always() }}
++        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
++        with:
++          name: logs-image-arm64
++          path: dist/test-logs/
++          if-no-files-found: ignore
++          retention-days: 14
++
++  # ── (e) the benchmark's quick test ─────────────────────────────────────────
++  bench:
++    name: Benchmark, quick test (${{ matrix.arch }})
++    strategy:
++      fail-fast: false
++      matrix:
++        include:
++          - { arch: amd64, runner: ubuntu-24.04 }
++          - { arch: arm64, runner: ubuntu-24.04-arm }
++    runs-on: ${{ matrix.runner }}
++    timeout-minutes: 20
++    permissions:
++      contents: read
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++      - name: Node.js, if this computer has none
++        run: command -v node >/dev/null || { sudo apt-get update -qq; sudo apt-get install -y --no-install-recommends nodejs; }
++      - name: The pinned RPi ALERT release, checked and unpacked
++        run: firmware/lib/fetch-agent.sh --out "$RUNNER_TEMP/release"
++      - name: firmware/bench/test.sh
++        run: |
++          node --version
++          firmware/bench/test.sh "$RUNNER_TEMP/release/agent"
++
++  # ── (c, continued) publish the container — only with a release tag ─────────
++  # Each kind of computer builds its own image, checks that very image, and
++  # only then pushes it. A last job joins the two under one name.
++  container-publish:
++    name: Publish the container (${{ matrix.arch }})
++    if: ${{ inputs.release_tag != '' }}
++    needs: [scripts, package, package-same, container, image-amd64, bench]
++    strategy:
++      matrix:
++        include:
++          - { arch: amd64, runner: ubuntu-24.04 }
++          - { arch: arm64, runner: ubuntu-24.04-arm }
++    runs-on: ${{ matrix.runner }}
++    timeout-minutes: 60
++    permissions:
++      contents: read
++      packages: write
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++      - name: Tools
++        run: |
++          sudo apt-get update -qq
++          sudo apt-get install -y --no-install-recommends shellcheck openssl socat
++          # The check script itself is helped by Node.js on this computer;
++          # GitHub's computers have one, and this is for the day one does not.
++          command -v node >/dev/null || sudo apt-get install -y --no-install-recommends nodejs
++      - name: The pinned RPi ALERT release, downloaded once and checked (hash and signature)
++        run: |
++          set -euo pipefail
++          firmware/lib/fetch-agent.sh --verify-only --download-dir "$RUNNER_TEMP/release"
++          tarball=$(find "$RUNNER_TEMP/release" -name '*-src.tar.gz' | head -n 1)
++          echo "PINNED_TARBALL=$tarball" >> "$GITHUB_ENV"
++          echo "PINNED_SIG=$tarball.sig" >> "$GITHUB_ENV"
++      - name: Build the image that will be published (firmware/container/build.sh)
++        run: |
++          set -euo pipefail
++          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/open-alert-base:${RELEASE_TAG}-${{ matrix.arch }}"
++          echo "IMAGE=$image" >> "$GITHUB_ENV"
++          firmware/container/build.sh --tag "$image" --release-dir "$RUNNER_TEMP/release"
++      - name: Check that very image (firmware/test/container.sh --image)
++        run: firmware/test/container.sh --image "$IMAGE" --tarball "$PINNED_TARBALL" --sig "$PINNED_SIG"
++      - name: Sign in to GitHub's container registry (ghcr.io) with this run's own token
++        env:
++          GH_TOKEN: ${{ github.token }}
++        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
++      - name: Push it
++        run: docker push "$IMAGE"
++
++  container-manifest:
++    name: Publish the container under one name for both kinds of computer
++    if: ${{ inputs.release_tag != '' }}
++    needs: container-publish
++    runs-on: ubuntu-24.04
++    timeout-minutes: 15
++    permissions:
++      packages: write        # push the joined image and its provenance to ghcr.io
++      id-token: write        # sign the provenance as this run
++      attestations: write    # record it with GitHub
++    steps:
++      - name: Sign in to GitHub's container registry (ghcr.io) with this run's own token
++        env:
++          GH_TOKEN: ${{ github.token }}
++        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
++      - name: Join the two images into one two-architecture image
++        id: join
++        run: |
++          set -euo pipefail
++          name="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/open-alert-base"
++          docker buildx imagetools create --tag "$name:$RELEASE_TAG" "$name:$RELEASE_TAG-amd64" "$name:$RELEASE_TAG-arm64"
++          digest=$(docker buildx imagetools inspect "$name:$RELEASE_TAG" --format '{{json .Manifest}}' | jq -r .digest)
++          printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "::error::could not read the joined image's digest"; exit 1; }
++          echo "name=$name" >> "$GITHUB_OUTPUT"
++          echo "digest=$digest" >> "$GITHUB_OUTPUT"
++          echo "Published: \`$name:$RELEASE_TAG\` (\`$digest\`), for linux/amd64 and linux/arm64" >> "$GITHUB_STEP_SUMMARY"
++      - name: GitHub's signed record of where the image was built (build provenance)
++        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
++        with:
++          subject-name: ${{ steps.join.outputs.name }}
++          subject-digest: ${{ steps.join.outputs.digest }}
++          push-to-registry: true
++
++  # ── (f) the release — only with a release tag ──────────────────────────────
++  release:
++    name: Release
++    if: ${{ inputs.release_tag != '' }}
++    needs: [scripts, package, package-same, container, image-amd64, image-arm64, bench, container-manifest]
++    runs-on: ubuntu-24.04
++    timeout-minutes: 30
++    permissions:
++      contents: write        # make the tag and the release
++      id-token: write        # sign the provenance as this run
++      attestations: write    # record it with GitHub
++    env:
++      ARM_IMAGE_STARTED: ${{ needs.image-arm64.outputs.started }}
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
++        with:
++          name: package-amd64
++          path: release
++      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
++        with:
++          name: image-amd64
++          path: release
++      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
++        if: ${{ needs.image-arm64.outputs.started == 'success' }}
++        with:
++          name: image-arm64
++          path: release
++      - name: Put the release together (bill of materials for the package, checksums, notes)
++        run: |
++          set -euo pipefail
++          cd release
++          # Each image is still the file its own build hashed.
++          for f in *.img.xz.sha256; do sha256sum -c "$f"; done
++          deb=$(find . -maxdepth 1 -name 'open-alert-base_*_all.deb' -printf '%f\n' | head -n 1)
++          ../firmware/image/sbom.sh --deb "$deb" > "${deb%.deb}.spdx.json"
++          # One list of checksums for everything in the release (the images'
++          # own .sha256 files aside: they are checksums already).
++          find . -maxdepth 1 -type f ! -name '*.sha256' -printf '%f\n' | LC_ALL=C sort | xargs -d '\n' sha256sum -- > ../SHA256SUMS
++          mv ../SHA256SUMS .
++          sha256sum -c SHA256SUMS
++          pin() { sed -n "s|^$1=\([A-Za-z0-9._:/+=-]*\)\$|\1|p" ../firmware/PIN | tail -n 1; }
++          {
++            echo "open-ALERT base station firmware: the RPi ALERT agent $(pin AGENT_TAG), unchanged from its signed release, for computers that are not a Raspberry Pi."
++            echo
++            echo "**Nothing here has been run with a real radio stick on a computer that is not a Raspberry Pi, and the disk images have only been started in a virtual machine.** What has been tested, and where, is in [firmware/README.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/firmware/README.md)."
++            echo
++            echo "| File | What it is |"
++            echo "|---|---|"
++            echo "| \`$deb\` | The native package, for Debian 13 and Ubuntu 24.04, PCs and 64-bit ARM alike |"
++            for f in *-amd64-uefi.img.xz; do echo "| \`$f\` | A ready-to-flash disk image for ordinary 64-bit PCs (UEFI; starts with Secure Boot on) |"; done
++            if [ "$ARM_IMAGE_STARTED" = success ]; then
++              for f in *-arm64-uefi.img.xz; do echo "| \`$f\` | The same for 64-bit ARM computers with UEFI firmware |"; done
++            fi
++            echo "| \`*.spdx.json\`, \`*.packages.tsv\` | For each of the above, the list of everything inside it with versions (a software bill of materials) |"
++            echo "| \`SHA256SUMS\`, \`*.sha256\` | Checksums |"
++            echo
++            if [ "$ARM_IMAGE_STARTED" != success ]; then
++              echo "The disk image for 64-bit ARM is **not** in this release: it was built, but it did not pass its start test in this run."
++              echo
++            fi
++            echo "The container: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/open-alert-base:${RELEASE_TAG}\` (linux/amd64 and linux/arm64)."
++            echo
++            echo "Built by GitHub Actions from commit ${GITHUB_SHA}. Each file has GitHub's signed record of where it was built; to check one:"
++            echo
++            echo '```'
++            echo "sha256sum -c SHA256SUMS"
++            echo "gh attestation verify $deb --repo ${GITHUB_REPOSITORY}"
++            echo '```'
++          } > ../notes.md
++          ls -l
++          cat ../notes.md
++      - name: GitHub's signed record of where each file was built (build provenance)
++        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
++        with:
++          subject-path: |
++            release/*.deb
++            release/*.img.xz
++            release/*.spdx.json
++            release/*.packages.tsv
++      - name: Publish the release
++        env:
++          GH_TOKEN: ${{ github.token }}
++          PRERELEASE: ${{ inputs.prerelease }}
++        run: |
++          set -euo pipefail
++          flags=()
++          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
++          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
++            --title "open-ALERT base station firmware $RELEASE_TAG" --notes-file notes.md "${flags[@]}" release/*
++          # The files on the release must carry the names their checksums use.
++          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort > published.txt
++          find release -maxdepth 1 -type f -printf '%f\n' | sort > built.txt
++          diff built.txt published.txt || { echo "::error::The release's files do not carry the names they were built with (see above)."; exit 1; }
+diff --git a/firmware/README.md b/firmware/README.md
+index 5dcf446..b03f4ca 100644
+--- a/firmware/README.md
++++ b/firmware/README.md
+@@ -23,7 +23,7 @@ Why this exists, and which computers were looked at, is in the
+ |---|---|---|
+ | A native package, `open-alert-base` | Any Debian 13 or Ubuntu 24.04 computer, an ordinary 64-bit PC or a 64-bit ARM board | `deb/` — described on this page |
+ | A hardened container | Toradex's Torizon OS, and any computer that runs containers | `container/` — described under [The container](#the-container) |
+-| Ready-to-flash disk images | A computer that is to be a base station and nothing else | `image/` — its section is added when that part is finished |
++| A ready-to-flash disk image | A computer that is to be a base station and nothing else | `image/` — described under [The disk image](#the-disk-image) |
+ 
+ All three start from the same checked release (`PIN`, `keys/`, `lib/`).
+ 
+@@ -38,7 +38,9 @@ All three start from the same checked release (`PIN`, `keys/`, `lib/`).
+ | `deb/` | Builds the native package |
+ | `test/lib.sh`, `test/deb.sh` | The checks for the release check and for the native package |
+ | `container/`, `test/container.sh` | The container (its image recipe, its compose files, the one-time set-up of the computer it runs on) and its checks |
++| `image/`, `test/image.sh` | The disk image (its build script, its lists of packages, the first set-up files) and the check that starts it in a virtual machine |
+ | `bench/` | A benchmark: how many channels a computer will carry (it has its own notes) |
++| `../.github/workflows/firmware.yml` | The automatic build: see [How it is built and checked automatically](#how-it-is-built-and-checked-automatically) |
+ | `../dist/` | Where builds and test logs go. Not kept in git |
+ 
+ ## The pin: which release is shipped, and how it is checked
+@@ -408,14 +410,22 @@ Also, on the test computer itself:
+ 
+ ## What has not been tested
+ 
++*Added 14 November 2026: the disk image's start test has since tried four of the points below
++in a virtual machine — with pretend devices, not real ones. Each such point says so; the
++results are under [The disk image](#the-disk-image-what-has-been-tested-where).*
++
+ - **A real radio stick on a computer that is not a Raspberry Pi.** Not natively, not in a
+   container. The udev rule, the driver block list and the service's device list
+   (`DeviceAllow=char-usb_device`) have never met a real stick: the test computer's kernel has no
+   USB, so systemd had no USB device class to put on the list. This is the first thing to try on
+-  real hardware.
++  real hardware. *Since then, in the image's virtual machine: all three met a pretend stick (a
++  software USB device with a real stick's ids) and did their part. Still no real stick.*
+ - **The device rules on a real udev.** udev's checker read them without a complaint on Debian
+-  13 and Ubuntu 24.04; no udev has applied them to a device.
++  13 and Ubuntu 24.04; no udev has applied them to a device. *Since then: Debian 13's udev
++  applied the stick's rule to the pretend stick.*
+ - **Serial receivers** (a Quansheng radio, an ERT-A2, a GPS) under the service's device list.
++  *Since then: an emulated USB serial adapter, fed a Quansheng radio's lines, was read by the
++  sandboxed agent. Still no real receiver.*
+ - **The clock on a real computer.** The service can ask systemd whether the clock is set from
+   the network, and in these containers the answer was "no", so the stand-in runs are told to
+   trust the clock (`RPI_ALERT_ASSUME_CLOCK=1`, as RPi ALERT's own `simulate.sh` does). The
+@@ -427,7 +437,9 @@ Also, on the test computer itself:
+ - **A real computer start-up.** The systemd checks ran in containers. Nothing has been
+   restarted to see the service, the firewall lock and the two serial drivers come up by
+   themselves, and the firewall lock has not been tried beside another firewall (`ufw`,
+-  `firewalld`, a `flush ruleset` in `/etc/nftables.conf`).
++  `firewalld`, a `flush ruleset` in `/etc/nftables.conf`). *Since then: the image's virtual
++  machine was restarted and all three came up by themselves, the lock beside the image's own
++  firewall table. Still not on a real computer, and not beside the other firewalls named.*
+ - **A real web proxy and a real inspecting network.** The proxy in the test is a few lines
+   written for it; it tunnels and can ask for a password, and does nothing else a commercial
+   proxy does (no NTLM or Kerberos sign-in, for one — the start-up file cannot do those).
+@@ -651,3 +663,474 @@ Numbers, measured there (a stand-in stick, so not what a real station will use):
+   and carries on without it.
+ - **The memory limit is 768 MB**, from the measurement above, so that the agent's own growth is not cut off.
+ - **The test mounts the agent's own test stand-ins in** and leaves them out of the image.
++
++## The disk image
++
++**Built and started on 14 November 2026 on one x86-64 computer (Ubuntu 24.04, QEMU 8.2.2), in a
++virtual machine only. It has never been written to a real disk or started a real computer, no
++real radio stick has been near it, and the image for ARM computers has not been built at all.
++Not reviewed by a second person. See
++[what is not yet proved](#the-disk-image-what-is-not-yet-proved).**
++
++A *disk image* is one file that holds a whole disk, byte for byte. Written to an SSD or a USB
++stick ("flashed"), it makes that disk start a computer as a base station and nothing else: what
++RPi ALERT's SD-card image is for a Raspberry Pi, for an ordinary 64-bit PC. It is for a computer
++bought to be a base station. A computer that already runs Debian or Ubuntu takes the package
++instead, and one that runs containers takes the container.
++
++### What is in `image/`
++
++| File | What it is |
++|---|---|
++| `build-image.sh` | The build: one shell script, read from top to bottom, in nine numbered steps |
++| `packages.common`, `packages.amd64`, `packages.arm64` | Every Debian package the image asks for by name, each with its reason |
++| `packages.firmware.amd64` | Three more, from the part of Debian's archive that holds hardware makers' own files: fixes for Intel and AMD processors, and what some Realtek network ports need. `--no-firmware` leaves them out |
++| `files/` | Ten small files copied into the image as they are. They are everything that makes it differ from a stock Debian; each says at its top what it is for |
++| `cidata/` | The first set-up files a person edits after flashing: `user-data`, `meta-data`, `README.txt` |
++| `sbom.sh` | Writes a *software bill of materials*: the list of everything inside a build, with versions, in a standard form (SPDX 2.3) that security scanners read |
++
++### What the disk image holds
++
++- **Debian 13 ("trixie"), from Debian's own archive.** Debian's tool for installing Debian into
++  a folder (`mmdebstrap`) does it; `apt` downloads the packages and checks Debian's signature
++  on every one. The base is Debian's smallest, plus the packages named in the lists and what
++  those cannot work without; nothing that is only "recommended". 269 packages in all, 705 MB.
++  The build downloads from two places and no others: Debian's archive, and the pinned RPi ALERT
++  release (checked as described under [the pin](#the-pin-which-release-is-shipped-and-how-it-is-checked)).
++- **Debian's signed boot files, unchanged.** With *UEFI Secure Boot* switched on, a PC starts
++  only programs signed by a key it trusts. The chain here is the one every Debian PC uses: the
++  PC trusts Microsoft's key; Microsoft has signed Debian's first program (called *shim*); shim
++  trusts Debian's key; Debian has signed the boot menu (GRUB) and the kernel. All four are
++  copied from Debian's packages as they are, so the image starts with Secure Boot **on**.
++- **The `open-alert-base` package**, the file `deb/build-deb.sh` makes, installed with its
++  standard profile. Everything on this page about the package holds for the image: the same
++  service, the same sandbox, the same two commands.
++- **No account and no password.** The administrator account (root) is locked and no other
++  account exists until the first set-up file names one. SSH takes keys only.
++- **Nothing that is one computer's own.** The computer's identifier, its SSH host keys and the
++  dashboard's first password are each made by the computer itself at its first start.
++
++The disk has three partitions:
++
++| | Size | What |
++|---|---|---|
++| 1 | 256 MB | The EFI system partition: the boot files, where the PC's firmware looks for them |
++| 2 | 32 MB | `CIDATA`: the first set-up files. Plain FAT, so that any computer can open it |
++| 3 | The rest | Debian and the base station. It grows to fill the disk at the first start |
++
++How the image differs from a stock Debian — the ten files in `files/`, and a few lines of the
++build script (its step 5):
++
++| What | How it is set |
++|---|---|
++| SSH | Keys only: no password is accepted for any account, and root cannot log in at all |
++| Firewall (nftables) | What may come in from other computers: SSH, the dashboard (ports 80 and 8080), ping, and the network's own answers. Everything else is thrown away. It is one table of its own, beside the enterprise profile's lock |
++| Network | Every wired port asks the network for an address (DHCP). Wi-Fi is not set up. The two kinds of name look-up that listen to the local network (LLMNR, multicast DNS) are off |
++| Time | Debian's own time service (`systemd-timesyncd`) is on. The agent sends nothing until the clock is set: see [The clock](#the-clock) |
++| Security updates | Debian's `unattended-upgrades` is on: it looks every day and installs Debian's security updates. An update never stops to ask a question |
++| First set-up | Read by `cloud-init` from the `CIDATA` partition of this disk and from nowhere else: no network address is ever asked for set-up |
++| Start-up | The boot menu shows for three seconds; start-up messages go to the screen and to the first serial port (115200 baud), and both give a login prompt. No "recovery" entries (they would ask for root's password, and root has none) |
++| Boot files | Kept in the two places Debian keeps them, so Debian's own updates of shim and GRUB go on working (checked) |
++
++### Building the disk image
++
++```
++sudo firmware/image/build-image.sh                         # for the kind of computer it is run on
++sudo firmware/image/build-image.sh --tarball F --sig S     # the release's two files already here
++sudo firmware/image/build-image.sh --help
++```
++
++It needs the administrator account, because it makes file systems and installs Debian into a
++folder, and these tools: `mmdebstrap`, `debian-archive-keyring`, `fdisk`, `dosfstools`,
++`mtools`, `e2fsprogs`, `xz-utils`, `jq`, and what `build-deb.sh` needs. It uses one loop device
++and mounts one file system, the image's main partition. It does not use a container, and never
++a privileged one.
++
++The results, in `dist/`:
++
++| File | What |
++|---|---|
++| `open-alert-base-0.23.1+oa1-amd64-uefi.img` | The disk, 3.0 GB (it fits any disk of 4 GB or more) |
++| `…-uefi.img.xz` and `…-uefi.img.xz.sha256` | The same packed for download, about 289 MB, and its SHA-256 |
++| `…-uefi.packages.tsv` | Every Debian package in it with its version |
++| `…-uefi.spdx.json` | The bill of materials: the same list, the `open-alert-base` package, and the RPi ALERT release with its hash and the key that signed it |
++
++`--arch arm64` builds the image for 64-bit ARM computers that start the way a PC does (UEFI
++firmware: ARM servers and "SystemReady" boards). The build does not cross over: it must be run
++on an ARM computer. **It has not been run**; the automatic build is to do it. A board that
++starts from its maker's own boot loader (most small ARM boards) needs its maker's image, and
++takes the package or the container.
++
++Two builds are not the same file byte for byte (each makes new identifiers for the file
++systems, and Debian's archive moves on). What is in a build is recorded beside it instead.
++
++### Flashing it, and the first set-up
++
++1. Check the download, then write it to the disk — for example, on Linux (`sdX` is the disk;
++   be sure of it, everything on it is lost):
++
++   ```
++   sha256sum -c open-alert-base-0.23.1+oa1-amd64-uefi.img.xz.sha256
++   xz -dc open-alert-base-0.23.1+oa1-amd64-uefi.img.xz | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
++   ```
++
++   Any program that writes a disk image will do. None has been tried (the checks start the
++   image file itself).
++2. Unplug the disk and plug it in again. A small partition named `CIDATA` appears. Open
++   `user-data` in it with a plain-text editor. Everything in it is switched off; a part is
++   switched on by removing the one `#` at the start of each of its lines. `README.txt` beside
++   it says the same in more words.
++3. Put the disk in the computer and switch it on. Secure Boot can stay on.
++4. The first start takes a minute or two longer than later ones: the main partition grows to
++   fill the disk, the SSH host keys are made, the set-up file is applied.
++5. Log in with the key (`ssh admin@<address>`), then `rpi-alert setup` for the Flood-Net token,
++   the base station's name and where it is.
++
++What `user-data` offers:
++
++| Part | What it sets |
++|---|---|
++| 1 | The computer's name on the network |
++| 2 | An administrator account and the SSH public key that opens it. **Without this part nobody can log in** |
++| 3 | The time zone (for the times a person reads; readings always go to Flood-Net in UTC) |
++| 4 | A private certificate authority, for a network that opens HTTPS traffic for inspection |
++| 5 | A web proxy for the base station and for Debian's updates; the organisation's own time servers; a fixed address |
++| 6 | Commands for the end of the first start — among them the one line that puts the **enterprise profile** in force, and one that stops the file ever being read again |
++
++Things to know:
++
++- **Out of the box nobody can log in**, by the network or at the keyboard. The base station
++  starts, receives and shows its dashboard, and that is all, until `user-data` names an account
++  (checked: part 8 of the test).
++- **The account has no password**, so it cannot be used at the screen or the serial port
++  either, only over SSH with its key. For a way in when the network is down, log in once over
++  SSH and give it one: `sudo passwd admin`.
++- **`user-data` stays on the disk**, readable by anybody who holds the disk, and a person with
++  the disk in their hands can add an account through it. Put no password or private key in it.
++  The last line of part 6 stops it being read again.
++- **With the enterprise profile chosen in `user-data`, the standard profile is in force for the
++  first moments of the first start**, until the set-up reaches that line. In the test that was
++  about 20 seconds from the agent's first start to its start under the enterprise profile; the
++  agent ran for the first 5 of them and was stopped before its log shows the dashboard coming
++  up on port 80. A real computer will have other timings. On a network where that matters,
++  give the computer its first start before it is plugged into that network.
++- **The dashboard is reached by the computer's address.** The agent's log names it as
++  `http://<name>.local/`, which works on a Raspberry Pi; on this image that kind of name
++  look-up is off.
++- **Kernel updates take effect at the next restart, and the image never restarts by itself.**
++  When to restart is the organisation's decision (`unattended-upgrades` can be told to; it is
++  not). A security update of Node.js likewise reaches the running agent when the service or
++  the computer is next restarted.
++
++### Secure Boot
++
++What was checked, in the virtual machine, with firmware that holds Microsoft's keys and has
++Secure Boot on: the image starts; the kernel says on the console that Secure Boot is on, and
++the running system says the same; the kernel is in the locked-down state Debian puts it in
++whenever Secure Boot is on. And the other way round: with **one bit** changed in shim the
++firmware refuses to start it, and with one bit changed in GRUB shim refuses it; in both cases
++no kernel starts. Shim carries both of Microsoft's signatures, the one from 2011 and the one
++from 2023 that replaces it.
++
++On a real computer, once it is running:
++
++```
++mokutil --sb-state          # prints "SecureBoot enabled"
++```
++
++Two things a person may see:
++
++- Some business PCs are sold with the key for operating systems other than Windows switched
++  off. Any Linux, this image included, then needs one setting changed in the PC's firmware
++  set-up (it is named along the lines of "Allow Microsoft 3rd Party UEFI CA"). Not met in the
++  test, where the firmware had the key.
++- Before the boot menu, GRUB prints `error: prohibited by secure boot policy` once and goes on.
++  It comes from one of Debian's own menu files (`/etc/grub.d/25_bli`), which asks for an
++  optional part that Debian's signed GRUB may not load with Secure Boot on. It is not from this
++  image's files and nothing is wrong.
++
++### How it is checked: `firmware/test/image.sh`
++
++```
++firmware/test/image.sh              # the image in dist/; about 11 minutes without KVM
++firmware/test/image.sh --help
++```
++
++It starts the image in a virtual machine (QEMU) the way a freshly flashed computer starts, and
++checks it from outside and, over SSH, from inside. It needs `qemu-system-x86` and `ovmf` (the
++UEFI firmware for QEMU), `mtools`, `jq`, `openssl`, `curl`, an SSH client, and for some checks
++`sbsigntool` and `socat`. It does not need the administrator account. With KVM (the processor's
++own support for virtual machines) it uses it; without, QEMU plays the processor in software.
++Logs go to `dist/test-logs/image/`. In order:
++
++1. **The image file, before it is started**: the partitions, the boot files and who signed
++   them, the first set-up files, and that nothing in it is one computer's own.
++2. **A working copy on a larger "disk"** (8 GB), with a `user-data` made from the image's own
++   example by removing one `#` a line, as a person would: a name, an account with a key made
++   for the run, the time zone, a private certificate authority, a web proxy.
++3. **The start**, with Secure Boot on, a network card, and an emulated USB serial adapter that
++   plays a receiver (the lines of a Quansheng ALERT radio, as RPi ALERT's `simulate.sh` sends
++   them).
++4. **From outside**: a login prompt on the serial console; the dashboard through the network;
++   SSH takes the key, refuses a password, refuses root; a port the firewall does not list is
++   shut.
++5. **From inside**: the set-up was applied; the main partition grew; no account has a
++   password; security updates are on; the service runs inside its sandbox (tried, not only
++   read); systemd's exposure score; the sandboxed agent reads the USB serial receiver; and a
++   **pretend radio stick** — a USB device made by the kernel's own USB test driver, carrying a
++   real stick's USB ids — is handed to the agent by the device rule and opened by `rtl_sdr`
++   inside the sandbox.
++6. **Debian's own boot-loader update**, made to run as a GRUB update would run it.
++7. **The enterprise profile, then a restart**: everything comes up again by itself.
++8. **A fresh copy exactly as it is flashed**, with nothing switched on in `user-data`: it
++   starts, the dashboard answers, and nobody can log in.
++9. **Another fresh copy** whose `user-data` switches on only an account and the enterprise
++   profile, as an organisation would: it comes up locked down without anybody logging in.
++10. **Two more copies with one bit changed** in shim and in GRUB: neither starts.
++
++### The disk image: what has been tested, where
++
++Everything below is from 14 November 2026 on the test computer described under
++[What has been tested, and where](#what-has-been-tested-and-where): x86-64, Ubuntu 24.04, **no
++USB and no KVM**, so the virtual machine's processor was emulated in software. The virtual
++machine: QEMU 8.2.2, the OVMF firmware with Secure Boot on and Microsoft's keys, 2 GB of memory,
++a SATA disk, an Intel network card. The last whole run of `firmware/test/image.sh`, on the
++files as they are in this folder and on an image built by them at 09:19 UTC (started
++09:22 UTC, 9 minutes 11 seconds): **175 checks passed, none failed, 1 skipped** — INTERIM: that
++run was before part 8 (the copy with nothing switched on) was added; a whole run with it was
++started at 09:47 UTC and this paragraph is rewritten when it ends. Two
++whole runs before it the same morning also passed (154 checks at 08:57 UTC, 174 at 09:09,
++on images built minutes earlier); between them, part 9 and
++one check were added to the test, and three lines that change nothing in the image were added
++to the build script. shellcheck 0.9.0 has nothing to report on the three scripts.
++
++In the image as built: Debian 13.7, kernel 6.12.117, systemd 257.13, Node.js 20.19.2, rtl-sdr
++2.0.2, OpenSSH 10.0, cloud-init 25.1.4, shim 16.1, GRUB 2.12.
++
++| What | Result |
++|---|---|
++| The amd64 image builds from nothing, as root, with no container. Built three times; the last time with the builder's own file permissions set as tight as they go, to show the build does not lean on them | Passed |
++| Before it is started: a disk laid out the way UEFI firmware expects (a GPT partition table) with the three partitions, the main one last; the boot files where firmware looks; shim carries Microsoft's signatures, GRUB and the kernel Debian's; `CIDATA` holds the three files as they are in `image/cidata/`, and `user-data` switches nothing on; no identifier, no SSH host key, no password, nothing in the agent's data folder; the profile is `standard` | Passed |
++| **It starts with Secure Boot on**: a login prompt on the serial console; the kernel and the running system both say Secure Boot is on; the kernel is locked down; the console says there is no default password and where set-up is | Passed |
++| The first set-up file, made from the image's example by removing one `#` a line, was applied from the disk's own `CIDATA` partition: the name, the account, the time zone, the certificate authority in the system's list, the proxy in the service's file (still readable by root alone), the agent restarted with it and asking the stand-in proxy | Passed |
++| A new identifier, new SSH host keys and the dashboard's first password were made at the first start; a second copy of the same image made a different host key | Passed |
++| **The main partition grew** to fill the 8 GB disk (7,703 MB), partition and file system | Passed |
++| **SSH takes the key; a password is refused** ("Permission denied (publickey)"); root is refused even with the key; no account can be opened with a password | Passed |
++| **Security updates are on**: both of Debian's daily timers are waiting; `unattended-upgrade` reads its settings and names Debian's security updates; updates come from Debian's two addresses and nowhere else | Passed |
++| Fetching from Debian's archive from inside the virtual machine, and a trial run of an update against it | **Skipped**: on this test computer the virtual machine cannot reach the archive. The check is there and runs where it can |
++| The firewall: loaded at start; the only ports open to other computers are SSH and the dashboard; from outside, a listed port answers and an unlisted one does not | Passed |
++| **The service is active under systemd with its sandbox** — tried, not only read: user `rpi-alert`, exactly one capability (standard profile), no-new-privileges and the system-call filter on; its user cannot write in `/usr`, `/etc` or `/var`, can write its two folders, has its own `/tmp`, cannot read the proxy file or look into `/home`; inside the service's group of processes even root is refused the disk and the kernel's log; nothing in the agent's log says it was refused something it needed | Passed |
++| **systemd's exposure score** for the running service (`systemd-analyze security`) | **1.9** standard profile, **1.7** enterprise — the same as the package's own tests found |
++| **The dashboard answers another computer** on port 80 through the forwarded port; the agent is the pinned version, every file of it the signed release's; another computer is not let into the settings without the password | Passed |
++| **An emulated USB serial receiver, read by the sandboxed agent**: the two USB serial drivers were loaded at start; the adapter belongs to the group `dialout`; the service's closed device list lets it be opened; the agent, as `rpi-alert`, opened it, took the lines for a Quansheng ALERT radio and shows it on the dashboard. Again after the restart, with no capability at all | Passed |
++| **A pretend radio stick** (the kernel's USB test driver, with the USB ids of an RTL-SDR Blog stick, `0bda:2838`): udev applied the package's rule — group `plugdev`, nobody else, power saving off; the kernel's TV driver, which this kernel has, did not take it; a user outside the group is refused; the agent found it; `rtl_sdr`, started by the sandboxed agent, opened the device and asked it for samples. It got none: there is no radio behind it | Passed |
++| Debian's own boot-loader update, run as a GRUB update would run it, wrote the same boot files the build had put there, file for file | Passed |
++| The enterprise profile put in force by its command: port 8080, no capability, the firewall lock on beside the image's firewall and still there after the firewall is loaded again; from outside nothing answers on 8080 or 80 | Passed |
++| **A restart**: a login prompt again; the same identifier, host key and partition size; the set-up file was not applied twice; the service, the firewall lock and the two serial drivers came up by themselves; still locked down | Passed |
++| **A fresh copy exactly as it is flashed**, nothing switched on in `user-data`: a login prompt; the first set-up ran to its end with nothing to set up; nothing on the console marked failed; the dashboard answers another computer on port 80; SSH answers and turns away `admin`, `root` and `debian` alike; its SSH host key is its own | Passed |
++| Another fresh copy with only an account and the enterprise profile switched on in `user-data`: it came up with the enterprise profile, port 8080 for the computer itself only, no capability, the firewall lock on, and nothing answering other computers on 8080 or 80 — before anybody had logged in | Passed |
++| With Secure Boot on, a copy with one bit changed in shim is refused by the firmware ("Access Denied"), and one with one bit changed in GRUB is refused by shim ("Security Violation"); no kernel starts | Passed |
++| It shuts down cleanly when asked | Passed |
++
++Numbers, measured there. **The times are on an emulated processor**; a real PC will differ.
++
++| | |
++|---|---|
++| The image | 3.0 GB as a disk (3,221,225,472 bytes), 705 MB of it in use; about 289 MB packed with xz |
++| Building it | About 2 minutes 25 seconds on four processor cores, Debian's packages downloaded each time |
++| First start, from power-on to a login prompt on the serial console | 96 to 105 seconds over the four runs, with the partition grown, the keys made and the set-up applied (a copy with less to set up: about 60 seconds) |
++| A later start, as systemd counts it | 35 to 40 seconds (about 10 the kernel, the rest systemd and the services) |
++| A restart, from the command to the next login prompt | 63 to 68 seconds, shutting down included |
++| The whole check | About 11 minutes |
++
++### The disk image: what is not yet proved
++
++- **A real computer.** The image has not been written to a disk or started on one. Real
++  firmware differs from QEMU's from maker to maker: whether it finds the disk, whether its
++  Secure Boot holds the key (see [Secure Boot](#secure-boot)), whether its network port needs a
++  file the image does not have.
++- **A real radio stick**, and a stick doing its work. The pretend stick shows the device rule,
++  the block on the TV driver and the sandbox's device list up to the moment `rtl_sdr` has the
++  device open. Nothing shows a sample being read. This is still the first thing to try on real
++  hardware.
++- **A real serial receiver.** The adapter was QEMU's emulated one (an FTDI type), fed by the
++  test. A real Quansheng radio, an ERT-A2 or a GPS has not been plugged in.
++- **The ARM image.** `build-image.sh --arch arm64` and `image.sh --arch arm64` are written and
++  have never been run. The automatic build is their first run.
++- **An update really installed.** `unattended-upgrades` has not fetched or installed anything
++  here, and the virtual machine could not reach Debian's archive at all. A kernel update
++  followed by a restart with Secure Boot on has not been tried; the boot-loader update was
++  made to run by hand.
++- **The clock.** No time server could be reached, so the clock was never set from the network
++  and the agent kept its readings waiting, as it is meant to. The moment it starts to trust the
++  clock has not been watched on this image.
++- **Parts of the example `user-data`.** Tried: parts 1 to 4, the proxy for the base station,
++  the restart line and the enterprise line. Not tried: the proxy for Debian's updates, the
++  organisation's own time servers, a fixed address, the two lines that apply them at once, and
++  the line that stops the file being read again. Applying a changed `user-data` a second time
++  (the name in `meta-data`) has not been tried either.
++- **The screen and a keyboard.** The virtual machine had no screen; only the serial console
++  was watched. The log shows a login prompt was started for the screen as well.
++- **The `CIDATA` partition opened on Windows or macOS.** It is plain FAT, which both read; no
++  one has done it.
++- **A program that writes disk images** (`dd`, or any other).
++- **A long run, a power cut, a full disk.** Each start in the test lasted minutes.
++- **The image built by the automatic build.** See the next section: that has never run.
++
++### What the start test showed about the package
++
++Nothing in the package had to be changed for the image: the service started under a real
++systemd on a real kernel with every limit in its service file, and the agent's log has no line
++about a refusal. This was the first time the service's device list met USB at all (the
++package's own tests ran on a kernel without USB): `DeviceAllow=char-usb_device` and
++`char-ttyUSB` do what they are for, and the package's udev rule and driver block list were
++applied by a real udev to a (pretend) device for the first time.
++
++Four things worth knowing, none of them a fault in the service:
++
++1. **`deb/build-deb.sh` stops when the person running it has tight file permissions set**
++   (a `umask` of 027 or 077): `dpkg-deb` refuses the folder. One line, `umask 022`, near the
++   top of that script would settle it. `build-image.sh` has that line, and its own call of
++   `build-deb.sh` is covered by it.
++2. **The agent names the dashboard as `http://<name>.local/`** in its log. That is RPi ALERT's
++   own wording, right for a Pi; on the image, and on most computers the package is installed
++   on, that name does not work.
++3. **With the enterprise profile chosen in `user-data`, the standard profile runs first for a
++   few seconds** (above). A build option that installs the package with the enterprise profile
++   from the start — the package already allows it — would close that gap. Not built.
++4. **On a network with no time server in reach the agent sends nothing**, by design: in the
++   test about 190 readings were waiting for the clock after a few minutes. An organisation
++   that blocks the public time servers must name its own (part 5 of `user-data`).
++
++### The disk image: choices made here
++
++- **One tool from Debian (`mmdebstrap`) and a plain script**, not an image-building framework:
++  a reviewer can read every step, and the only programs that run are Debian's.
++- **Debian's smallest base and no "recommended" packages.** What a person looking after the
++  computer needs is named in the list (`less`, `nano`, `curl`, `lsusb`, `ping`).
++- **Processor microcode and Realtek network firmware are in by default**, as Debian's own
++  installer has put them on PCs since Debian 12: fixes for processor faults are security
++  fixes. They are the only packages without source. `--no-firmware` leaves them out.
++- **UEFI only.** No support for PCs that start the older way (BIOS); none has Secure Boot.
++- **No swap, no disk encryption, no LVM.** One ext4 partition that grows. Encryption needs a
++  password at every start or a set-up with the computer's security chip: an organisation's
++  own choice, and not one a base station that must come back by itself after a power cut can
++  make lightly.
++- **`cloud-init` for the first set-up**, not a script of this project's own: IT teams know it,
++  and it is told to read this disk's `CIDATA` partition and nothing else.
++- **`CIDATA` is a partition of the same disk**, so one disk is all a person handles, as with a
++  Raspberry Pi's SD card. The price is that the file stays on the disk.
++- **The network is `systemd-networkd`**, which is part of systemd, rather than one more
++  package. No Wi-Fi: a base station inside an organisation's network is on a cable.
++- **The firewall is a table of its own** that loads at every start and leaves the enterprise
++  profile's lock alone. Port 8080 is on its list as well as 80 because the agent goes there
++  when it may not have 80.
++- **The boot files are put in place by the build with `mtools`**, in the places and under the
++  names Debian's own installer uses, and Debian's package is told to keep the copy that a
++  never-seen disk starts from up to date. The test checks that Debian's own installer, run
++  afterwards, writes the very same files.
++- **SSH host keys are made by a small unit of the image's own**, because Debian's unit for it
++  does not run on a computer started from an image with an empty identifier file.
++- **The image is 3 GB**, so that it fits a 4 GB disk and leaves room before it has grown.
++- **The image starts with the standard profile**, as the design asks, and the enterprise
++  profile is one line of `user-data`.
++- **The pretend radio stick** in the test is the kernel's own USB test driver (`dummy_hcd`),
++  which Debian's kernel carries. It was chosen over passing a real USB device through because
++  the test computer, like GitHub's, has none.
++
++## How it is built and checked automatically
++
++**`.github/workflows/firmware.yml` has never run.** It was written and read on a computer that
++cannot run it; its first push to GitHub is its first run, and it should be expected to need
++fixes. What was checked without running it, on 14 November 2026:
++
++- it is well-formed (a YAML reader takes it), and every option it gives a script exists in
++  that script. No checker made for such files (`actionlint`, for one) was run on it;
++- each action's commit was looked up on GitHub (`git ls-remote`) and is the one its version
++  tag names;
++- these of its steps were run by hand on the test computer, with the commands the file gives
++  them, on x86-64 only: shellcheck on the 18 scripts; the rule for a release tag; the download
++  of the pinned release from GitHub and its check; the package built with lintian and checked
++  with `test/deb.sh --deb` on Debian 13 (280 checks passed, none failed, 1 skipped); the container built under the name it
++  would be published by, and that very image checked (95 checks passed; nothing was pushed);
++  the disk image built and started (above); the benchmark's quick test (11 checks passed);
++  and the step that puts a release together — the package's bill of materials, the checksums,
++  the notes.
++
++Trying the steps by hand found one fault in the file as it first stood, since put right: it
++handed the release's two files to the scripts through the variables `OA_AGENT_TARBALL` and
++`OA_AGENT_SIG`, and with those set `test/deb.sh` fails one check (the one that gives the
++release check a tarball *without* its signature and expects to be turned away: the variable
++supplies the signature behind its back). The file now hands the two files over by option.
++
++Not tried, because only GitHub can: the actions themselves, the ARM computers, KVM, and
++publishing.
++
++*GitHub Actions* is GitHub's service that runs a repository's builds and checks on GitHub's own
++computers. This file tells it to build and check everything in this folder.
++
++**What starts it**: a push that changes anything under `firmware/` or the file itself, and a
++person pressing *Run workflow* (Actions → firmware). Nothing else: not a push elsewhere in the
++repository, not a tag, not a pull request, not a timer. A newer push stops an older run that
++is still going.
++
++| Job | On | What it does |
++|---|---|---|
++| Scripts | x86-64 | shellcheck on every shell script under `firmware/` |
++| Package | x86-64 and ARM | Downloads and checks the pinned release, builds the package, runs `test/deb.sh` (Debian 13, Ubuntu 24.04, Debian 12) |
++| Package is the same file | x86-64 | Compares the two packages just built: one from a PC, one from an ARM computer. They must be the same file, byte for byte |
++| Container | x86-64 and ARM | Builds the container and runs `test/container.sh` |
++| Disk image for PCs | x86-64 | Builds the amd64 image and runs `test/image.sh`, with KVM where GitHub's computer has it |
++| Disk image for ARM | ARM | Builds the arm64 image and tries `test/image.sh --arch arm64`. A failed start test is reported and does not fail the run, because nobody has seen it pass; such an image is never published |
++| Benchmark | x86-64 and ARM | `bench/test.sh`, the benchmark's quick test |
++
++"ARM" is GitHub's own 64-bit ARM computers (`ubuntu-24.04-arm`), which are free for a public
++repository, as this one is.
++
++**A release.** When a person starts it by hand and fills in *release tag* (for example
++`firmware-0.23.1-oa1`), and only then, and only after every job above has passed in the same
++run:
++
++- each kind of computer builds the container again, checks that very image, and pushes it; the
++  two are joined as `ghcr.io/cdomotor-g/open-alert-base:<tag>`, for both kinds of processor,
++  with *build provenance* — GitHub's signed record of which run, from which commit, made it;
++- a GitHub release is made under the tag, holding the package, the disk image for PCs (and the
++  one for ARM if its start test passed) with their checksums, a bill of materials for the
++  package and for each image, a `SHA256SUMS` file, and build provenance for each file.
++
++The release is marked "pre-release" unless the box is unticked. Leave it ticked until an image
++has started a real computer and heard a real stick.
++
++To check a downloaded file against the record of where it was built:
++
++```
++sha256sum -c SHA256SUMS
++gh attestation verify open-alert-base_0.23.1+oa1_all.deb --repo cdomotor-g/open-ALERT
++```
++
++**What a reviewer will ask about the file itself:**
++
++- **Permissions.** The file as a whole grants nothing. Each job asks for what it needs: to
++  read the repository, and nothing else, for every build and check. Only the three jobs that
++  publish may write, and only where they publish: the container registry, the release, and
++  GitHub's record of provenance.
++- **Other people's code.** The only actions used are GitHub's own (`actions/checkout`,
++  `upload-artifact`, `download-artifact`, `attest-build-provenance`), each pinned to one exact
++  commit with its version beside it. Signing in to the container registry is one `docker
++  login` line with the run's own short-lived token. No secret is stored in the repository's
++  settings for any of it.
++- **What it downloads**: Debian's and Ubuntu's packages, the three container base images the
++  tests use, and the pinned RPi ALERT release, which is checked by hash and signature before
++  anything else is done with it.
++- **What the tests send out.** Nothing to Flood-Net: the agents under test have no token, and
++  are given stand-ins for Flood-Net or for a proxy. One virtual machine of the image's start
++  test is let out to the internet, to ask Debian's archive for its lists (a check that cannot
++  be made on the test computer here); in its first seconds, before its set-up file has given
++  it the stand-in proxy, its agent may fetch Flood-Net's public list of stations, as any new
++  base station does. The other virtual machines can reach nothing outside themselves.
++
++What only the first runs will show: whether `test/deb.sh`'s part under a real systemd starts on
++GitHub's computers (it skips and says so where it cannot); whether GitHub's x86-64 computer
++offers KVM to the image test; whether the ARM image builds and starts at all; whether the two
++packages really are the same file; and the publishing steps, which cannot be tried without
++publishing.
+diff --git a/firmware/image/build-image.sh b/firmware/image/build-image.sh
+index ff2b0b1..3dd56dc 100755
+--- a/firmware/image/build-image.sh
++++ b/firmware/image/build-image.sh
+@@ -53,6 +53,10 @@
+ # radio stick has been near it. See "What has been tested, and where" in
+ # firmware/README.md.
+ set -euo pipefail
++# Files this script writes are readable by everybody and writable by root
++# alone, whatever the person running it has set for themselves: /etc/hosts in
++# the image must be readable by every user of the image.
++umask 022
+ 
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ FIRMWARE="$(dirname "$HERE")"
+@@ -137,6 +141,9 @@ mkdir -p "$OUT"
+ OUT="$(cd "$OUT" && pwd)"
+ IMG="$OUT/$NAME.img"
+ WORK=$(mktemp -d "${TMPDIR:-/tmp}/oa-image.XXXXXX")
++# Readable by others, so that apt can do its downloading as its own
++# unprivileged user ("_apt") and not as root.
++chmod 0755 "$WORK"
+ MNT="$WORK/root"
+ LOOP=''; ROOTDEV=''; DONE=0
+ 
+@@ -472,7 +479,7 @@ say "machine-id empty; no SSH host keys; the agent's data folder empty; no token
+ in_image dpkg-query -W -f '${binary:Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n' \
+   | LC_ALL=C sort > "$OUT/$NAME.packages.tsv"
+ USED_MB=$(df -BM --output=used "$MNT" | tail -n 1 | tr -dc '0-9')
+-say "$(wc -l < "$OUT/$NAME.packages.tsv") Debian packages; $USED_MB MB used of $((ROOT_SECTORS / 2048)) MB"
++say "$(wc -l < "$OUT/$NAME.packages.tsv") packages in all (Debian's, and open-alert-base); $USED_MB MB used of $((ROOT_SECTORS / 2048)) MB"
+ 
+ # ═════════════════════════════════════════════════════════════════════════════
+ step "9. Close the image"
+@@ -482,7 +489,7 @@ umount "$MNT/dev" "$MNT/sys" "$MNT/proc"
+ fstrim "$MNT" 2>/dev/null || true
+ umount "$MNT"
+ rm -f "$ROOTDEV"; ROOTDEV=''
+-e2fsck -fn "$LOOP" >/dev/null || die "the main partition's file system does not pass its check"
++FSCK=$(e2fsck -fn "$LOOP" 2>&1) || { printf '%s\n' "$FSCK" >&2; die "the main partition's file system does not pass its check"; }
+ losetup -d "$LOOP"; LOOP=''
+ # The two FAT partitions go to their places in the disk.
+ dd if="$ESP" of="$IMG" bs=512 seek="$ESP_START" conv=notrunc,sparse status=none
+diff --git a/firmware/image/cidata/README.txt b/firmware/image/cidata/README.txt
+index f1cab68..e8302b5 100644
+--- a/firmware/image/cidata/README.txt
++++ b/firmware/image/cidata/README.txt
+@@ -31,9 +31,9 @@ What to know
+ - There is no default password, and no account at all until user-data names
+   one. Out of the box the base station starts, receives and shows its
+   dashboard, but nobody can log in to it.
+-- The first start takes a few minutes longer than later ones: the disk's
+-  main partition is grown to fill the disk, and this computer's own SSH keys
+-  are made.
++- The first start takes a minute or two longer than later ones: the disk's
++  main partition is grown to fill the disk, this computer's own SSH keys are
++  made, and this file is applied.
+ - The file is not removed after it has been read, and anybody who holds the
+   disk can read it and change it. Put no password and no private key in it.
+   A person with the disk in their hands can also add an account this way;
+diff --git a/firmware/test/image.sh b/firmware/test/image.sh
+index e372d8e..d4f5ae1 100755
+--- a/firmware/test/image.sh
++++ b/firmware/test/image.sh
+@@ -30,7 +30,14 @@
+ #   6. Lets Debian's own boot-loader update run and checks the boot files.
+ #   7. Puts the enterprise profile in force, restarts the computer, and
+ #      checks that everything came up again by itself, locked down.
+-#   8. With Secure Boot on: starts two more copies, one with a single bit
++#   8. Starts a fresh copy exactly as it is flashed, with nothing switched on
++#      in user-data, and checks from outside what the image promises of that
++#      state: it starts, the dashboard answers, and nobody can log in.
++#   9. Starts another fresh copy set up as an organisation would set it up:
++#      user-data with only an account and the line that chooses the
++#      enterprise profile switched on. Checks that it comes up locked down
++#      without anybody having logged in.
++#  10. With Secure Boot on: starts two more copies, one with a single bit
+ #      changed in shim and one with a single bit changed in GRUB, and checks
+ #      that neither is let through to the kernel.
+ #
+@@ -39,6 +46,7 @@
+ #   --arch amd64|arm64  which image and which emulator (default: this computer's kind)
+ #   --no-secure-boot    start with Secure Boot off (it is then reported as not checked)
+ #   --no-restart        leave out part 7
++#   --no-more-copies    leave out parts 8 and 9
+ #   --disk-size SIZE    size of the pretend disk the image is put on (default 8G)
+ #   --timeout SECONDS   how long to wait for a start (default: 240 with KVM, 1200 without)
+ #   --log-dir DIR       where the logs go (default: dist/test-logs/image)
+@@ -49,7 +57,7 @@
+ # and, for some checks, sbverify (sbsigntool), debugfs (e2fsprogs) and socat —
+ # a check whose tool is missing is skipped and says so. It does not need root.
+ # With /dev/kvm it takes a few minutes; without, QEMU emulates the processor
+-# and it takes ten to twenty.
++# and it takes about ten (more on a slow computer).
+ #
+ # Exit status: 0 when every check that ran passed; 1 when one failed; 2 when
+ # it was used wrongly or a tool is missing.
+@@ -183,6 +191,9 @@ inside_standard() {
+   else oa_fail "the file system is $((fs_bytes / 1048576)) MB on a $((disk_bytes / 1048576)) MB disk"; fi
+ 
+   oa_section "Inside: accounts, SSH, updates, time, firewall"
++  # Files the build wrote itself: readable by every user, writable by root alone.
++  oa_is "the files the build wrote in /etc can be read by every user and changed by root alone (hosts, hostname, fstab, Debian's addresses)" \
++    "root 644 root 644 root 644 root 644" "$(stat -c '%U %a' /etc/hosts /etc/hostname /etc/fstab /etc/apt/sources.list.d/debian.sources 2>&1 | tr '\n' ' ' | sed 's/ $//')"
+   got=$(awk -F: '$2 !~ /^[!*]/ {print $1}' /etc/shadow | tr '\n' ' ')
+   oa_is "no account can be opened with a password (every password field in /etc/shadow is locked)" "" "$got"
+   oa_is "… root's included" "L" "$(passwd -S root | awk '{print $2}')"
+@@ -299,6 +310,7 @@ inside_standard() {
+ # driver being kept off it, and the sandboxed service being allowed to open it.
+ inside_stick() {
+   local g=/sys/kernel/config/usb_gadget/oa-test d dev node got udc
++  mkdir -p "$G_OUT"
+   oa_section "Inside: a pretend radio stick (the kernel's USB test driver, with a real stick's USB ids)"
+   if ! modprobe dummy_hcd 2>/dev/null || ! modprobe libcomposite 2>/dev/null; then
+     oa_skip "the pretend stick — this kernel has no USB test driver (dummy_hcd, libcomposite)"; return 0
+@@ -323,7 +335,19 @@ inside_stick() {
+   done
+   if [ -z "$dev" ]; then oa_fail "the pretend stick did not appear on the USB bus"; return 0; fi
+   udevadm settle --timeout=20 || true
+-  node=$(printf '/dev/bus/usb/%03d/%03d' "$(cat "$dev/busnum")" "$(cat "$dev/devnum")")
++  # Its device file is named after its bus and its number on the bus. The
++  # agent finds the stick within seconds and rtl_sdr resets it; for the moment
++  # of a reset the kernel shows the number as 0. Wait for the real one.
++  node=''
++  for _ in $(seq 1 60); do
++    got=$(cat "$dev/devnum" 2>/dev/null || true)
++    if [ -n "$got" ] && [ "$got" != 0 ]; then
++      node=$(printf '/dev/bus/usb/%03d/%03d' "$(cat "$dev/busnum")" "$got")
++      if [ -c "$node" ]; then break; fi
++    fi
++    sleep 0.5
++  done
++  if [ ! -c "$node" ]; then oa_fail "the pretend stick has no device file (looked for \"$node\")"; return 0; fi
+   oa_ok "it appeared as a USB device: $(lsusb -d 0bda:2838 | head -n 1) ($node)"
+   oa_is "the package's device rule gave it to the agent's group and nobody else (owner, group, mode)" "root plugdev 660" "$(stat -c '%U %G %a' "$node")"
+   if udevadm info "$node" | grep -q 'ID_SOFTWARE_RADIO=1'; then oa_ok "… and marked it as a software radio"; else oa_fail "udev did not apply the stick's rule: $(udevadm info "$node" | grep -c .) properties, no ID_SOFTWARE_RADIO"; fi
+@@ -348,11 +372,22 @@ inside_stick() {
+   # The agent looks for sticks every couple of seconds and starts rtl_sdr for each.
+   if oa_wait 60 sh -c "journalctl -u $UNIT --no-pager | grep -q 'found RTL-SDR 0bda:2838'"; then oa_ok "the agent found it: $(journalctl -u "$UNIT" --no-pager | grep 'found RTL-SDR 0bda:2838' | tail -n 1 | sed 's/^.*\] //')"
+   else oa_fail "the agent did not find the pretend stick"; fi
+-  oa_wait 60 sh -c "node -e 'fetch(\"http://127.0.0.1:${G_PORT:-80}/api/status\").then(r => r.json()).then(d => process.exit((d.devices.sdrs[0] && d.devices.sdrs[0].stderr || []).length ? 0 : 1)).catch(() => process.exit(1))'" || true
+-  got=$(g_status '(d.devices.sdrs[0] && d.devices.sdrs[0].stderr || []).join(" | ")')
+-  printf '%s\n' "$got" > "$G_OUT/stick-rtl_sdr.txt"
+-  if printf '%s' "$got" | grep -q 'usb_open error\|Failed to open'; then oa_fail "rtl_sdr, started by the sandboxed agent, could not open the stick: $got"
+-  elif printf '%s' "$got" | grep -Eq 'Reading samples|rtlsdr_write_reg|Allocating|Sampling at|Tuner'; then oa_ok "rtl_sdr, started by the sandboxed agent as rpi-alert, OPENED the device and went on to ask it for samples (\"$got\"). It gets none: nothing is behind the pretend stick"
++  # rtl_sdr's own words, as the agent keeps them. They are asked for again
++  # and again for a while: with no samples coming (none can, here) the agent
++  # starts rtl_sdr anew every ten seconds, and has no words to show for a
++  # moment each time. It also writes them in its log whenever it stops one.
++  local opened='' refused=''
++  for _ in $(seq 1 90); do
++    got=$(g_status '(d.devices.sdrs[0] && d.devices.sdrs[0].stderr || []).join(" | ")' || true)
++    if printf '%s' "$got" | grep -q 'usb_open error\|Failed to open'; then refused=$got; break; fi
++    if printf '%s' "$got" | grep -Eq 'Reading samples|rtlsdr_write_reg|Allocating|Sampling at|Tuner'; then opened=$got; break; fi
++    opened=$(journalctl -u "$UNIT" --no-pager | sed -n 's/^.*rtl_sdr stopped ([A-Z]*): \(.*\(Reading samples\|Allocating\).*\) — restarting.*$/\1/p' | tail -n 1)
++    if [ -n "$opened" ]; then break; fi
++    sleep 1
++  done
++  printf '%s\n' "${refused:-${opened:-$got}}" > "$G_OUT/stick-rtl_sdr.txt"
++  if [ -n "$refused" ]; then oa_fail "rtl_sdr, started by the sandboxed agent, could not open the stick: $refused"
++  elif [ -n "$opened" ]; then oa_ok "rtl_sdr, started by the sandboxed agent as rpi-alert, OPENED the device and went on to ask it for samples (\"$opened\"). It gets none: nothing is behind the pretend stick"
+   else oa_fail "rtl_sdr said nothing that shows it opened the stick: \"$got\""; fi
+   journalctl -u "$UNIT" --no-pager > "$G_OUT/journal-stick.txt" 2>&1 || true
+   # Unplug it.
+@@ -462,6 +497,47 @@ inside_after_restart() {
+   journalctl -b -u "$UNIT" --no-pager > "$G_OUT/journal-after-restart.txt" 2>&1 || true
+ }
+ 
++# ── part: a fresh copy whose user-data chose the enterprise profile ─────────
++# Nobody has logged in before this runs: what is checked is what the first
++# start did by itself.
++inside_enterprise_first() {
++  local got pid
++  G_PORT=8080
++  mkdir -p "$G_OUT"
++  oa_section "Inside the copy that chose the enterprise profile in user-data: put in force by the first start"
++  # The profile is the last thing the first set-up does: wait until it has finished.
++  timeout 900 cloud-init status --wait > /dev/null 2>&1 || true
++  got=$(cloud-init status --long 2>&1 || true)
++  printf '%s\n' "$got" > "$G_OUT/cloud-init-status-enterprise-copy.txt"
++  if printf '%s' "$got" | grep -q '^status: done' && printf '%s' "$got" | grep -q '^errors: \[\]'; then oa_ok "cloud-init finished without an error"
++  else oa_fail "cloud-init: $(printf '%s' "$got" | tr '\n' ' ' | cut -c1-300)"; fi
++  oa_is "the profile in force" "enterprise" "$(cat /etc/open-alert-base/profile 2>&1)"
++  oa_is "the computer kept the image's own name (user-data named none)" "open-alert-base" "$(hostname)"
++  if oa_wait 90 oa_http_ok http://127.0.0.1:8080/; then oa_ok "the dashboard answers on port 8080 on the computer itself"; else oa_fail "the dashboard does not answer on 127.0.0.1:8080"; fi
++  oa_is "the service is running" "active" "$(systemctl is-active "$UNIT" 2>&1)"
++  pid=$(g_pid)
++  oa_is "the running agent holds no privilege at all, and can get none" "0000000000000000 0000000000000000 0000000000000000" \
++    "$(oa_proc_status "$pid" CapEff) $(oa_proc_status "$pid" CapBnd) $(oa_proc_status "$pid" CapAmb)"
++  oa_check_not "the file that gave the standard profile its one privilege is gone" test -e "$OA_DROPIN_DIR/10-low-port.conf"
++  oa_is "the only port the agent's user listens on" "8080" "$(oa_listening rpi-alert | awk '{print $1}' | sort -u | tr '\n' ' ' | sed 's/ $//')"
++  oa_is "the profile's firewall lock is on, and set to load at every start" "active enabled" "$(systemctl is-active "$FW_UNIT" 2>&1) $(systemctl is-enabled "$FW_UNIT" 2>&1)"
++  oa_check "its rules are loaded beside the image's own (two tables)" sh -c 'nft list table inet open_alert_base >/dev/null && nft list table inet open_alert_image >/dev/null'
++  oa_is "what Flood-Net may do (remote.mode)" "report" "$(g_status 'd.remote && d.remote.mode' 2>/dev/null || true)"
++  oa_is "the only TCP ports open to other computers" "22 8080 " "$(ss -Hltn | awk '{ a = $4; p = a; sub(/.*:/, "", p); sub(/:[^:]*$/, "", a); if (a !~ /^127\./ && a != "[::1]") print p }' | sort -un | tr '\n' ' ')"
++  g_score_check "enterprise (chosen in user-data)"
++  open-alert-base audit > "$G_OUT/audit-enterprise-copy.txt" 2>&1 || true
++  oa_has "audit: the firewall lock is on" "$G_OUT/audit-enterprise-copy.txt" 'firewall lock +on '
++  journalctl -u "$UNIT" --no-pager > "$G_OUT/journal-enterprise-copy.txt" 2>&1 || true
++  # How long the agent ran with the standard profile before the set-up
++  # changed it: from its first start to its first stop, and to its start
++  # under the enterprise profile.
++  got=$(journalctl -u "$UNIT" -o short-unix --no-pager 2>/dev/null | awk '
++    /Started open-alert-base/  { started[n++] = $1 }
++    /Stopping open-alert-base/ { if (!stopped) stopped = $1 }
++    END { if (n >= 2 && stopped) printf "%d %d", stopped - started[0], started[n-1] - started[0] }')
++  if [ -n "$got" ]; then oa_note "at this first start the agent ran with the standard profile (dashboard on port 80) for about ${got% *} seconds before the set-up stopped it, and was back under the enterprise profile ${got#* } seconds after it had first started"; fi
++}
++
+ if [ "${1:-}" = "--inside" ]; then
+   part=${2:?--inside needs a part}; shift 2
+   trap 'oa_fail "the checks inside stopped early at line $LINENO (exit status $?)"' ERR
+@@ -470,6 +546,7 @@ if [ "${1:-}" = "--inside" ]; then
+     stick) inside_stick "$@" ;;
+     bootloader) inside_bootloader "$@" ;;
+     enterprise) inside_enterprise "$@" ;;
++    enterprise-first) inside_enterprise_first "$@" ;;
+     after-restart) inside_after_restart "$@" ;;
+     logs) tar -C "$G_OUT" -cf - . ;;
+     *) echo "unknown part $part" >&2; exit 2 ;;
+@@ -481,13 +558,14 @@ fi
+ # On the computer that runs the checks
+ # ═════════════════════════════════════════════════════════════════════════════
+ 
+-IMAGE=''; ARCH=''; SECURE_BOOT=1; DO_RESTART=1; DISK_SIZE=8G; TIMEOUT=''; LOGDIR=''; KEEP=0
++IMAGE=''; ARCH=''; SECURE_BOOT=1; DO_RESTART=1; DO_SECOND=1; DISK_SIZE=8G; TIMEOUT=''; LOGDIR=''; KEEP=0
+ while [ $# -gt 0 ]; do
+   case "$1" in
+     --image) IMAGE="${2:?--image needs a file}"; shift 2 ;;
+     --arch) ARCH="${2:?--arch needs amd64 or arm64}"; shift 2 ;;
+     --no-secure-boot) SECURE_BOOT=0; shift ;;
+     --no-restart) DO_RESTART=0; shift ;;
++    --no-more-copies) DO_SECOND=0; shift ;;
+     --disk-size) DISK_SIZE="${2:?--disk-size needs a size}"; shift 2 ;;
+     --timeout) TIMEOUT="${2:?--timeout needs seconds}"; shift 2 ;;
+     --log-dir) LOGDIR="${2:?--log-dir needs a folder}"; shift 2 ;;
+@@ -545,6 +623,8 @@ cleanup() {
+   if [ -n "$PROXY_PID" ]; then kill "$PROXY_PID" 2>/dev/null; fi
+   if [ -n "$QEMU_PID" ] && kill -0 "$QEMU_PID" 2>/dev/null; then kill "$QEMU_PID" 2>/dev/null; sleep 1; kill -9 "$QEMU_PID" 2>/dev/null; fi
+   if [ -f "$WORK/serial.log" ]; then tr -d '\r' < "$WORK/serial.log" | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' > "$LOGDIR/serial-console.txt"; fi
++  if [ -f "$WORK/serial2.log" ]; then tr -d '\r' < "$WORK/serial2.log" | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' > "$LOGDIR/serial-console-enterprise-copy.txt"; fi
++  if [ -f "$WORK/serial0.log" ]; then tr -d '\r' < "$WORK/serial0.log" | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' > "$LOGDIR/serial-console-untouched-copy.txt"; fi
+   if [ "$KEEP" = 1 ]; then echo "The working copy is kept in $WORK"; else rm -rf "$WORK"; fi
+   exit "$rc"
+ }
+@@ -576,16 +656,20 @@ in_vm() {
+   fi
+   return 0
+ }
+-# Wait for text on the serial console.   wait_serial SECONDS PATTERN [from-byte]
++# Wait for text on the serial console of the virtual machine that is running
++# (SERIAL is its console's file).   wait_serial SECONDS PATTERN [from-byte]
++SERIAL="$WORK/serial.log"
+ wait_serial() {
+   local left=$1 pat=$2 from=${3:-0}
+   while [ "$left" -gt 0 ]; do
+-    if tail -c "+$((from + 1))" "$WORK/serial.log" 2>/dev/null | grep -aq -- "$pat"; then return 0; fi
++    if tail -c "+$((from + 1))" "$SERIAL" 2>/dev/null | grep -aq -- "$pat"; then return 0; fi
+     if ! kill -0 "$QEMU_PID" 2>/dev/null; then return 2; fi
+     sleep 2; left=$((left - 2))
+   done
+   return 1
+ }
++# The host key SSH wrote down for a virtual machine at its first login.
++host_key() { awk '{print $NF}' "$1" | sort | tr '\n' ' '; }
+ http_code() { curl -s -o "${2:-/dev/null}" -m 20 -w '%{http_code}' "$1" 2>/dev/null || true; }
+ # Change one bit in the middle of a file.
+ flip_bit() {
+@@ -595,32 +679,96 @@ flip_bit() {
+   # shellcheck disable=SC2059  # the format is the byte itself, written as an octal escape
+   printf "\\$(printf '%03o' $((byte ^ 1)))" | dd of="$1" bs=1 seek="$at" conv=notrunc status=none
+ }
++# The part of QEMU's command line every start here shares: the UEFI firmware
++# and its own small store of settings, the disk, the kind of machine, the
++# processor, and the serial console written to a file. Left in VM_ARGS.
++#   vm_base DISK FIRMWARE-SETTINGS-COPY SERIAL-CONSOLE-FILE
++VM_ARGS=()
++vm_base() {
++  # shellcheck disable=SC2054  # the commas are QEMU's own notation, inside one argument
++  VM_ARGS=(-display none -serial "file:$3"
++    -drive "if=pflash,format=raw,unit=0,file=$FW_CODE,readonly=on" -drive "if=pflash,format=raw,unit=1,file=$2"
++    -drive "file=$1,format=raw,if=none,id=disk0")
++  if [ "$ARCH" = amd64 ]; then
++    # An ordinary PC with a SATA disk. smm=on and the "secure" flag are what
++    # QEMU needs for firmware that enforces Secure Boot.
++    # shellcheck disable=SC2054
++    VM_ARGS+=(-machine q35,smm=on -global driver=cfi.pflash01,property=secure,value=on -device ide-hd,drive=disk0,bus=ide.0)
++  else
++    # shellcheck disable=SC2054
++    VM_ARGS+=(-machine virt -device virtio-blk-pci,drive=disk0)
++  fi
++  # shellcheck disable=SC2054
++  if [ "$KVM" = 1 ]; then VM_ARGS+=(-accel kvm -cpu host); else VM_ARGS+=(-accel "tcg,thread=multi" -cpu max); fi
++}
++# The network card: an Intel one on a PC, QEMU's own on ARM.
++if [ "$ARCH" = amd64 ]; then NIC=e1000e; else NIC=virtio-net-pci; fi
++
++# QEMU with an emulated processor has been seen to crash by itself early in
++# a start: a "segmentation fault" in the emulator (QEMU 8.2.2, once in the
++# first thirty-odd starts on the test computer). That is a fault of the
++# emulator's, not of what it runs. When QEMU has ended on a fault of its own —
++# and only then; not when a start takes too long, and not when QEMU ends any
++# other way — everything is made afresh and started once more, and a note
++# says so.   emulator_crashed PID   → 0 when that process was ended by a signal
++EMULATOR_STATUS=0
++emulator_crashed() {
++  EMULATOR_STATUS=0
++  wait "$1" 2>/dev/null || EMULATOR_STATUS=$?
++  [ "$EMULATOR_STATUS" -gt 128 ]
++}
++
++# Start a machine and wait for a login prompt on its serial console.
++#   start_and_wait PREPARE FILE-FOR-QEMU'S-OWN-MESSAGES
++# PREPARE is a function that makes the machine's disk and its firmware
++# settings afresh, and leaves QEMU's arguments in QEMU_ARGS and the console's
++# file in SERIAL. It is called again if QEMU crashes (see above).
++# Returns 0 with a login prompt, 1 with none in time, 2 when QEMU stopped.
++QEMU_ARGS=()
++start_and_wait() {
++  local prepare=$1 out=$2 try rc
++  for try in 1 2; do
++    "$prepare"
++    STARTED=$(date +%s)
++    "$QEMU" "${QEMU_ARGS[@]}" > "$out" 2>&1 &
++    QEMU_PID=$!
++    rc=0; wait_serial "$TIMEOUT" 'login:' || rc=$?
++    if [ "$rc" != 2 ]; then return "$rc"; fi
++    if [ "$try" = 1 ] && emulator_crashed "$QEMU_PID"; then
++      oa_note "QEMU itself crashed $(( $(date +%s) - STARTED )) seconds into this start (it was ended by signal $((EMULATOR_STATUS - 128))): a fault in the emulator. Everything is made afresh and started once more"
++      continue
++    fi
++    return 2
++  done
++}
++
+ # Start a copy of the image in which the named boot files have one bit
+ # changed, with Secure Boot on and nothing else attached, and wait for the
+ # words that say it was refused.   refused_start NAME "WORDS" FILE-ON-THE-EFI-PARTITION…
+ refused_start() {
+-  local name=$1 words=$2 f pid left=$((TIMEOUT / 4)) args; shift 2
+-  cp --sparse=always "$IMAGE" "$WORK/$name.img"
+-  for f in "$@"; do
+-    mcopy -n -i "$WORK/$name.img@@$ESP_OFF" "::$f" "$WORK/$name.bin"
+-    flip_bit "$WORK/$name.bin"
+-    mcopy -o -i "$WORK/$name.img@@$ESP_OFF" "$WORK/$name.bin" "::$f"
+-    rm -f "$WORK/$name.bin"
+-  done
+-  cp "$FW_VARS" "$WORK/$name.vars"
+-  # shellcheck disable=SC2054
+-  args=(-m 1024 -smp 2 -display none -net none -serial "file:$WORK/$name.serial"
+-    -drive "if=pflash,format=raw,unit=0,file=$FW_CODE,readonly=on" -drive "if=pflash,format=raw,unit=1,file=$WORK/$name.vars"
+-    -drive "file=$WORK/$name.img,format=raw,if=none,id=disk0")
+-  # shellcheck disable=SC2054
+-  if [ "$ARCH" = amd64 ]; then args+=(-machine q35,smm=on -global driver=cfi.pflash01,property=secure,value=on -device ide-hd,drive=disk0,bus=ide.0)
+-  else args+=(-machine virt -device virtio-blk-pci,drive=disk0); fi
+-  if [ "$KVM" = 1 ]; then args+=(-accel kvm -cpu host); else args+=(-accel "tcg,thread=multi" -cpu max); fi
+-  "$QEMU" "${args[@]}" > /dev/null 2>&1 &
+-  pid=$!
+-  while [ "$left" -gt 0 ] && kill -0 "$pid" 2>/dev/null; do
+-    if grep -aq -- "$words" "$WORK/$name.serial" 2>/dev/null; then break; fi
+-    sleep 2; left=$((left - 2))
++  local name=$1 words=$2 f pid left try; shift 2
++  for try in 1 2; do
++    cp --sparse=always "$IMAGE" "$WORK/$name.img"
++    for f in "$@"; do
++      mcopy -n -i "$WORK/$name.img@@$ESP_OFF" "::$f" "$WORK/$name.bin"
++      flip_bit "$WORK/$name.bin"
++      mcopy -o -i "$WORK/$name.img@@$ESP_OFF" "$WORK/$name.bin" "::$f"
++      rm -f "$WORK/$name.bin"
++    done
++    cp "$FW_VARS" "$WORK/$name.vars"
++    vm_base "$WORK/$name.img" "$WORK/$name.vars" "$WORK/$name.serial"
++    "$QEMU" "${VM_ARGS[@]}" -m 1024 -smp 2 -net none > /dev/null 2>&1 &
++    pid=$!
++    left=$((TIMEOUT / 4))
++    while [ "$left" -gt 0 ] && kill -0 "$pid" 2>/dev/null; do
++      if grep -aq -- "$words" "$WORK/$name.serial" 2>/dev/null; then break; fi
++      sleep 2; left=$((left - 2))
++    done
++    if [ "$try" = 1 ] && ! kill -0 "$pid" 2>/dev/null && emulator_crashed "$pid"; then
++      oa_note "QEMU itself crashed during this start (it was ended by signal $((EMULATOR_STATUS - 128))): a fault in the emulator. The changed copy is made afresh and started once more"
++      continue
++    fi
++    break
+   done
+   # A little longer, in case it goes on to start the kernel all the same.
+   sleep 8
+@@ -695,8 +843,11 @@ fi
+ # ═════════════════════════════════════════════════════════════════════════════
+ oa_section "2. A working copy on a larger disk, with a first set-up file written as a person would"
+ # ═════════════════════════════════════════════════════════════════════════════
+-cp --sparse=always "$IMAGE" "$WORK/disk.img"
+-truncate -s "$DISK_SIZE" "$WORK/disk.img"
++first_disk() {
++  cp --sparse=always "$IMAGE" "$WORK/disk.img"
++  truncate -s "$DISK_SIZE" "$WORK/disk.img"
++}
++first_disk
+ DISK_BYTES=$(stat -c %s "$WORK/disk.img")
+ ssh-keygen -q -t ed25519 -N '' -C 'made for one run of firmware/test/image.sh' -f "$WORK/key"
+ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 \
+@@ -719,7 +870,8 @@ sed -e '/^#hostname:/s/^#//' \
+     -e '/^#runcmd:/s/^#//' \
+     -e '/^#  - \[systemctl, try-restart, open-alert-base\]/s/^#//' \
+     "$OA_FIRMWARE/image/cidata/user-data" > "$WORK/user-data.switched-on"
+-{
++fill_in() {
++  local line
+   while IFS= read -r line; do
+     case "$line" in
+       'hostname: '*) printf 'hostname: %s\n' "$WANT_NAME" ;;
+@@ -729,8 +881,9 @@ sed -e '/^#hostname:/s/^#//' \
+       '      HTTPS_PROXY='*) printf '      HTTPS_PROXY=%s\n' "$PROXY" ;;
+       *) printf '%s\n' "$line" ;;
+     esac
+-  done < "$WORK/user-data.switched-on"
+-} > "$WORK/user-data"
++  done
++}
++fill_in < "$WORK/user-data.switched-on" > "$WORK/user-data"
+ cp "$WORK/user-data" "$LOGDIR/user-data-used.txt"
+ SEED_OK=1
+ for want in "hostname: $WANT_NAME" 'users:' '  - name: admin' "timezone: $WANT_ZONE" 'ca_certs:' "      $CA_LINE" 'write_files:' "      HTTPS_PROXY=$PROXY" 'runcmd:' '  - [systemctl, try-restart, open-alert-base]'; do
+@@ -745,58 +898,66 @@ oa_check "it is written into the working copy's CIDATA partition" sh -c 'mtype -
+ # ═════════════════════════════════════════════════════════════════════════════
+ oa_section "3. Start it (QEMU, UEFI firmware$( [ "$SECURE_BOOT" = 1 ] && echo ', Secure Boot ON with Microsoft'"'"'s keys' || echo ', Secure Boot off'))"
+ # ═════════════════════════════════════════════════════════════════════════════
+-cp "$FW_VARS" "$WORK/vars.fd"
+ # A stand-in for a web proxy: it writes down what is asked of it and answers
+ # nothing. Enough to see that the agent goes to the proxy the set-up file named.
+ if command -v socat >/dev/null 2>&1; then
+   socat -u "TCP-LISTEN:$PROXY_PORT,bind=127.0.0.1,reuseaddr,fork" "OPEN:$WORK/proxy-asked.txt,creat,append" 2>/dev/null &
+   PROXY_PID=$!
+ fi
+-# shellcheck disable=SC2054  # the commas are QEMU's own notation, inside one argument
+-QEMU_ARGS=(-m 2048 -smp 4 -display none -serial "file:$WORK/serial.log" -pidfile "$WORK/qemu.pid"
+-  -drive "if=pflash,format=raw,unit=0,file=$FW_CODE,readonly=on" -drive "if=pflash,format=raw,unit=1,file=$WORK/vars.fd"
+-  -drive "file=$WORK/disk.img,format=raw,if=none,id=disk0"
++FIRST_TRIES=0
++prepare_first() {
++  FIRST_TRIES=$((FIRST_TRIES + 1))
++  if [ "$FIRST_TRIES" -gt 1 ]; then
++    # A second try, after QEMU crashed: the disk as it was before the first.
++    first_disk
++    mcopy -o -i "$WORK/disk.img@@$CID_OFF" "$WORK/user-data" ::user-data
++  fi
++  cp "$FW_VARS" "$WORK/vars.fd"
++  SERIAL="$WORK/serial.log"
++  vm_base "$WORK/disk.img" "$WORK/vars.fd" "$SERIAL"
++  # shellcheck disable=SC2054  # the commas are QEMU's own notation, inside one argument
++  QEMU_ARGS=("${VM_ARGS[@]}" -m 2048 -smp 4 -pidfile "$WORK/qemu.pid"
++  # The network: this computer's ports are passed on to the machine's SSH (22),
++  # dashboard (80, 8080) and a port the firewall should keep shut (9999). The
++  # machine may call out (it is not "restrict=on"): the check of Debian's
++  # archive needs that. Its agent is given a stand-in proxy by the set-up
++  # file, has no Flood-Net token, and so sends Flood-Net nothing.
+   -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:$SSH_PORT-:22,hostfwd=tcp:127.0.0.1:$WEB_PORT-:80,hostfwd=tcp:127.0.0.1:$WEB2_PORT-:8080,hostfwd=tcp:127.0.0.1:$SHUT_PORT-:9999"
++  -device "$NIC,netdev=net0"
+   -object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0
+   # An emulated USB serial adapter (QEMU's is an FTDI one); what is written to
+   # the TCP port on this side comes out of it on the other.
+   -device qemu-xhci,id=usb -chardev "socket,id=receiver,host=127.0.0.1,port=$RX_PORT,server=on,wait=off" -device usb-serial,chardev=receiver,bus=usb.0)
+-if [ "$ARCH" = amd64 ]; then
+-  # An ordinary PC: a SATA disk, an Intel network card. smm=on and the
+-  # "secure" flag are what QEMU needs for firmware that enforces Secure Boot.
+-  # shellcheck disable=SC2054
+-  QEMU_ARGS+=(-machine q35,smm=on -global driver=cfi.pflash01,property=secure,value=on
+-    -device ide-hd,drive=disk0,bus=ide.0 -device e1000e,netdev=net0)
+-else
+-  # shellcheck disable=SC2054
+-  QEMU_ARGS+=(-machine virt -device virtio-blk-pci,drive=disk0 -device virtio-net-pci,netdev=net0)
+-fi
+-if [ "$KVM" = 1 ]; then QEMU_ARGS+=(-accel kvm -cpu host); oa_note "this computer lends its own processor to the virtual machine (KVM)"
+-else QEMU_ARGS+=(-accel "tcg,thread=multi" -cpu max); oa_note "no KVM here: QEMU emulates the processor in software, which is many times slower than a real one"; fi
++}
++if [ "$KVM" = 1 ]; then oa_note "this computer lends its own processor to the virtual machine (KVM)"
++else oa_note "no KVM here: QEMU emulates the processor in software, which is many times slower than a real one"; fi
+ oa_note "$("$QEMU" --version | head -n 1); firmware $FW_CODE with $(basename "$FW_VARS")"
+ if [ -n "$SB_NOTE" ]; then oa_skip "starting with Secure Boot on — $SB_NOTE. On a real computer: \"mokutil --sb-state\" says whether it is on"; fi
+-STARTED=$(date +%s)
+-"$QEMU" "${QEMU_ARGS[@]}" > "$LOGDIR/qemu-output.txt" 2>&1 &
+-QEMU_PID=$!
+ # The receiver's lines, sent again and again for as long as the checks run:
+ # the first lines of a Quansheng ALERT radio as RPi ALERT's scripts/simulate.sh
+ # sends them (its header, a status line, a decoded reading). "MegaNet:" in the
+-# status line is the name the radio's firmware gives its station table.
++# status line is the name the radio's firmware gives its station table. It
++# keeps trying to reach the adapter's port, so it does not matter when QEMU
++# starts, or starts again.
+ feed_receiver() {
+   local k=0
+-  sleep 5
+-  exec 9<>"/dev/tcp/127.0.0.1/$RX_PORT" || return 0
++  trap '' PIPE
+   while :; do
+-    printf 'HDR,fw,4d06107f,schema,2\r\n' >&9 || return 0
+-    printf 'STA,,%d,-121,-124,0,7890,78,%d,%d,-104,OK,1045,5969,BUILTIN MegaNet:95f6f8d\r\n' $((k * 10000)) "$k" "$k" >&9 || return 0
+-    printf 'DEC,%d,,%d,12,6129,LOUDOUN BR,LVL,%d,%d,,ABF,NEG,0,0,-%d,-121,-109,40,412,16067B23,0\r\n' "$k" $((k * 10000)) $((1590 + k)) $((1590 + k)) $((60 + k % 20)) >&9 || return 0
+-    k=$((k + 1)); sleep 3
++    if exec 9<>"/dev/tcp/127.0.0.1/$RX_PORT"; then
++      while printf 'HDR,fw,4d06107f,schema,2\r\n' >&9 &&
++            printf 'STA,,%d,-121,-124,0,7890,78,%d,%d,-104,OK,1045,5969,BUILTIN MegaNet:95f6f8d\r\n' $((k * 10000)) "$k" "$k" >&9 &&
++            printf 'DEC,%d,,%d,12,6129,LOUDOUN BR,LVL,%d,%d,,ABF,NEG,0,0,-%d,-121,-109,40,412,16067B23,0\r\n' "$k" $((k * 10000)) $((1590 + k)) $((1590 + k)) $((60 + k % 20)) >&9; do
++        k=$((k + 1)); sleep 3
++      done
++      exec 9>&- || true
++    fi
++    sleep 3
+   done
+ }
+ feed_receiver 2>/dev/null &
+ FEED_PID=$!
+ 
+-rc=0; wait_serial "$TIMEOUT" 'login:' || rc=$?
++rc=0; start_and_wait prepare_first "$LOGDIR/qemu-output.txt" || rc=$?
+ BOOT_S=$(( $(date +%s) - STARTED ))
+ if [ "$rc" = 0 ]; then oa_ok "it started: a login prompt on the serial console after $BOOT_S seconds (the first start: partition grown, keys made, set-up applied)"
+ else
+@@ -881,6 +1042,7 @@ if [ "$DO_RESTART" = 1 ]; then
+   vm_ssh sudo systemctl reboot >/dev/null 2>&1 || true
+   rc=0; wait_serial "$TIMEOUT" 'login:' "$FROM" || rc=$?
+   if [ "$rc" = 0 ]; then oa_ok "it came back: a login prompt on the serial console $(( $(date +%s) - STARTED )) seconds after the restart was asked for (shutting down included; Debian's own boot-loader installer has rewritten the boot files since the first start)"
++  elif [ "$rc" = 2 ] && emulator_crashed "$QEMU_PID"; then oa_fail "QEMU itself crashed during the restart (it was ended by signal $((EMULATOR_STATUS - 128))): a fault in the emulator, and this part cannot be started again by itself. Run the check again — see $LOGDIR/serial-console.txt"
+   else oa_fail "no login prompt after the restart — see $LOGDIR/serial-console.txt"; fi
+   # StrictHostKeyChecking is on from the first login: a changed host key would refuse this.
+   if oa_wait 300 vm_ssh true; then oa_ok "SSH gets in again, and the computer shows the same host key as before"
+@@ -896,14 +1058,142 @@ mkdir -p "$LOGDIR/from-inside"
+ vm_ssh sudo bash oa-image-test/image.sh --inside logs 2>/dev/null | tar -C "$LOGDIR/from-inside" -xf - 2>/dev/null || true
+ oa_section "Shut it down"
+ vm_ssh sudo systemctl poweroff >/dev/null 2>&1 || true
+-if oa_wait 180 sh -c "! kill -0 $QEMU_PID 2>/dev/null"; then oa_ok "it shut down cleanly when asked"; QEMU_PID=''
+-else oa_fail "it did not shut down within three minutes"; fi
++if oa_wait 180 sh -c "! kill -0 $QEMU_PID 2>/dev/null"; then oa_ok "it shut down cleanly when asked"
++else oa_fail "it did not shut down within three minutes"; kill "$QEMU_PID" 2>/dev/null || true; sleep 2; fi
++QEMU_PID=''
++kill "$FEED_PID" 2>/dev/null || true; FEED_PID=''
++
++# ═════════════════════════════════════════════════════════════════════════════
++# 8. A fresh copy exactly as it is flashed: nothing switched on
++# ═════════════════════════════════════════════════════════════════════════════
++# What a person gets who flashes the image and starts it without opening
++# user-data. Nobody can log in, so everything is checked from outside.
++if [ "$DO_SECOND" = 1 ]; then
++  oa_section "8. A fresh copy exactly as it is flashed: nothing switched on in user-data"
++  for v in SSH0_PORT U80_PORT; do free_port "$v"; done
++  prepare_untouched() {
++    cp --sparse=always "$IMAGE" "$WORK/disk0.img"
++    truncate -s "$DISK_SIZE" "$WORK/disk0.img"
++    cp "$FW_VARS" "$WORK/vars0.fd"
++    SERIAL="$WORK/serial0.log"
++    vm_base "$WORK/disk0.img" "$WORK/vars0.fd" "$SERIAL"
++    # "restrict=on": this copy can reach nothing outside itself, and is
++    # reached only through the two ports passed on to it. It has no proxy
++    # set, and a test should not call the real Flood-Net.
++    # shellcheck disable=SC2054  # the commas are QEMU's own notation, inside one argument
++    QEMU_ARGS=("${VM_ARGS[@]}" -m 2048 -smp 4
++      -netdev "user,id=net0,restrict=on,hostfwd=tcp:127.0.0.1:$SSH0_PORT-:22,hostfwd=tcp:127.0.0.1:$U80_PORT-:80"
++      -device "$NIC,netdev=net0" -object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0)
++  }
++  rc=0; start_and_wait prepare_untouched "$LOGDIR/qemu-output-untouched-copy.txt" || rc=$?
++  if [ "$rc" = 0 ]; then
++    oa_ok "it started: a login prompt on the serial console after $(( $(date +%s) - STARTED )) seconds"
++    # The first set-up runs on after the prompt: wait for its last line on the console.
++    if wait_serial 300 'Cloud-init v.* finished at'; then
++      oa_ok "the first set-up ran to its end with nothing to set up, reading the disk's own CIDATA partition: $(grep -a 'Cloud-init v.* finished at' "$SERIAL" | tail -n 1 | tr -d '\r' | sed 's/^.*Cloud-init/Cloud-init/' | cut -c1-140)"
++    else
++      oa_fail "the console has no line saying the first set-up finished — see $LOGDIR/serial-console-untouched-copy.txt"
++    fi
++    N=$(grep -ac '\[FAILED\]' "$SERIAL" || true)
++    oa_is "nothing on the console is marked FAILED" "0" "$N"
++    if oa_wait 180 sh -c "[ \"\$(curl -s -o /dev/null -m 10 -w '%{http_code}' http://127.0.0.1:$U80_PORT/)\" = 200 ]"; then oa_ok "the dashboard answers another computer on port 80"
++    else oa_fail "the dashboard does not answer: HTTP $(http_code "http://127.0.0.1:$U80_PORT/")"; fi
++    oa_is "the agent behind it is the pinned version" "$AGENT_VERSION" "$(curl -s -m 20 "http://127.0.0.1:$U80_PORT/api/status" | jq -r .version 2>/dev/null)"
++    for who in admin root debian; do
++      got=$(ssh -i "$WORK/key" -p "$SSH0_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
++        -o "UserKnownHostsFile=$WORK/known_hosts0" -o ConnectTimeout=30 -o LogLevel=ERROR "$who@127.0.0.1" true 2>&1 || true)
++      case "$got" in
++        *"Permission denied (publickey)."*) oa_ok "nobody can log in: SSH answers, offers keys only, and turns \"$who\" away" ;;
++        *) oa_fail "SSH as \"$who\" on the untouched copy: ${got:-it got in}" ;;
++      esac
++    done
++    if [ -s "$WORK/known_hosts" ] && [ -s "$WORK/known_hosts0" ]; then
++      if [ "$(host_key "$WORK/known_hosts")" != "$(host_key "$WORK/known_hosts0")" ]; then oa_ok "this copy made an SSH host key of its own: it is not the first copy's"
++      else oa_fail "two copies of the image show the same SSH host key"; fi
++    fi
++  else
++    oa_fail "the untouched copy gave no login prompt on the serial console — see $LOGDIR/serial-console-untouched-copy.txt"
++  fi
++  # Nobody can log in to shut it down: it is switched off.
++  if [ -n "$QEMU_PID" ]; then kill "$QEMU_PID" 2>/dev/null || true; wait "$QEMU_PID" 2>/dev/null || true; fi
++  QEMU_PID=''
++else
++  oa_skip "a fresh copy with nothing switched on in user-data — left out (--no-more-copies)"
++fi
++
++# ═════════════════════════════════════════════════════════════════════════════
++# 9. Another fresh copy: the enterprise profile chosen in user-data
++# ═════════════════════════════════════════════════════════════════════════════
++# What an organisation would do: flash, switch on an account and the line
++# that chooses the enterprise profile, start. Nothing else is switched on, and
++# nobody logs in until the first start has finished by itself.
++if [ "$DO_SECOND" = 1 ]; then
++  oa_section "9. Another fresh copy: only an account and the enterprise profile switched on in user-data"
++  sed -e '/^#users:/,/^#      - ssh-ed25519 /s/^#//' \
++      -e '/^#runcmd:/s/^#//' \
++      -e '/^#  - \[open-alert-base, profile, enterprise\]/s/^#//' \
++      "$OA_FIRMWARE/image/cidata/user-data" | fill_in > "$WORK/user-data2"
++  cp "$WORK/user-data2" "$LOGDIR/user-data-used-enterprise-copy.txt"
++  SEED_OK=1
++  for want in 'users:' '  - name: admin' 'runcmd:' '  - [open-alert-base, profile, enterprise]'; do
++    grep -qxF -- "$want" "$WORK/user-data2" || { SEED_OK=0; oa_fail "this copy's set-up file lacks the line \"$want\""; }
++  done
++  oa_is "its user-data switches on an account, the enterprise profile and nothing else (lines that are not comments)" "11" "$(grep -c -v '^#\|^$' "$WORK/user-data2")"
++  for v in SSH2_PORT E80_PORT E8080_PORT; do free_port "$v"; done
++  prepare_enterprise() {
++    cp --sparse=always "$IMAGE" "$WORK/disk2.img"
++    truncate -s "$DISK_SIZE" "$WORK/disk2.img"
++    mcopy -o -i "$WORK/disk2.img@@$CID_OFF" "$WORK/user-data2" ::user-data
++    cp "$FW_VARS" "$WORK/vars2.fd"
++    SERIAL="$WORK/serial2.log"
++    vm_base "$WORK/disk2.img" "$WORK/vars2.fd" "$SERIAL"
++    # "restrict=on", as for the copy before: nothing outside itself.
++    # shellcheck disable=SC2054  # the commas are QEMU's own notation, inside one argument
++    QEMU_ARGS=("${VM_ARGS[@]}" -m 2048 -smp 4
++      -netdev "user,id=net0,restrict=on,hostfwd=tcp:127.0.0.1:$SSH2_PORT-:22,hostfwd=tcp:127.0.0.1:$E80_PORT-:80,hostfwd=tcp:127.0.0.1:$E8080_PORT-:8080"
++      -device "$NIC,netdev=net0" -object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0)
++  }
++  rc=0; start_and_wait prepare_enterprise "$LOGDIR/qemu-output-enterprise-copy.txt" || rc=$?
++  if [ "$rc" = 0 ]; then
++    oa_ok "it started: a login prompt on the serial console after $(( $(date +%s) - STARTED )) seconds"
++    SSH_OPTS=(-i "$WORK/key" -p "$SSH2_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new
++      -o "UserKnownHostsFile=$WORK/known_hosts2" -o ConnectTimeout=30 -o ServerAliveInterval=20 -o LogLevel=ERROR)
++    if oa_wait 300 vm_ssh true; then
++      oa_ok "SSH takes the key"
++      if [ -s "$WORK/known_hosts" ] && [ -s "$WORK/known_hosts2" ]; then
++        if [ "$(host_key "$WORK/known_hosts")" != "$(host_key "$WORK/known_hosts2")" ]; then oa_ok "this copy made an SSH host key of its own: it is not the first copy's"
++        else oa_fail "two copies of the image show the same SSH host key"; fi
++      fi
++      vm_ssh 'mkdir -p oa-image-test && cat > oa-image-test/lib.sh' < "$HERE/lib.sh"
++      vm_ssh 'cat > oa-image-test/image.sh' < "$HERE/image.sh"
++      in_vm "$LOGDIR/inside-enterprise-copy.log" enterprise-first
++      oa_section "From outside: this copy answers the computer itself only"
++      got=$(http_code "http://127.0.0.1:$E8080_PORT/")
++      if [ "$got" = 000 ]; then oa_ok "another computer asking for the dashboard on port 8080 gets nothing"
++      else oa_fail "another computer got HTTP $got from the dashboard on port 8080"; fi
++      got=$(http_code "http://127.0.0.1:$E80_PORT/")
++      if [ "$got" = 000 ]; then oa_ok "… and nothing answers on port 80"; else oa_fail "something answers on port 80: HTTP $got"; fi
++      mkdir -p "$LOGDIR/from-inside"
++      vm_ssh sudo bash oa-image-test/image.sh --inside logs 2>/dev/null | tar -C "$LOGDIR/from-inside" -xf - 2>/dev/null || true
++    else
++      oa_fail "SSH with the key does not get in to this copy: $(vm_ssh true 2>&1 | tail -n 1)"
++    fi
++    vm_ssh sudo systemctl poweroff >/dev/null 2>&1 || true
++    oa_wait 180 sh -c "! kill -0 $QEMU_PID 2>/dev/null" || oa_note "this copy did not shut down within three minutes; it is stopped"
++  else
++    oa_fail "this copy gave no login prompt on the serial console — see $LOGDIR/serial-console-enterprise-copy.txt"
++  fi
++  if [ -n "$QEMU_PID" ]; then kill "$QEMU_PID" 2>/dev/null || true; fi
++  QEMU_PID=''
++else
++  oa_skip "a fresh copy with the enterprise profile chosen in user-data — left out (--no-more-copies)"
++fi
+ 
+ # ═════════════════════════════════════════════════════════════════════════════
+-# 8. Secure Boot refuses a boot file that has been changed
++# 10. Secure Boot refuses a boot file that has been changed
+ # ═════════════════════════════════════════════════════════════════════════════
+ if [ "$SECURE_BOOT" = 1 ]; then
+-  oa_section "8. With Secure Boot on, a boot file changed by one bit is refused"
++  oa_section "10. With Secure Boot on, a boot file changed by one bit is refused"
+   if refused_start changed-shim 'Access Denied' "EFI/BOOT/BOOT$EFI_UPPER.EFI" "EFI/debian/shim$EFI.efi"; then
+     oa_ok "one bit changed in shim: the firmware does not start it (\"Access Denied\"), and no kernel starts"
+   else oa_fail "a changed shim was not plainly refused — see $LOGDIR/serial-console-changed-shim.txt"; fi
