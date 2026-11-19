@@ -1,27 +1,46 @@
 # open-ALERT base station: keep the dashboard to this computer only.
 #
-# Loads one small table of firewall rules (nftables) and exits. It is turned on
-# by "open-alert-base profile enterprise" (and by "open-alert-base sync" when
-# the settings say the dashboard belongs to this computer only), and turned off
-# by the standard profile. It touches no other firewall table.
+# Loads one small table of firewall rules (nftables), then stays to keep it
+# there: if something clears the computer's firewall tables (the system's own
+# firewall service being started or restarted does), the table is put back at
+# once. It is turned on by "open-alert-base profile enterprise" (and by
+# "open-alert-base sync" when the settings say the dashboard belongs to this
+# computer only), and turned off by the standard profile. It touches no other
+# firewall table.
+#
+# No lock, no agent: in a profile that asks for the lock, the agent's service
+# is tied to this one (a small file in /etc/systemd/system/
+# open-alert-base.service.d/ says so), and runs only while this one does. If
+# the rules cannot be loaded — a slip in the rules file, no nftables on this
+# computer — this service fails and the agent is not started.
 
 [Unit]
-Description=open-ALERT base station: dashboard for this computer only (nftables rules)
+Description=open-ALERT base station: dashboard for this computer only (nftables rules, kept in place)
 Documentation=https://github.com/cdomotor-g/open-ALERT/tree/main/firmware
-ConditionPathExists=/etc/open-alert-base/dashboard-local-only.nft
-# After the system's own firewall service, whose usual first line clears every
-# table; and again whenever that service is reloaded or restarted.
+# After the system's own firewall service, whose usual first line clears every table.
 After=nftables.service
-PartOf=nftables.service
-ReloadPropagatedFrom=nftables.service
 Before=open-alert-base.service
+# Tried again every 15 seconds for as long as it takes (RestartSec below), with
+# no limit on how often it may be started: systemd's usual limit (five starts
+# in ten seconds) is soon reached by a person putting the rules file right,
+# and after that it would stop trying, and the agent would stay stopped even
+# once the lock could hold.
+StartLimitIntervalSec=0
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/usr/sbin/nft -f /etc/open-alert-base/dashboard-local-only.nft
+Type=simple
+# A missing or faulty rules file is a failure here, not something to pass over.
+ExecStartPre=/usr/sbin/nft -f /etc/open-alert-base/dashboard-local-only.nft
+ExecStart=/usr/lib/open-alert-base/lock-keeper
+# After a change to the rules file:  sudo systemctl reload open-alert-base-firewall
 ExecReload=/usr/sbin/nft -f /etc/open-alert-base/dashboard-local-only.nft
-ExecStop=-/usr/sbin/nft delete table inet open_alert_base
+# Stopping this service leaves the table loaded (see lock-keeper); it only
+# notes a failure, so that the agent is started again once the lock holds.
+ExecStopPost=/usr/lib/open-alert-base/lock-keeper --stopped
+Restart=on-failure
+RestartSec=15
+RuntimeDirectory=open-alert-base
+RuntimeDirectoryPreserve=yes
 # Root, because only root may change firewall rules; but with that one
 # privilege and no other, and the disk read-only.
 CapabilityBoundingSet=CAP_NET_ADMIN

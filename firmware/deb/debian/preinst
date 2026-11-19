@@ -24,7 +24,18 @@ first. Its settings and what it has queued for Flood-Net are kept:
 
     sudo /opt/rpi-alert/os/install.sh --uninstall
 
-Then install this package again.
+That leaves three things behind which open-alert-base does not want: the
+"alert" maintenance account (it can log in), the screen's account, and the
+agent's user in the sound and video groups. Remove them too:
+
+    sudo userdel -r alert
+    sudo userdel -r rpi-alert-kiosk        (only if "id rpi-alert-kiosk" finds it)
+    sudo gpasswd -d rpi-alert audio
+    sudo gpasswd -d rpi-alert video
+
+Then install this package again, and look at what is left with:
+
+    sudo open-alert-base audit
 
 MSG
       exit 1

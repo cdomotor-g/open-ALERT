@@ -71,11 +71,27 @@ function load() {
   return { c, exists, defaults: typeof lib.defaults === 'function' ? lib.defaults() : {} };
 }
 
+// The agent says in one line what it found wrong when it loaded its settings.
+// Two kinds are only remarks: the file was read and is in use. Anything else
+// means the file is there and was NOT used (it could not be read, it is a
+// link, it is not valid JSON): the agent is on its built-in settings.
+function unusable(c) {
+  if (!c.loadError) return '';
+  if (/^settings file has problems \(defaults used for them\)|^channels one stick cannot hear together/.test(c.loadError)) return '';
+  return c.loadError;
+}
+
 function apply(file) {
   const profile = readProfile(file);
   const { c, exists, defaults } = load();
+  // A file that is there and cannot be read or understood is never written
+  // over: the agent would save its built-in settings in its place, and what
+  // the file held (the Flood-Net token, the channels) would be gone.
   if (c.loadError && /not valid JSON/.test(c.loadError)) {
     die('the settings file ' + c.file + ' is not valid JSON, so it was left alone. Put it right or move it away, then run this again. (' + c.loadError + ')');
+  }
+  if (unusable(c)) {
+    die('the settings file ' + c.file + ' could not be read by the agent\'s user, so it was left alone. Put it right or move it away, then run this again. (' + c.loadError + ')');
   }
   if (c.loadError) process.stderr.write('open-alert-base: note — ' + c.loadError + '\n');
   const set = {}, unset = [];
@@ -108,6 +124,7 @@ function summary() {
   line('file', c.file);
   line('exists', exists ? 'yes' : 'no');
   line('problems', c.loadError || '');
+  line('unusable', unusable(c));
   line('web.port', (d.web || {}).port);
   line('web.bind', (d.web || {}).bind);
   line('web.password', (d.web || {}).passwordHash ? 'set' : 'not set');

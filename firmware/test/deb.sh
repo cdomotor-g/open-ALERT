@@ -19,18 +19,24 @@
 #         comes from the system's own packages; files, owners and modes; the
 #         agent's own tests as the service's user; the agent started exactly as
 #         the service would start it, with stand-ins for the radio sticks and
-#         for Flood-Net; both profiles; a web proxy; remove, reinstall, purge;
-#         the refusal to install beside RPi ALERT's own install; systemd's
-#         checker and exposure score for the service file; udev's checker
-#         for the device rules.
+#         for Flood-Net; both profiles, and that the settings file cannot
+#         loosen the profile root put in force; a web proxy, one that cannot
+#         be used, one that drops connections, and a look-alike library in
+#         the agent's own folder; remove, reinstall, purge; a settings file
+#         put there by root; the refusal to install beside RPi ALERT's own
+#         install; systemd's checker and exposure score for the service file;
+#         udev's checker for the device rules.
 #      b. firewall — the enterprise profile's rules, loaded as the service
-#         would load them, tried from a second container ("another computer").
+#         would load them, tried from a second container ("another computer"),
+#         and put back by their keeper when every table is cleared.
 #         This container is given the one privilege that needs (NET_ADMIN).
 #      c. systemd — a container with systemd as its first process: the package
-#         installed and the real service started, sandbox and all. This
-#         container is given what that needs (SYS_ADMIN for the sandbox's
-#         private mounts, NET_ADMIN for the firewall rules). Where systemd
-#         will not start in a container, this part is skipped and says so.
+#         installed and the real service started, sandbox and all; the
+#         enterprise profile's lock cleared, broken and taken away, and the
+#         agent stopped whenever the lock cannot hold. This container is
+#         given what that needs (SYS_ADMIN for the sandbox's private mounts,
+#         NET_ADMIN for the firewall rules). Where systemd will not start in
+#         a container, this part is skipped and says so.
 #   None of the containers is privileged or shares the computer's network.
 #
 # Options
@@ -75,6 +81,8 @@ SIM_DEV=/var/lib/rpi-alert/oa-test-dev     # the pretend /dev: the pretend stick
 SYSTEM_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 SHARE=/usr/share/open-alert-base
 DROPIN=/etc/systemd/system/open-alert-base.service.d/10-low-port.conf
+LOCK_DROPIN=/etc/systemd/system/open-alert-base.service.d/20-dashboard-lock.conf
+KEEPER=/usr/lib/open-alert-base/lock-keeper
 WANTS=/etc/systemd/system/multi-user.target.wants
 STUB_PID=''; FRONT_PID=''; PROXY_PID=''
 SIM_ENV=()
@@ -226,6 +234,8 @@ inside_install() {
 /usr/lib/open-alert-base/start root:root 755
 /usr/lib/open-alert-base/settings.js root:root 644
 /usr/lib/open-alert-base/proxy-preload.js root:root 644
+/usr/lib/open-alert-base/adopt-settings.js root:root 644
+/usr/lib/open-alert-base/lock-keeper root:root 755
 /usr/lib/open-alert-base/agent root:root 755
 /usr/lib/open-alert-base/agent/bin/rpi-alert root:root 755
 /usr/lib/open-alert-base/agent/package.json root:root 644
@@ -387,7 +397,10 @@ LIST
   oa_check_not "enterprise: the drop-in file with the privilege is gone" test -e "$DROPIN"
   oa_is "enterprise: the service file gives no privilege at all" "" "$(oa_unit_values CapabilityBoundingSet; oa_unit_values AmbientCapabilities)"
   oa_check "enterprise: the firewall lock is set to load when the computer starts" test -L "$WANTS/open-alert-base-firewall.service"
+  oa_has "enterprise: the agent's service is tied to the lock's — no lock, no agent (BindsTo, in a drop-in file)" "$LOCK_DROPIN" '^BindsTo=open-alert-base-firewall\.service$'
+  oa_has "… and starts after it" "$LOCK_DROPIN" '^After=open-alert-base-firewall\.service$'
   open-alert-base audit > "$T_LOG/audit-enterprise.txt" 2>&1 || true
+  oa_has "audit (enterprise): says the service is tied to the firewall lock" "$T_LOG/audit-enterprise.txt" 'Tied to the firewall lock: yes'
   oa_has "audit (enterprise): no privileges at all" "$T_LOG/audit-enterprise.txt" 'Privileges: none at all'
   oa_has "audit (enterprise): Flood-Net can change nothing" "$T_LOG/audit-enterprise.txt" 'remote management +report'
   t_stub_start "$T_LOG/stub-enterprise.log"
@@ -427,6 +440,7 @@ LIST
   t_settings_are "the standard profile's settings again" web.port=80 "web.bind=(not set)" remote.mode=manage
   oa_has "the drop-in file is back" "$DROPIN" '^CapabilityBoundingSet=CAP_NET_BIND_SERVICE$'
   oa_check_not "the firewall lock is turned off again" test -e "$WANTS/open-alert-base-firewall.service"
+  oa_check_not "… and the agent's service is no longer tied to it" test -e "$LOCK_DROPIN"
   got=0; open-alert-base profile no-such > /dev/null 2>&1 || got=$?
   oa_is "a profile that does not exist is refused" 1 "$got"
   # Changing the port by hand, then "sync": the privilege follows the port.
@@ -436,6 +450,43 @@ LIST
   t_apply '{"settings":{"web":{"port":80}}}'
   open-alert-base sync >> "$T_LOG/sync.txt" 2>&1 || true
   oa_check "open-alert-base sync: back on port 80, the privilege is given again" test -f "$DROPIN"
+
+  oa_section "$OA_DISTRO: the profile root put in force decides; the settings file, which the agent's own user can write, cannot loosen it"
+  open-alert-base profile enterprise > "$T_LOG/decide-profile.txt" 2>&1 || true
+  # As the agent's own user would, were the agent taken over: the dashboard for every address.
+  t_apply '{"settings":{"web":{"bind":"0.0.0.0"}}}'
+  got=0; open-alert-base sync > "$T_LOG/decide-sync-bind.txt" 2>&1 || got=$?
+  oa_is "the agent's user sets \"every address\" behind the enterprise profile: \"open-alert-base sync\" (as an update runs it) ends with an error, status 4" 4 "$got"
+  oa_has "… and says loudly that the settings no longer match the profile" "$T_LOG/decide-sync-bind.txt" 'THE SETTINGS NO LONGER MATCH THE PROFILE IN FORCE \(enterprise\)'
+  oa_check "… the firewall lock is still set to load" test -L "$WANTS/open-alert-base-firewall.service"
+  oa_check "… the agent is still tied to it" test -f "$LOCK_DROPIN"
+  oa_is "… and the profile on record is still" "enterprise" "$(cat /etc/open-alert-base/profile)"
+  open-alert-base audit > "$T_LOG/decide-audit.txt" 2>&1 || true
+  oa_has "audit calls it a fault" "$T_LOG/decide-audit.txt" 'FAULT — THE SETTINGS NO LONGER MATCH THE PROFILE'
+  oa_has_not "audit does not say the lock is \"not used by this profile\"" "$T_LOG/decide-audit.txt" 'firewall lock +not used by this profile'
+  got=0; open-alert-base status > "$T_LOG/decide-status.txt" 2>&1 || got=$?
+  if [ "$got" != 0 ] && grep -q 'THE SETTINGS NO LONGER MATCH THE PROFILE' "$T_LOG/decide-status.txt"; then oa_ok "open-alert-base status says so too, and ends with an error"
+  else oa_fail "open-alert-base status with settings that do not match the profile: exit $got — see $T_LOG/decide-status.txt"; fi
+  # … and a port that would need a privilege.
+  t_apply '{"settings":{"web":{"bind":"127.0.0.1","port":81}}}'
+  got=0; open-alert-base sync > "$T_LOG/decide-sync-port.txt" 2>&1 || got=$?
+  oa_is "the agent's user sets a port below 1024 behind the enterprise profile: status 4 again" 4 "$got"
+  oa_check_not "… and the service is given no privilege for it" test -e "$DROPIN"
+  oa_is "… none at all" "" "$(oa_unit_values CapabilityBoundingSet; oa_unit_values AmbientCapabilities)"
+  got=0; open-alert-base profile enterprise > "$T_LOG/decide-profile-again.txt" 2>&1 || got=$?
+  oa_is "root puts the profile in force again" 0 "$got"
+  t_settings_are "the settings are as the profile has them once more" web.port=8080 web.bind=127.0.0.1
+  got=0; open-alert-base sync > "$T_LOG/decide-sync-clean.txt" 2>&1 || got=$?
+  oa_is "… and sync has no complaint" 0 "$got"
+  # The settings may ask for more than the profile does, never for less.
+  open-alert-base profile standard > /dev/null 2>&1 || true
+  t_apply '{"settings":{"web":{"bind":"127.0.0.1"}}}'
+  open-alert-base sync > "$T_LOG/decide-sync-more.txt" 2>&1 || true
+  if [ -L "$WANTS/open-alert-base-firewall.service" ] && [ -f "$LOCK_DROPIN" ]; then oa_ok "the settings may ask for more than the profile does: \"this computer only\" set under the standard profile turns the lock on"
+  else oa_fail "\"this computer only\" set under the standard profile did not turn the lock on — see $T_LOG/decide-sync-more.txt"; fi
+  open-alert-base profile standard > /dev/null 2>&1 || true
+  if [ ! -e "$WANTS/open-alert-base-firewall.service" ] && [ ! -e "$LOCK_DROPIN" ] && [ -f "$DROPIN" ]; then oa_ok "\"open-alert-base profile standard\", run by root, is what takes the lock off again"
+  else oa_fail "after \"open-alert-base profile standard\" the lock or its tie is still there, or the privilege for port 80 is not"; fi
 
   oa_section "$OA_DISTRO: through a web proxy, with a private certificate authority"
   t_proxy_checks
@@ -480,12 +531,65 @@ LIST
   else oa_fail "with rpi-alert.service present: exit $got — see $T_LOG/apt-refused-2.log"; fi
   rm -f /etc/systemd/system/rpi-alert.service; dpkg --purge open-alert-base > /dev/null 2>&1 || true
 
+  oa_section "$OA_DISTRO: a settings file put there by root before the install (configuration management, a restored backup)"
+  install -d -m 0755 /etc/rpi-alert
+  printf '{\n  "name": "Seeded base",\n  "web": { "port": 8081 },\n  "meganet": { "token": "mgn_seeded_token" }\n}\n' > /etc/rpi-alert/config.json
+  chmod 0600 /etc/rpi-alert/config.json
+  if t_apt install "$OA_DEB" > "$T_LOG/apt-install-seeded.log" 2>&1; then oa_ok "the package installs over it"; else oa_fail "install over a settings file of root's — see $T_LOG/apt-install-seeded.log"; fi
+  oa_is "the file root put there now belongs to the agent's user, readable by that user alone" "rpi-alert:rpi-alert 600" "$(stat -c '%U:%G %a' /etc/rpi-alert/config.json)"
+  oa_has "the install said that it handed the file over" "$T_LOG/apt-install-seeded.log" 'belonged to root, and the agent could not read it'
+  oa_has "… and that no profile is in force" "$T_LOG/apt-install-seeded.log" 'no profile is in force'
+  runuser -u rpi-alert -- node /usr/lib/open-alert-base/settings.js summary > "$T_LOG/seeded-summary.txt" 2>&1 || true
+  oa_has "the agent's user can read it: its settings code finds nothing wrong" "$T_LOG/seeded-summary.txt" '^unusable=$'
+  t_settings_are "what the file held was kept, and no profile was put over it" web.port=8081 "name=Seeded base" meganet.token=mgn_seeded_token
+  oa_check_not "no profile was recorded" test -e /etc/open-alert-base/profile
+  oa_check_not "port 8081 needs no privilege, and none was given" test -e "$DROPIN"
+  # A file put there by root after the install: "sync" hands it over.
+  cp /etc/rpi-alert/config.json "$SIM/seeded.json"
+  rm -f /etc/rpi-alert/config.json; install -m 0600 -o root -g root "$SIM/seeded.json" /etc/rpi-alert/config.json
+  got=0; open-alert-base sync > "$T_LOG/seeded-sync.txt" 2>&1 || got=$?
+  if [ "$got" = 0 ] && [ "$(stat -c '%U:%G %a' /etc/rpi-alert/config.json)" = "rpi-alert:rpi-alert 600" ]; then oa_ok "a file root puts there after the install: \"open-alert-base sync\" hands it over"
+  else oa_fail "sync over a settings file of root's: exit $got, the file is $(stat -c '%U:%G %a' /etc/rpi-alert/config.json) — see $T_LOG/seeded-sync.txt"; fi
+  # A link in its place is never followed: the file it points to keeps its owner.
+  before=$(stat -c '%U:%G %a' /etc/passwd)
+  mv /etc/rpi-alert/config.json "$SIM/seeded-aside.json"; ln -s /etc/passwd /etc/rpi-alert/config.json
+  got=0; open-alert-base sync > "$T_LOG/seeded-link.txt" 2>&1 || got=$?
+  if [ "$got" != 0 ] && grep -q 'is a link to another file: it was left alone' "$T_LOG/seeded-link.txt"; then oa_ok "a link in the settings file's place is not followed: sync stops with an error and says the link was left alone"
+  else oa_fail "sync with a link in the settings file's place: exit $got — see $T_LOG/seeded-link.txt"; fi
+  oa_is "… and the file it points to (/etc/passwd) still has the owner and mode it had" "$before" "$(stat -c '%U:%G %a' /etc/passwd)"
+  got=0; open-alert-base profile enterprise > "$T_LOG/seeded-link-profile.txt" 2>&1 || got=$?
+  if [ "$got" != 0 ] && [ -L /etc/rpi-alert/config.json ]; then oa_ok "… and no profile is written over it either"; else oa_fail "profile with a link in the settings file's place: exit $got"; fi
+  rm -f /etc/rpi-alert/config.json; mv "$SIM/seeded-aside.json" /etc/rpi-alert/config.json
+  t_apt purge open-alert-base > "$T_LOG/apt-purge-seeded.log" 2>&1 || oa_fail "purge after the seeded install — see $T_LOG/apt-purge-seeded.log"
+
   oa_section "$OA_DISTRO: a first install told to start locked down"
   got=0; OPEN_ALERT_BASE_PROFILE=enterprise apt-get -y -o Dpkg::Use-Pty=0 install "$OA_DEB" > "$T_LOG/apt-install-enterprise.log" 2>&1 || got=$?
   oa_is "install with OPEN_ALERT_BASE_PROFILE=enterprise" 0 "$got"
   oa_is "the profile in force" "enterprise" "$(cat /etc/open-alert-base/profile 2>/dev/null)"
   t_settings_are "its settings" web.port=8080 web.bind=127.0.0.1 remote.mode=report recover.mode=off hotspot.mode=off
   oa_check_not "no privilege was ever given" test -e "$DROPIN"
+  oa_check "the agent's service is tied to the firewall lock from the first moment" test -f "$LOCK_DROPIN"
+
+  oa_section "$OA_DISTRO: an install over settings that are already there, told which profile to use"
+  t_apply '{"settings":{"name":"Kept name","meganet":{"token":"mgn_kept_token"}}}'
+  t_apt remove open-alert-base > "$T_LOG/apt-remove-2.log" 2>&1 || true
+  got=0; OPEN_ALERT_BASE_PROFILE=standard apt-get -y -o Dpkg::Use-Pty=0 install "$OA_DEB" > "$T_LOG/apt-reinstall-standard.log" 2>&1 || got=$?
+  oa_is "removed, then installed again with OPEN_ALERT_BASE_PROFILE=standard" 0 "$got"
+  oa_is "the profile asked for is in force (it is not passed over because settings were there)" "standard" "$(cat /etc/open-alert-base/profile 2>/dev/null)"
+  oa_has "the install said what it was doing" "$T_LOG/apt-reinstall-standard.log" 'OPEN_ALERT_BASE_PROFILE=standard was given, and the profile in force is "enterprise"'
+  t_settings_are "its settings; what a profile does not name was kept" web.port=80 "web.bind=(not set)" "name=Kept name" meganet.token=mgn_kept_token
+  t_apt remove open-alert-base > "$T_LOG/apt-remove-3.log" 2>&1 || true
+  got=0; OPEN_ALERT_BASE_PROFILE=enterprise apt-get -y -o Dpkg::Use-Pty=0 install "$OA_DEB" > "$T_LOG/apt-reinstall-enterprise.log" 2>&1 || got=$?
+  oa_is "removed, then installed again with OPEN_ALERT_BASE_PROFILE=enterprise" 0 "$got"
+  oa_is "the profile in force: locked down, as the person installing was told" "enterprise" "$(cat /etc/open-alert-base/profile 2>/dev/null)"
+  t_settings_are "its settings" web.port=8080 web.bind=127.0.0.1 remote.mode=report "name=Kept name" meganet.token=mgn_kept_token
+  oa_check_not "the privilege for port 80 is gone" test -e "$DROPIN"
+  oa_check "the firewall lock is set to load, with the agent tied to it" test -L "$WANTS/open-alert-base-firewall.service" -a -f "$LOCK_DROPIN"
+  before=$(sha256sum /etc/rpi-alert/config.json | awk '{print $1}')
+  got=0; OPEN_ALERT_BASE_PROFILE=enterprise apt-get -y -o Dpkg::Use-Pty=0 install --reinstall "$OA_DEB" > "$T_LOG/apt-reinstall-same.log" 2>&1 || got=$?
+  if [ "$got" = 0 ] && [ "$before" = "$(sha256sum /etc/rpi-alert/config.json | awk '{print $1}')" ] && ! grep -q 'was given' "$T_LOG/apt-reinstall-same.log"; then
+    oa_ok "installed once more with the same variable: the profile is already in force, and the settings file is not touched"
+  else oa_fail "a reinstall with the profile already in force changed the settings, or failed (exit $got) — see $T_LOG/apt-reinstall-same.log"; fi
 
   oa_section "$OA_DISTRO: systemd's own checker and exposure score for the service file (0 is the most closed, 10 the most open)"
   if command -v systemd-analyze >/dev/null 2>&1 || t_apt install systemd > "$T_LOG/apt-systemd.log" 2>&1; then
@@ -500,7 +604,7 @@ LIST
     t_score "standard profile (the one privilege for port 80)" "$T_LOG/security-standard.txt"
     systemd-analyze security --offline=yes --no-pager /usr/lib/systemd/system/open-alert-base-firewall.service > "$T_LOG/security-firewall.txt" 2>&1 || true
     score=$(sed -n 's/.*Overall exposure level for [^:]*: *\([0-9.]*\).*/\1/p' "$T_LOG/security-firewall.txt" | tail -n 1)
-    oa_note "exposure score of the firewall service (it runs for a moment as root to load the rules, then exits): ${score:-unknown}"
+    oa_note "exposure score of the firewall service (root, with the one privilege that changes firewall rules; it loads the lock and stays to keep it): ${score:-unknown}"
   else
     oa_skip "systemd-analyze — the systemd package could not be installed in this container"
   fi
@@ -570,6 +674,18 @@ FAKE
   if printf '%s\n' "$got" | grep -q 'through the web proxy http://(name and password)@proxy.example:3128' && ! printf '%s\n' "$got" | grep 'through the web proxy' | grep -q hunter2; then
     oa_ok "a name and password in the proxy's address are kept out of the log line"
   else oa_fail "the proxy's name and password in the log line: $(printf '%s\n' "$got" | grep 'through the web proxy')"; fi
+  got=$(run FAKE_NODE_VERSION=20.19.2 HTTPS_PROXY=proxy.example:3128)
+  if printf '%s\n' "$got" | grep -q '^HTTPS_PROXY=http://proxy.example:3128 https_proxy=http://proxy.example:3128 ' && printf '%s\n' "$got" | grep -qx 'NODE_OPTIONS=--require=/usr/lib/open-alert-base/proxy-preload.js'; then
+    oa_ok "a proxy's address written without \"http://\" in front is taken as http://, as curl takes it"
+  else oa_fail "a proxy's address without \"http://\": $(printf '%s' "$got" | tr '\n' '|')"; fi
+  bad=''
+  for v in 20.19.2 22.23.4 24.0.0; do
+    got=$(run "FAKE_NODE_VERSION=$v" HTTPS_PROXY=socks5://proxy.example:1080)
+    printf '── Node.js %s, an address that cannot be used\n%s\n' "$v" "$got" >> "$out"
+    if ! printf '%s\n' "$got" | grep -qx 'NODE_OPTIONS=--require=/usr/lib/open-alert-base/proxy-preload.js' || ! printf '%s\n' "$got" | grep -qx 'NODE_USE_ENV_PROXY=' \
+       || ! printf '%s\n' "$got" | grep -q 'cannot be used: nothing is sent, and nothing goes out directly'; then bad="$bad $v"; fi
+  done
+  oa_is "a proxy's address that cannot be used (socks5://…): on any Node.js the start-up file is loaded, to refuse the calls, and the log says nothing is sent" "" "$bad"
   got=0; setpriv --reuid nobody --regid nogroup --clear-groups env -i "PATH=$SYSTEM_PATH" OPEN_ALERT_BASE_NODE=/nonexistent/node "$start" > /dev/null 2>&1 || got=$?
   oa_is "no Node.js at the path given: a plain message and exit status 78 (\"not set up\")" 78 "$got"
 }
@@ -672,6 +788,110 @@ t_proxy_run() {
   cp -p "$SIM/env.pristine" /etc/open-alert-base/env
 }
 
+# The three rules the start-up file keeps (proxy-preload.js), tried with the
+# installed file itself, as the agent's user, with the agent's own home
+# folder: a proxy that is set is never gone around; the library comes from
+# the system's folders only; a proxy that drops connections is not hammered.
+#   t_proxy_call LOG  NAME=value…  -- CASE [ARGUMENT]     prints the helper's "RESULT …" line
+# Each case may take two minutes at most: a proxy that is hammered can keep
+# Node.js too busy ever to finish, and that is a failed check, not a stuck run.
+t_proxy_call() {
+  local log=$1 envs=(); shift
+  while [ "$1" != -- ]; do envs+=("$1"); shift; done; shift
+  timeout -k 5 120 runuser -u rpi-alert -- env -i "PATH=$SYSTEM_PATH" HOME=/var/lib/rpi-alert "${envs[@]}" \
+    node --require=/usr/lib/open-alert-base/proxy-preload.js "$SIM/proxy-rules.js" "$@" 2> "$log" | sed -n 's/^RESULT //p' | head -n 1 || true
+}
+t_proxy_rules() {
+  local got n flog="$T_LOG/front-rules.log" plog="$T_LOG/proxy-rules.log" slog="$T_LOG/stub-proxy-rules.log" home=/var/lib/rpi-alert
+  cat > "$SIM/proxy-rules.js" <<'JS'
+// One call, or a run of calls through a stand-in proxy that drops every connection. Prints "RESULT …".
+const net = require('node:net');
+const [what, arg] = process.argv.slice(2);
+const call = async (u) => {
+  try { const r = await fetch(u, { signal: AbortSignal.timeout(5000) }); await r.text(); return 'answered ' + r.status; }
+  catch (e) { return 'failed ' + ((e.cause && (e.cause.code || e.cause.message)) || e.message); }
+};
+(async () => {
+  if (what === 'call') { console.log('RESULT ' + await call(arg)); process.exit(0); }
+  // "drops": a proxy on 127.0.0.1:3199 that closes each connection, the odd ones
+  // at once and the even ones after it has been asked for a tunnel.
+  let n = 0, drop = true;
+  const proxy = net.createServer((s) => {
+    n++; s.on('error', () => {});
+    if (!drop) { s.once('data', () => s.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')); return; }
+    if (n % 2) s.destroy(); else s.once('data', () => s.destroy());
+  });
+  proxy.listen(3199, '127.0.0.1', async () => {
+    const t0 = Date.now(); let refused = 0, last = '';
+    for (let i = 0; i < 12; i++) { last = await call('https://flood.test/x'); if (/OA_PROXY/.test(last)) refused++; }
+    const during = n, took = Date.now() - t0;
+    await new Promise((r) => setTimeout(r, 2000));
+    const after = n;                       // nothing may go on by itself once the calls have ended
+    drop = false;
+    await new Promise((r) => setTimeout(r, 4000));
+    const later = await call('https://flood.test/x');
+    console.log('RESULT connections=' + during + ' later=' + after + ' refused=' + refused + ' ms=' + took + ' then=' + later.replace(/ /g, '_') + ' total=' + n);
+    process.exit(0);
+  });
+})();
+JS
+  t_stub_start "$slog"
+  node "$SIM/tls-front.js" 443 "$SIM/tls/srv.key" "$SIM/tls/srv.crt" 8098 > "$flog" 2>&1 < /dev/null &
+  FRONT_PID=$!
+  node "$SIM/connect-proxy.js" 3128 flood.test 443 > "$plog" 2>&1 < /dev/null &
+  PROXY_PID=$!
+  oa_wait 15 grep -q 'front up' "$flog" || true; oa_wait 15 grep -q 'proxy up' "$plog" || true
+
+  # Rule 1. direct.test is this computer: with no proxy it is reached directly,
+  # so anything that goes around the proxy shows up in the HTTPS front's log.
+  got=$(t_proxy_call "$T_LOG/rule1-socks.txt" HTTPS_PROXY=socks5://127.0.0.1:1080 NO_PROXY=localhost -- call https://direct.test/around-1)
+  if [ "$got" = "failed OA_PROXY" ] && ! grep -q 'around-1' "$flog"; then oa_ok "a proxy address that cannot be used (socks5://…): the call is refused, and nothing reaches the far end directly"
+  else oa_fail "a proxy address that cannot be used: the call gave \"$got\"; the far end saw: $(grep 'around-1' "$flog" | head -n 1)"; fi
+  oa_has "… and the log says why nothing is sent" "$T_LOG/rule1-socks.txt" 'cannot be used: it starts with "socks5://".*nothing is sent directly instead'
+  got=$(t_proxy_call "$T_LOG/rule1-typo.txt" 'HTTPS_PROXY=http://[127.0.0.1:3128' NO_PROXY=localhost -- call https://direct.test/around-2)
+  if [ "$got" = "failed OA_PROXY" ] && ! grep -q 'around-2' "$flog"; then oa_ok "a proxy address with a slip in it: the same — refused, nothing direct"
+  else oa_fail "a proxy address with a slip in it: the call gave \"$got\"; the far end saw: $(grep 'around-2' "$flog" | head -n 1)"; fi
+  got=$(t_proxy_call "$T_LOG/rule1-noproxy.txt" HTTPS_PROXY=socks5://127.0.0.1:1080 NO_PROXY=direct.test -- call https://direct.test/exempt-1)
+  if [ "${got%% *}" = answered ] && grep -q 'exempt-1 host=direct\.test' "$flog"; then oa_ok "… while an address in NO_PROXY still goes direct, as its owner asked"
+  else oa_fail "with an unusable proxy, an address in NO_PROXY gave \"$got\""; fi
+  got=$(t_proxy_call "$T_LOG/rule1-bare.txt" HTTPS_PROXY=127.0.0.1:3128 NO_PROXY=localhost -- call https://flood.test/bare-1)
+  if [ "${got%% *}" = answered ] && grep -q 'bare-1 host=flood\.test' "$flog" && grep -q '^CONNECT flood\.test:443 ' "$plog"; then oa_ok "an address without \"http://\" in front (127.0.0.1:3128) is used as a proxy, not passed over"
+  else oa_fail "a proxy address without \"http://\": the call gave \"$got\""; fi
+
+  # Rule 2. A look-alike of the library, and of a library it uses, where Node.js
+  # would look first: the agent's own home folder.
+  runuser -u rpi-alert -- bash -c "mkdir -p $home/.node_modules/undici $home/.node_modules/@fastify/busboy $home/.node_libraries
+    for f in $home/.node_modules/undici/index.js $home/.node_modules/@fastify/busboy/index.js $home/.node_libraries/undici.js; do
+      echo 'require(\"node:fs\").writeFileSync(\"$home/oa-lookalike-ran\", \"x\"); module.exports = {};' > \$f; done"
+  if runuser -u rpi-alert -- env -i "PATH=$SYSTEM_PATH" HOME=$home node -e 'require("undici")' > /dev/null 2>&1 && [ -e "$home/oa-lookalike-ran" ]; then
+    rm -f "$home/oa-lookalike-ran"
+    got=$(t_proxy_call "$T_LOG/rule2.txt" HTTPS_PROXY=http://127.0.0.1:3128 NO_PROXY=localhost -- call https://flood.test/own-1)
+    if [ "${got%% *}" = answered ] && [ ! -e "$home/oa-lookalike-ran" ] && grep -q 'own-1 host=flood\.test' "$flog"; then
+      oa_ok "a look-alike \"undici\" library in the agent's own folder (which a plain Node.js on this system does load) is not loaded by the start-up file: the system's own is, and the call goes through the proxy"
+    else oa_fail "with a look-alike library in the agent's folder: the call gave \"$got\"; the look-alike $( [ -e "$home/oa-lookalike-ran" ] && echo RAN || echo 'did not run')"; fi
+  else
+    oa_skip "a look-alike library in the agent's folder — this system's Node.js does not look there by itself, so the check would show nothing"
+  fi
+  rm -rf "$home/.node_modules" "$home/.node_libraries" "$home/oa-lookalike-ran"
+
+  # Rule 3. Twelve calls through a proxy that closes every connection.
+  got=$(t_proxy_call "$T_LOG/rule3.txt" HTTPS_PROXY=http://127.0.0.1:3199 NO_PROXY=localhost -- drops)
+  printf '%s\n' "$got" > "$T_LOG/rule3-result.txt"
+  n=$(printf '%s' "$got" | sed -n 's/.*connections=\([0-9]*\) .*/\1/p')
+  if [ -n "$n" ] && [ "$n" -ge 1 ] && [ "$n" -le 12 ]; then oa_ok "a proxy that closes every connection without an answer: twelve calls made $n connections to it (unguarded, one call makes thousands a second)"
+  else oa_fail "a proxy that closes every connection: twelve calls made ${n:-an unknown number of} connections — $got"; fi
+  if printf '%s' "$got" | grep -q " later=$n "; then oa_ok "… and none went on by itself after the calls had ended"; else oa_fail "connections went on after the calls had ended: $got"; fi
+  if [ "$(printf '%s' "$got" | sed -n 's/.* refused=\([0-9]*\) .*/\1/p')" = 12 ]; then oa_ok "… each of the twelve calls failed at once with this layer's own error, so the agent keeps the readings and tries later"
+  else oa_fail "not every call through the dropping proxy was refused cleanly: $got"; fi
+  oa_has "… the log says the proxy is left alone for a while" "$T_LOG/rule3.txt" 'took 8 connections in a row without an answer\. It is not tried again for 5 seconds'
+  oa_has_not "… and the guard was put in place on this system's undici (the start-up file does not say it could not be)" "$T_LOG/rule3.txt" 'could not be put in place'
+  case "$got" in
+    *"then=failed_OA_PROXY"*|*" total=$n") oa_fail "after the wait the proxy was not tried again: $got" ;;
+    *) oa_ok "… and once the wait is over and the proxy answers again, it is asked again (it said no, and was heard)" ;;
+  esac
+  t_stop_all
+}
+
 t_proxy_checks() {
   local own n=0 path v
   own=$(node -p process.versions.node)
@@ -697,6 +917,21 @@ t_proxy_checks() {
     fi
   done
   if [ "$n" = 0 ]; then oa_skip "the web proxy with a Node.js of 22.21 or newer (the other way a proxy is handed over) — none was given (--new-node)"; fi
+  case "$own" in
+    18.*|20.*|22.[0-9].*|22.1[0-9].*|22.20.*) t_proxy_rules ;;
+    *) oa_skip "the start-up file's three rules (never around the proxy, the system's library only, no hammering) — this system's Node.js $own reads the proxy settings itself and does not load the file" ;;
+  esac
+  # The whole agent with a proxy address that cannot be used: it starts, it
+  # serves its dashboard, and it says why it sends nothing.
+  cp -p "$SIM/env.pristine" /etc/open-alert-base/env
+  echo "HTTPS_PROXY=socks5://127.0.0.1:1080" >> /etc/open-alert-base/env
+  t_stub_start "$T_LOG/stub-proxy-unusable.log"
+  oa_run_as_unit "$T_LOG/agent-proxy-unusable.log" "${SIM_ENV[@]}"
+  if oa_wait 40 oa_http_ok "http://127.0.0.1:80/" && grep -q 'cannot be used: nothing is sent, and nothing goes out directly' "$T_LOG/agent-proxy-unusable.log"; then
+    oa_ok "the agent with a proxy address that cannot be used: it still starts and shows its dashboard, and its log says nothing is sent until the address is put right"
+  else oa_fail "the agent with an unusable proxy address did not start, or did not say why nothing is sent — see $T_LOG/agent-proxy-unusable.log"; fi
+  t_stop_all
+  cp -p "$SIM/env.pristine" /etc/open-alert-base/env
   t_apply "$SIM_SETTINGS"
 }
 
@@ -722,12 +957,14 @@ inside_fw_setup() {
   trap - ERR
 }
 
-# Load the rules exactly as open-alert-base-firewall.service would, and start
-# two listeners to try the second rule with.
+# Load the rules exactly as open-alert-base-firewall.service would, start its
+# keeper as the service would, clear every firewall table and see the lock
+# come back; then start two listeners to try the second rule with.
 inside_fw_lock() {
   inside_begin
-  local cmd
-  cmd=$(sed -n 's/^ExecStart=//p' /usr/lib/systemd/system/open-alert-base-firewall.service)
+  local cmd keeper t0
+  cmd=$(sed -n 's/^ExecStartPre=//p' /usr/lib/systemd/system/open-alert-base-firewall.service)
+  keeper=$(sed -n 's/^ExecStart=//p' /usr/lib/systemd/system/open-alert-base-firewall.service)
   # shellcheck disable=SC2086  # the command and its arguments, as the service file has them
   if $cmd > "$T_LOG/fw-load.txt" 2>&1; then oa_ok "the rules load ($cmd)"; else oa_fail "the rules do not load: $(head -n 3 "$T_LOG/fw-load.txt")"; fi
   # shellcheck disable=SC2086
@@ -740,6 +977,24 @@ inside_fw_lock() {
   oa_has "with the lock on, audit says the dashboard is for this computer only" "$T_LOG/fw-audit-locked.txt" 'dashboard reach +this computer only — the firewall lock is on'
   if RPI_ALERT_PORT=8080 rpi-alert status > /dev/null 2>&1; then oa_ok "… and so does the rpi-alert command"; else oa_fail "rpi-alert status fails with the lock on"; fi
   if oa_wait 60 t_readings_arrived "$T_LOG/fw-stub.log"; then oa_ok "… and readings still go out"; else oa_fail "no readings reached the stand-in with the lock on"; fi
+
+  # The keeper ($keeper), as the service runs it after the rules are loaded.
+  oa_is "the service file runs the lock's keeper" "$KEEPER" "$keeper"
+  setsid "$keeper" > "$T_LOG/fw-keeper.txt" 2>&1 < /dev/null &
+  echo $! > "$SIM/keeper.pid"
+  sleep 2
+  if kill -0 "$(cat "$SIM/keeper.pid")" 2>/dev/null && ! grep -q '^State:[[:space:]]*Z' "/proc/$(cat "$SIM/keeper.pid")/status"; then oa_ok "the keeper runs and stays"; else oa_fail "the keeper did not stay: $(tail -n 2 "$T_LOG/fw-keeper.txt" | tr '\n' ' ')"; fi
+  t0=$(date +%s%N)
+  nft flush ruleset
+  if oa_wait 5 nft list table inet open_alert_base; then
+    oa_ok "every firewall table cleared (\"nft flush ruleset\", what Debian's own firewall service does each time it starts): the keeper put the lock back, about $(( ($(date +%s%N) - t0) / 1000000 )) ms later as measured here"
+  else oa_fail "the lock's table did not come back after \"nft flush ruleset\" — see $T_LOG/fw-keeper.txt"; fi
+  nft delete table inet open_alert_base 2> /dev/null || true
+  if oa_wait 5 nft list table inet open_alert_base; then oa_ok "the table removed by name: put back again"; else oa_fail "the lock's table did not come back after it was deleted"; fi
+  nft flush chain inet open_alert_base input 2> /dev/null || true
+  if oa_wait 5 sh -c 'nft list table inet open_alert_base | grep -q "tcp dport 8080 .*reject"'; then oa_ok "its rules emptied out while the table stays: put back as well"; else oa_fail "the dashboard rule did not come back after the table's rules were emptied"; fi
+  oa_has "the keeper said in its log what it did" "$T_LOG/fw-keeper.txt" "the firewall lock's table was taken away"
+
   # Two more listeners on every address: one as the agent's user (port 9999), one as root (port 9998).
   setpriv --reuid "$(id -u rpi-alert)" --regid "$(id -g rpi-alert)" --clear-groups node -e 'require("node:net").createServer((s) => s.end("x")).listen(9999, "0.0.0.0")' > /dev/null 2>&1 < /dev/null &
   node -e 'require("node:net").createServer((s) => s.end("x")).listen(9998, "0.0.0.0")' > /dev/null 2>&1 < /dev/null &
@@ -747,13 +1002,24 @@ inside_fw_lock() {
   trap - ERR
 }
 
+# The keeper must stop when its rules no longer load, and not before; then
+# the table is taken away the way the standard profile and a removal do.
 inside_fw_unlock() {
   inside_begin
-  local cmd
-  cmd=$(sed -n 's/^ExecStop=-\{0,1\}//p' /usr/lib/systemd/system/open-alert-base-firewall.service)
-  # shellcheck disable=SC2086
-  if $cmd > "$T_LOG/fw-unload.txt" 2>&1 && ! nft list table inet open_alert_base > /dev/null 2>&1; then oa_ok "stopping the firewall service removes its table and nothing else ($cmd)"
-  else oa_fail "the table is still there after: $cmd"; fi
+  local pid
+  pid=$(cat "$SIM/keeper.pid" 2>/dev/null || true)
+  cp /etc/open-alert-base/dashboard-local-only.nft "$SIM/rules.good"
+  sed -i 's/^define dashboard_port = .*/define dashboard_port = eighty-eighty/' /etc/open-alert-base/dashboard-local-only.nft
+  nft flush ruleset
+  # (Gone, or ended and waiting to be collected: nothing in this container collects the keeper as systemd would.)
+  if [ -n "$pid" ] && oa_wait 10 sh -c "! kill -0 $pid 2>/dev/null || grep -q '^State:[[:space:]]*Z' /proc/$pid/status"; then
+    oa_ok "a slip in the rules file, then every table cleared: the keeper cannot put the lock back and stops with an error (under systemd that stops the agent: part c)"
+  else oa_fail "with a rules file that does not load, the keeper is still running"; fi
+  oa_has "… and says so" "$T_LOG/fw-keeper.txt" 'THE FIREWALL LOCK COULD NOT BE PUT BACK'
+  cp "$SIM/rules.good" /etc/open-alert-base/dashboard-local-only.nft
+  nft -f /etc/open-alert-base/dashboard-local-only.nft > /dev/null 2>&1 || true
+  if "$KEEPER" --remove > "$T_LOG/fw-unload.txt" 2>&1 && ! nft list table inet open_alert_base > /dev/null 2>&1; then oa_ok "\"lock-keeper --remove\" (what the standard profile and a removal run) takes its table away and nothing else"
+  else oa_fail "the table is still there after: $KEEPER --remove"; fi
   trap - ERR
 }
 
@@ -899,7 +1165,9 @@ inside_systemd() {
   oa_note "exposure score of the running service, standard profile: ${score:-unknown}"
   # Killed outright, it comes back by itself.
   pid=$(systemctl show -p MainPID --value open-alert-base.service)
-  kill -9 "$pid"
+  # (Only a real process number: "kill -9 0" would end this script's own processes.)
+  case "$pid" in ''|0|*[!0-9]*) oa_fail "the agent is not running, so it cannot be killed to see it come back (MainPID \"$pid\")" ;;
+    *) kill -9 "$pid" ;; esac
   if oa_wait 30 t_restarted "$pid"; then
     oa_ok "killed outright, the agent is started again by systemd"
   else oa_fail "the agent did not come back after being killed"; fi
@@ -930,6 +1198,96 @@ inside_systemd() {
   if [ "${n:-0}" = 0 ]; then oa_ok "nothing in the agent's log says the sandbox refused it something it needed"
   else oa_fail "the agent's log has $n line(s) about something refused — see $T_LOG/sd-journal.txt: $(grep -Ei 'operation not permitted|EPERM|permission denied|EACCES|bad system call' "$T_LOG/sd-journal.txt" | head -n 3)"; fi
 
+  oa_section "$OA_DISTRO: no lock, no agent — the enterprise profile's lock cleared, broken and taken away (under systemd)"
+  got=$(systemctl show -p BindsTo --value open-alert-base.service | tr ' ' '\n' | grep -x open-alert-base-firewall.service || true)
+  oa_is "systemd holds the agent's service to the lock's: it runs only while the lock's service does (BindsTo)" "open-alert-base-firewall.service" "$got"
+  pid=$(systemctl show -p MainPID --value open-alert-base.service)
+  nft flush ruleset
+  if oa_wait 5 nft list table inet open_alert_base; then oa_ok "every firewall table cleared by hand (nft flush ruleset): the lock is back at once"
+  else oa_fail "the lock's table did not come back after \"nft flush ruleset\""; journalctl -u open-alert-base-firewall --no-pager -n 10 || true; fi
+  if systemctl cat nftables.service > /dev/null 2>&1; then
+    # Debian's and Ubuntu's own firewall service is off as installed, and its file starts with "flush ruleset".
+    systemctl start nftables.service > "$T_LOG/sd-nftables.txt" 2>&1 || true
+    if grep -q 'flush ruleset' /etc/nftables.conf 2>/dev/null && oa_wait 5 nft list table inet open_alert_base; then oa_ok "the system's own firewall service started after the profile was put in force (its file begins by clearing every table): the lock is back at once"
+    else oa_fail "after \"systemctl start nftables\" the lock's table is not loaded — see $T_LOG/sd-nftables.txt"; fi
+    systemctl restart nftables.service >> "$T_LOG/sd-nftables.txt" 2>&1 || true
+    if oa_wait 5 nft list table inet open_alert_base; then oa_ok "… restarted: back again"; else oa_fail "after \"systemctl restart nftables\" the lock's table is not loaded"; fi
+    systemctl stop nftables.service >> "$T_LOG/sd-nftables.txt" 2>&1 || true
+    if oa_wait 5 nft list table inet open_alert_base; then oa_ok "… stopped (which clears every table once more): back again"; else oa_fail "after \"systemctl stop nftables\" the lock's table is not loaded"; fi
+  else
+    oa_skip "the system's own firewall service started, restarted and stopped — this system has no nftables.service"
+  fi
+  oa_is "through all of that the agent ran on undisturbed (the same process)" "$pid" "$(systemctl show -p MainPID --value open-alert-base.service)"
+  if oa_http_ok http://127.0.0.1:8080/; then oa_ok "… and still answers this computer"; else oa_fail "127.0.0.1:8080 does not answer after the tables were cleared and put back"; fi
+
+  # A slip in the rules file (it invites a person to change its port line), then the tables cleared.
+  cp /etc/open-alert-base/dashboard-local-only.nft "$SIM/rules.good"
+  sed -i 's/^define dashboard_port = .*/define dashboard_port = eighty-eighty/' /etc/open-alert-base/dashboard-local-only.nft
+  nft flush ruleset
+  # shellcheck disable=SC2016  # the text is for the shell that is started, not this one
+  if oa_wait 20 sh -c '! systemctl is-active --quiet open-alert-base.service'; then oa_ok "a slip in the rules file, then the tables cleared: the lock cannot be put back, and systemd stops the agent"
+  else oa_fail "with a rules file that does not load and no lock, the agent is still running"; fi
+  oa_is "… nothing of the agent's user listens any more" "" "$(oa_listening rpi-alert | head -n 1)"
+  got=0; systemctl start open-alert-base.service > "$T_LOG/sd-start-nolock.txt" 2>&1 || got=$?
+  if [ "$got" != 0 ] && ! systemctl is-active --quiet open-alert-base.service; then oa_ok "… and it cannot be started by hand while the lock does not hold (\"$(head -n 1 "$T_LOG/sd-start-nolock.txt" | cut -c1-70)\")"
+  else oa_fail "the agent was started by hand without the lock (exit $got)"; fi
+  got=0; open-alert-base sync > "$T_LOG/sd-sync-nolock.txt" 2>&1 || got=$?
+  oa_is "open-alert-base sync ends with status 3" 3 "$got"
+  oa_has "… and says the lock could not be put on, and that the agent is not started without it" "$T_LOG/sd-sync-nolock.txt" "THE DASHBOARD'S LOCK COULD NOT BE PUT ON"
+  open-alert-base audit > "$T_LOG/sd-audit-nolock.txt" 2>&1 || true
+  oa_has "audit says the lock's keeper is not running" "$T_LOG/sd-audit-nolock.txt" "the lock's keeper +NOT RUNNING"
+  # The rules file missing altogether: a failure, not something passed over.
+  mv /etc/open-alert-base/dashboard-local-only.nft "$SIM/rules.slip"
+  systemctl restart open-alert-base-firewall.service > /dev/null 2>&1 || true
+  got=$(systemctl is-active open-alert-base-firewall.service 2>&1 || true)
+  if [ "$got" != active ] && ! systemctl is-active --quiet open-alert-base.service; then oa_ok "the rules file missing: the lock's service fails ($got) — it is not passed over — and the agent is not running"
+  else oa_fail "with the rules file missing the lock's service is \"$got\" and the agent $(systemctl is-active open-alert-base.service 2>&1 || true)"; fi
+  cp "$SIM/rules.good" /etc/open-alert-base/dashboard-local-only.nft
+  # No nftables on the computer at all (its program moved aside).
+  mv /usr/sbin/nft /usr/sbin/nft.oa-aside
+  systemctl restart open-alert-base-firewall.service > /dev/null 2>&1 || true
+  got=0; open-alert-base sync > "$T_LOG/sd-sync-nonft.txt" 2>&1 || got=$?
+  if [ "$got" = 3 ] && grep -q 'nftables is not installed' "$T_LOG/sd-sync-nonft.txt" && ! systemctl is-active --quiet open-alert-base.service; then
+    oa_ok "no nftables on the computer: sync says so (status 3), and the agent is not running"
+  else oa_fail "with no nft program: sync exit $got, the agent is $(systemctl is-active open-alert-base.service 2>&1 || true) — see $T_LOG/sd-sync-nonft.txt"; fi
+  mv /usr/sbin/nft.oa-aside /usr/sbin/nft
+  # Everything put right, and nothing else done.
+  if oa_wait 60 systemctl is-active --quiet open-alert-base.service && oa_wait 40 oa_http_ok http://127.0.0.1:8080/; then
+    oa_ok "the rules file and nftables put right, and nothing else done: within a minute the lock holds again and systemd starts the agent again by itself"
+  else oa_fail "the agent did not come back by itself after the lock was put right"; journalctl -u open-alert-base-firewall --no-pager -n 15 || true; fi
+  oa_check "… behind the lock" nft list table inet open_alert_base
+  # The rules file changed as a person may: the dashboard's packets thrown
+  # away ("drop") instead of refused ("reject"). That is a lock all the same.
+  # shellcheck disable=SC2016  # $dashboard_port is the rules file's own, not this shell's
+  sed -i 's/^\([[:space:]]*tcp dport \$dashboard_port counter\) reject with tcp reset /\1 drop /' /etc/open-alert-base/dashboard-local-only.nft
+  # shellcheck disable=SC2016
+  if grep -q 'tcp dport \$dashboard_port counter drop ' /etc/open-alert-base/dashboard-local-only.nft && nft -c -f /etc/open-alert-base/dashboard-local-only.nft; then
+    systemctl restart open-alert-base-firewall.service > "$T_LOG/sd-fw-drop.txt" 2>&1 || true
+    if oa_wait 30 systemctl is-active --quiet open-alert-base-firewall.service && oa_wait 60 systemctl is-active --quiet open-alert-base.service \
+       && nft list table inet open_alert_base | grep -q 'tcp dport 8080 counter .*drop'; then
+      oa_ok "the rules file changed to throw the dashboard's packets away (\"drop\") instead of refusing them: the lock holds with it, and the agent runs"
+    else
+      oa_fail "with \"drop\" in place of \"reject\" the lock is $(systemctl is-active open-alert-base-firewall.service 2>&1 || true) and the agent $(systemctl is-active open-alert-base.service 2>&1 || true): $(journalctl -u open-alert-base-firewall --no-pager -o cat -n 3 2>/dev/null | tr '\n' ' ')"
+    fi
+  else
+    oa_fail "the rules file could not be changed to \"drop\" for this check (or nft refuses it)"
+  fi
+  cp "$SIM/rules.good" /etc/open-alert-base/dashboard-local-only.nft
+  systemctl restart open-alert-base-firewall.service > /dev/null 2>&1 || true
+  oa_wait 60 systemctl is-active --quiet open-alert-base.service || oa_fail "the agent did not come back after the rules file was put back as it was"
+  # The keeper killed outright: the table stays, the agent stops, both come back.
+  # (Only a real process number: "kill -9 0" would end this script's own processes.)
+  pid=$(systemctl show -p MainPID --value open-alert-base-firewall.service)
+  case "$pid" in ''|0|*[!0-9]*) oa_fail "the lock's keeper is not running, so it cannot be killed to see what happens (MainPID \"$pid\")" ;;
+    *) kill -9 "$pid" ;; esac
+  # shellcheck disable=SC2016
+  if oa_wait 10 sh -c '! systemctl is-active --quiet open-alert-base.service' && nft list table inet open_alert_base > /dev/null 2>&1; then
+    oa_ok "the lock's keeper killed outright: the agent is stopped with it, and the table stays loaded meanwhile"
+  else oa_fail "after the keeper was killed: the agent is $(systemctl is-active open-alert-base.service 2>&1 || true), the table $(nft list table inet open_alert_base > /dev/null 2>&1 && echo loaded || echo gone)"; fi
+  if oa_wait 60 systemctl is-active --quiet open-alert-base.service && oa_wait 40 oa_http_ok http://127.0.0.1:8080/; then oa_ok "… and systemd starts the keeper again, and with it the agent"
+  else oa_fail "the keeper and the agent did not come back after the keeper was killed"; fi
+  journalctl -u open-alert-base-firewall --no-pager > "$T_LOG/sd-journal-lock.txt" 2>&1 || true
+
   oa_section "$OA_DISTRO: the package installed again over itself, as an update is (under systemd)"
   before=$(sha256sum /etc/rpi-alert/config.json | awk '{print $1}')
   pid=$(systemctl show -p MainPID --value open-alert-base.service)
@@ -948,6 +1306,15 @@ inside_systemd() {
   case "$got" in inactive|failed|unknown) oa_ok "remove: the service is stopped ($got)" ;; *) oa_fail "remove: the service is $got" ;; esac
   oa_check_not "remove: the firewall table is gone" nft list table inet open_alert_base
   oa_is "remove: nothing of the agent's user listens any more" "" "$(oa_listening rpi-alert | head -n 1)"
+  # Removed with its settings kept, then installed again and told to start
+  # locked down: the lock and then the agent must both be running again.
+  got=0; OPEN_ALERT_BASE_PROFILE=enterprise apt-get -y -o Dpkg::Use-Pty=0 install "$OA_DEB" > "$T_LOG/sd-apt-reinstall-enterprise.log" 2>&1 || got=$?
+  oa_is "installed again after the remove, with OPEN_ALERT_BASE_PROFILE=enterprise" 0 "$got"
+  if oa_wait 30 systemctl is-active --quiet open-alert-base.service && oa_wait 40 oa_http_ok http://127.0.0.1:8080/; then oa_ok "… the agent is running again and answers this computer on port 8080"
+  else oa_fail "after the remove and the install with the profile variable, the agent is $(systemctl is-active open-alert-base.service 2>&1 || true) — see $T_LOG/sd-apt-reinstall-enterprise.log"; fi
+  oa_check "… behind the lock" nft list table inet open_alert_base
+  oa_has_not "… and the install did not say the agent is not running" "$T_LOG/sd-apt-reinstall-enterprise.log" 'THE AGENT IS NOT RUNNING'
+  if t_apt remove open-alert-base > "$T_LOG/sd-apt-remove-2.log" 2>&1; then oa_ok "apt-get remove once more"; else oa_fail "the second apt-get remove — see $T_LOG/sd-apt-remove-2.log"; fi
   rm -f /etc/systemd/system/open-alert-base.service.d/90-oa-test.conf
   if t_apt purge open-alert-base > "$T_LOG/sd-apt-purge.log" 2>&1; then oa_ok "apt-get purge"; else oa_fail "apt-get purge — see $T_LOG/sd-apt-purge.log"; fi
   got=$(ls -d /etc/rpi-alert /var/lib/rpi-alert /etc/open-alert-base /etc/systemd/system/open-alert-base.service.d /etc/systemd/system/open-alert-base.service /etc/systemd/system/open-alert-base-firewall.service 2>/dev/null || true)
@@ -1117,7 +1484,8 @@ script_checks() {
   oa_section "The scripts"
   files=("$OA_FIRMWARE/lib/fetch-agent.sh" "$OA_FIRMWARE/deb/build-deb.sh" "$OA_FIRMWARE/deb/debian/preinst" "$OA_FIRMWARE/deb/debian/postinst"
          "$OA_FIRMWARE/deb/debian/prerm" "$OA_FIRMWARE/deb/debian/postrm" "$OA_FIRMWARE/deb/files/usr/bin/open-alert-base" "$OA_FIRMWARE/deb/files/usr/bin/rpi-alert"
-         "$OA_FIRMWARE/deb/files/usr/lib/open-alert-base/start" "$OA_FIRMWARE/test/lib.sh" "$OA_FIRMWARE/test/deb.sh")
+         "$OA_FIRMWARE/deb/files/usr/lib/open-alert-base/start" "$OA_FIRMWARE/deb/files/usr/lib/open-alert-base/lock-keeper"
+         "$OA_FIRMWARE/test/lib.sh" "$OA_FIRMWARE/test/deb.sh")
   if command -v shellcheck >/dev/null 2>&1; then
     if shellcheck -x "${files[@]}" > "$LOGDIR/shellcheck.txt" 2>&1; then oa_ok "shellcheck $(shellcheck --version | awk '/^version:/ {print $2}'): ${#files[@]} shell scripts, nothing to report"
     else oa_fail "shellcheck has findings — see $LOGDIR/shellcheck.txt"; fi
@@ -1129,10 +1497,11 @@ script_checks() {
   oa_is "every script is bash and stops at the first error (set -euo pipefail; lib.sh takes it from the script that reads it in)" "" "$bad"
   if command -v node >/dev/null 2>&1; then
     bad=''
-    for f in "$OA_FIRMWARE/lib/verify-ed25519.js" "$OA_FIRMWARE/deb/files/usr/lib/open-alert-base/settings.js" "$OA_FIRMWARE/deb/files/usr/lib/open-alert-base/proxy-preload.js"; do
+    for f in "$OA_FIRMWARE/lib/verify-ed25519.js" "$OA_FIRMWARE/deb/files/usr/lib/open-alert-base/settings.js" "$OA_FIRMWARE/deb/files/usr/lib/open-alert-base/proxy-preload.js" \
+             "$OA_FIRMWARE/deb/files/usr/lib/open-alert-base/adopt-settings.js"; do
       node --check "$f" 2>/dev/null || bad="$bad $(basename "$f")"
     done
-    oa_is "the three JavaScript files of this layer parse" "" "$bad"
+    oa_is "the four JavaScript files of this layer parse" "" "$bad"
   fi
   for f in standard enterprise; do
     if command -v node >/dev/null 2>&1; then
@@ -1143,7 +1512,7 @@ script_checks() {
 }
 
 build_checks() {
-  local version name sha1 sha2 got bad n
+  local version name sha1 sha2 sha3 got bad n
   oa_section "The package"
   version="$(oa_pin AGENT_VERSION)+oa$(oa_pin OA_REVISION)"; name="open-alert-base_${version}_all.deb"
   mkdir -p "$DEBDIR"
@@ -1157,6 +1526,17 @@ build_checks() {
       sha1=$(sha256sum "$OA_REPO/dist/$name" | awk '{print $1}'); sha2=$(sha256sum "$WORK/build2/$name" | awk '{print $1}')
       oa_is "built a second time it is the same file, byte for byte (sha256)" "$sha1" "$sha2"
     else oa_fail "the second build failed — see $LOGDIR/build-2.txt"; fi
+    # A third time, with everything about the build computer that has changed
+    # the file before: its work folder on a memory disk, and a file mask that
+    # hides new files from other users.
+    if [ -d /dev/shm ] && [ -w /dev/shm ]; then
+      if ( umask 077; TMPDIR=/dev/shm "$OA_FIRMWARE/deb/build-deb.sh" --tarball "$TARBALL" --sig "$SIG" --out "$WORK/build3" ) > "$LOGDIR/build-3.txt" 2>&1; then
+        sha3=$(sha256sum "$WORK/build3/$name" | awk '{print $1}')
+        oa_is "built a third time with its work folder on a memory disk ($(stat -f -c %T /dev/shm); the first was on $(stat -f -c %T "${TMPDIR:-/tmp}")) and with umask 077: still the same file" "$sha1" "$sha3"
+      else oa_fail "the build on a memory disk with umask 077 failed — see $LOGDIR/build-3.txt"; fi
+    else
+      oa_skip "the build on another kind of disk — this computer has no writable /dev/shm"
+    fi
     cp "$OA_REPO/dist/$name" "$DEBDIR/$name"
   fi
   DEB="$DEBDIR/$name"
@@ -1266,7 +1646,15 @@ run_distro() {
   fi
 
   # c. A real systemd. It needs somewhere to keep its groups of processes:
-  #    the computer's own cgroup folder, shared in.
+  #    the computer's own cgroup folder, shared in. And it must be let make
+  #    mounts of its own: the services' sandboxes (ProtectSystem=, PrivateTmp=
+  #    and the like) are mounts made for each service. Docker's own AppArmor
+  #    profile, on a computer that has AppArmor (GitHub's Ubuntu runners do),
+  #    forbids every mount, and the agent's service would then fail with
+  #    "226/NAMESPACE" for a reason that has nothing to do with the package.
+  #    So that one profile is left off this container; it is still not
+  #    privileged, and Docker's seccomp filter stays on. (Where AppArmor is not
+  #    there, the option does nothing.)
   if [ "$DO_SD" = 1 ]; then
     c="oa-test-sd-$name-$$"
     if [ -f /sys/fs/cgroup/cgroup.controllers ]; then tries="/sys/fs/cgroup"
@@ -1276,7 +1664,7 @@ run_distro() {
     cg=''
     for d in $tries; do
       docker rm -f "$c" > /dev/null 2>&1 || true
-      docker run -d --name "$c" --cap-add SYS_ADMIN --cap-add NET_ADMIN --sysctl net.ipv4.ip_unprivileged_port_start=1024 \
+      docker run -d --name "$c" --cap-add SYS_ADMIN --cap-add NET_ADMIN --security-opt apparmor=unconfined --sysctl net.ipv4.ip_unprivileged_port_start=1024 \
         --tmpfs /run --tmpfs /run/lock --tmpfs /tmp:exec -v "$d:/sys/fs/cgroup:rw" --cgroupns=host -e container=docker "${common[@]}" "$image" \
         bash -c 'export DEBIAN_FRONTEND=noninteractive; (apt-get update && apt-get install -y systemd systemd-sysv dbus) > /oa/log/sd-apt-systemd.log 2>&1; exec /sbin/init' > /dev/null 2>&1 || continue
       if systemd_is_up "$c"; then cg=$d; break; fi

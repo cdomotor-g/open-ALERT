@@ -8,6 +8,13 @@
 #     itself once told to (NODE_USE_ENV_PROXY=1).
 #   Older Node.js (Debian 13's 20, Ubuntu 24.04's 18): a small file is loaded
 #     first that points Node's fetch() at the proxy (proxy-preload.js).
+#
+# A proxy that is set is never gone around. An address without "http://" in
+# front is taken as http://, as curl takes it. An address that cannot be used
+# at all (socks5://…, a slip of the keyboard) does not stop the agent and does
+# not let it call out directly: proxy-preload.js is loaded, on any Node.js,
+# and refuses every call that should have gone through the proxy. The agent
+# receives, keeps what it hears on disk, and the log says why nothing is sent.
 set -euo pipefail
 
 LIB=/usr/lib/open-alert-base
@@ -20,6 +27,7 @@ fi
 
 proxy="${HTTPS_PROXY:-${https_proxy:-}}"
 if [ -n "$proxy" ]; then
+  case "$proxy" in *://*) ;; *) proxy="http://$proxy" ;; esac
   # Both spellings, so that Node.js and curl (the agent's "is the internet there?" check) agree.
   export HTTPS_PROXY="$proxy" https_proxy="$proxy"
   exempt="${NO_PROXY:-${no_proxy:-}}"
@@ -28,12 +36,23 @@ if [ -n "$proxy" ]; then
   major=${version%%.*}; rest=${version#*.}; minor=${rest%%.*}
   # A user name and password in the proxy's address stay out of the log.
   shown=$(printf '%s' "$proxy" | sed -E 's#//[^/@]*@#//(name and password)@#')
+  usable=1
+  case "$proxy" in http://?*|https://?*) ;; *) usable=0 ;; esac
+  own=0
   if [ "$major" -ge 24 ] || { [ "$major" -eq 22 ] && [ "$minor" -ge 21 ]; }; then
+    own=1
+    # A Node.js that reads the proxy settings itself stops dead on an address it cannot read.
+    if [ "$usable" = 1 ] && ! "$NODE" -e 'new URL(process.argv[1])' "$proxy" >/dev/null 2>&1; then usable=0; fi
+  fi
+  if [ "$usable" = 1 ] && [ "$own" = 1 ]; then
     export NODE_USE_ENV_PROXY=1
     echo "open-alert-base: sending through the web proxy $shown (Node.js $version reads the proxy settings itself)" >&2
-  else
+  elif [ "$usable" = 1 ]; then
     export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$LIB/proxy-preload.js"
     echo "open-alert-base: sending through the web proxy $shown (Node.js $version: proxy-preload.js loaded first)" >&2
+  else
+    export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$LIB/proxy-preload.js"
+    echo "open-alert-base: the web proxy's address in HTTPS_PROXY ($shown) cannot be used: nothing is sent, and nothing goes out directly, until it is put right in /etc/open-alert-base/env (proxy-preload.js loaded first, to see to that)" >&2
   fi
 fi
 

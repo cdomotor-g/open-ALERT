@@ -28,7 +28,7 @@ case "${1:-}" in
       rm -f "/etc/systemd/system/multi-user.target.wants/$u"
     done
     # What "open-alert-base profile" wrote.
-    rm -f "$DROPIN_DIR/10-low-port.conf" /etc/open-alert-base/profile
+    rm -f "$DROPIN_DIR/10-low-port.conf" "$DROPIN_DIR/20-dashboard-lock.conf" /etc/open-alert-base/profile
     rmdir "$DROPIN_DIR" 2>/dev/null || true
     rmdir /etc/open-alert-base 2>/dev/null || true
     if [ -e /opt/rpi-alert ] || [ -e /etc/systemd/system/rpi-alert.service ]; then

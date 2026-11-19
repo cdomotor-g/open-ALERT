@@ -10,6 +10,9 @@
 #   4. the tarball holds only plain files and folders, all under one folder
 #      named after the release, none of them set-user-id;
 #   5. the agent inside says it is the version the pin names.
+# The two files are first copied into a folder of this script's own that
+# nobody else can write, and everything — each check, and the unpacking — is
+# done on those copies: what is unpacked is the very file that was checked.
 #
 #   fetch-agent.sh --out DIR                       download, check, unpack into DIR
 #   fetch-agent.sh --out DIR --tarball F --sig S   use two files already here (no network)
@@ -118,6 +121,14 @@ else
     mv -f "$to.part" "$to"
   done
 fi
+
+# ── private copies: what is checked is what is unpacked ──────────────────────
+if [ -z "$TMP" ]; then TMP=$(mktemp -d "${TMPDIR:-/tmp}/oa-fetch.XXXXXX"); fi
+PRIVATE="$TMP/checked"
+mkdir -m 0700 "$PRIVATE"
+cp -- "$TARBALL" "$PRIVATE/release.tar.gz" || cant "could not read $TARBALL"
+cp -- "$SIG" "$PRIVATE/release.tar.gz.sig" || cant "could not read $SIG"
+TARBALL="$PRIVATE/release.tar.gz"; SIG="$PRIVATE/release.tar.gz.sig"
 
 # ── 2. the hash ──────────────────────────────────────────────────────────────
 got_sha=$(sha256_of "$TARBALL")

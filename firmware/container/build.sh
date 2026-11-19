@@ -10,13 +10,14 @@
 #
 # Options
 #   --tag NAME[:TAG]      what to call the image (default: open-alert-base, i.e. :latest; "<version>" is
-#                         also added when the name has no tag, e.g. open-alert-base:0.23.1-oa1)
+#                         also added when the name has no tag, e.g. open-alert-base:0.23.1-oa2)
 #   --platform LIST       e.g. linux/amd64 or linux/amd64,linux/arm64. One platform is loaded into
 #                         this computer's Docker. Several need --push (Docker cannot hold a
 #                         several-platform image locally with the classic image store).
 #   --push                publish to the registry in the tag, instead of loading it here
 #   --base-image REF      build on this base, e.g. debian:trixie-slim@sha256:<digest>
-#                         (see the top of the Dockerfile for how to find the digest)
+#                         (see the top of the Dockerfile for how to find the digest). With a
+#                         digest, the image's labels say exactly which base it was built on.
 #   --release-dir DIR     use the release tarball and signature already in DIR instead of
 #                         downloading them (they are checked just the same)
 #   -h, --help            this text
@@ -50,7 +51,15 @@ args=(buildx build -f "$HERE/Dockerfile"
       --build-arg "OA_VERSION=$VERSION" --build-arg "OA_REVISION=$REVISION" --build-arg "OA_CREATED=$CREATED"
       -t "$TAG")
 case "${TAG##*/}" in *:*) ;; *) args+=(-t "$TAG:$TAGVERSION") ;; esac
-if [ -n "$BASE" ]; then args+=(--build-arg "BASE_IMAGE=$BASE"); fi
+if [ -n "$BASE" ]; then
+  args+=(--build-arg "BASE_IMAGE=$BASE")
+  case "$BASE" in
+    *@sha256:*)
+      digest="${BASE##*@}"
+      if ! printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then printf 'build.sh: --base-image: "%s" is not a digest (sha256: and 64 hexadecimal digits)\n' "$digest" >&2; exit 2; fi
+      args+=(--build-arg "OA_BASE_DIGEST=$digest") ;;
+  esac
+fi
 if [ -n "$PLATFORM" ]; then args+=(--platform "$PLATFORM"); fi
 if [ -n "$RELDIR" ]; then args+=(--build-context "local-release=$RELDIR"); fi
 if [ "$PUSH" = 1 ]; then args+=(--push); else args+=(--load); fi

@@ -1,0 +1,9 @@
+#!/bin/sh
+# open-ALERT base station image: the same check as
+# scripts/local-premount/open-alert-image-one-main-partition, once more just
+# after the main partition was mounted: a USB stick made from the image that
+# showed up in between is seen too, and the computer does not go on.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "${1:-}" in prereqs) prereqs; exit 0 ;; esac
+exec /bin/sh /scripts/local-premount/open-alert-image-one-main-partition again

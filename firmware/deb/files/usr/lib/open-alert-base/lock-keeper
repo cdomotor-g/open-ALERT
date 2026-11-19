@@ -1,0 +1,136 @@
+#!/bin/bash
+# Keeps the dashboard's "this computer only" lock in place, for
+# open-alert-base-firewall.service.
+#
+# The lock is one small table of firewall rules
+# (/etc/open-alert-base/dashboard-local-only.nft). The service loads it, then
+# runs this, which watches for the table being taken away and puts it back at
+# once. A table goes when somebody clears every table ("nft flush ruleset"),
+# which is also what the system's own firewall service does each time it is
+# started or restarted: Debian's /etc/nftables.conf begins with that line.
+#
+# If the table cannot be put back, this stops with an error. The service is
+# then "failed", and systemd stops the agent: in a profile that asks for the
+# lock, the agent runs only while this service does (no lock, no agent).
+# systemd tries the lock again every fifteen seconds, and when it holds once
+# more the agent is started again.
+#
+#   lock-keeper             watch the table                       (ExecStart)
+#   lock-keeper --stopped   after the service has stopped: note it if that was
+#                           a failure, so the agent is started again later  (ExecStopPost)
+#   lock-keeper --remove    take the table away (the standard profile; removing the package)
+#
+# Stopping the service does not take the table away: whatever stops it, and in
+# whatever order, the dashboard stays shut to other computers until
+# "open-alert-base profile standard" (or --remove) opens it on purpose.
+set -euo pipefail
+
+RULES=/etc/open-alert-base/dashboard-local-only.nft
+TABLE=open_alert_base
+NFT=/usr/sbin/nft
+AGENT_UNIT=open-alert-base.service
+RUN=/run/open-alert-base
+HELD=$RUN/agent-held-back
+# How long between two looks at the table when nothing has been heard (seconds).
+EVERY=20
+
+say() { printf 'open-alert-base: %s\n' "$*" >&2; }
+have_systemd() { [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; }
+
+# The table is loaded, and its chain on the way in still holds a rule for a
+# port that ends by keeping the packet out. Whether that is "reject" (the
+# rules file as it comes) or "drop" is the rules file's to say: the file is
+# meant to be edited. A table whose rules were emptied ("nft flush table" or
+# "flush chain") is no lock. LOCK_WHY says what is missing, for the log.
+LOCK_WHY=''
+lock_is_on() {
+  local c
+  if ! "$NFT" list table inet "$TABLE" > /dev/null 2>&1; then LOCK_WHY="the table \"inet $TABLE\" is not loaded"; return 1; fi
+  if ! c=$("$NFT" list chain inet "$TABLE" input 2>/dev/null); then
+    LOCK_WHY="the table \"inet $TABLE\" is loaded but has no chain \"input\" (see $RULES)"; return 1
+  fi
+  case "$c" in
+    *"hook input"*) ;;
+    *) LOCK_WHY="the table's chain \"input\" is not on the way in (no \"hook input\"; see $RULES)"; return 1 ;;
+  esac
+  case "$c" in
+    *"tcp dport "*" reject"*|*"tcp dport "*" drop"*) LOCK_WHY=''; return 0 ;;
+  esac
+  LOCK_WHY="the table is loaded, but its chain \"input\" holds no rule that keeps the dashboard's port shut (a \"tcp dport\" rule ending in \"reject\" or \"drop\"): its rules were emptied, or $RULES has none"
+  return 1
+}
+
+case "${1:-}" in
+  --remove)
+    if [ -x "$NFT" ] && "$NFT" list table inet "$TABLE" >/dev/null 2>&1; then "$NFT" delete table inet "$TABLE" || exit 1; fi
+    rm -f "$HELD"
+    exit 0 ;;
+  --stopped)
+    # systemd says how the service ended: anything but "success" is a failure
+    # of the lock, and the agent has been stopped, or kept from starting, for it.
+    if [ "${SERVICE_RESULT:-success}" != success ]; then
+      { mkdir -p "$RUN" && : > "$HELD"; } || true
+      say "THE DASHBOARD'S LOCK IS NOT ON (the firewall rules could not be loaded or kept). The agent is not running, so that nothing is open to other computers; it starts again by itself when the lock holds. See: systemctl status open-alert-base-firewall"
+    fi
+    exit 0 ;;
+  '') ;;
+  *) say "lock-keeper: unknown option $1"; exit 2 ;;
+esac
+
+if [ ! -x "$NFT" ]; then say "the firewall lock cannot be kept: nftables is not installed (apt install nftables)"; exit 1; fi
+if ! lock_is_on; then say "the firewall lock is not on: $LOCK_WHY"; exit 1; fi
+
+# The lock holds. If the agent was stopped, or kept from starting, because it
+# did not, start it now (when it is set to start with the computer).
+if [ -e "$HELD" ]; then
+  rm -f "$HELD"
+  if have_systemd && systemctl is-enabled --quiet "$AGENT_UNIT" 2>/dev/null && ! systemctl is-active --quiet "$AGENT_UNIT"; then
+    say "the firewall lock holds again: starting the agent"
+    systemctl start --no-block "$AGENT_UNIT" || true
+  fi
+fi
+
+WATCH_PID=''
+stop_monitor() {
+  { exec 8<&-; } 2>/dev/null || true
+  if [ -n "$WATCH_PID" ]; then kill "$WATCH_PID" 2>/dev/null || true; wait "$WATCH_PID" 2>/dev/null || true; WATCH_PID=''; fi
+}
+trap 'stop_monitor; exit 0' TERM INT
+
+restore_or_stop() {
+  if lock_is_on; then return 0; fi
+  say "the firewall lock's table was taken away (every table was cleared, or it was removed by hand): putting it back"
+  if "$NFT" -f "$RULES" && lock_is_on; then return 0; fi
+  say "THE FIREWALL LOCK COULD NOT BE PUT BACK ($RULES does not load, or ${LOCK_WHY:-it does not hold})."
+  stop_monitor
+  exit 1
+}
+
+while :; do
+  # The kernel says so each time the firewall is changed: "nft monitor" prints
+  # a line for each change. A line that says something was removed is the
+  # sign to look. If the monitor ends (it does when it cannot keep up), it is
+  # started again, and the table is looked at in any case.
+  coproc MON { exec "$NFT" monitor 2>/dev/null; } || true
+  WATCH_PID=${MON_PID:-}
+  # Its output, under a number of this script's own (bash forgets MON when the program ends).
+  if ! { exec 8<&"${MON[0]:-}"; } 2>/dev/null; then restore_or_stop; stop_monitor; sleep 2; continue; fi
+  while :; do
+    rc=0; line=''
+    IFS= read -r -t "$EVERY" line <&8 || rc=$?
+    case "$rc:$line" in
+      0:delete*|0:destroy*|0:flush*)
+        # Whatever else is said in the same breath is read and dropped, so
+        # that one clearing of a long rule set is one look, not thousands.
+        n=0
+        while [ "$n" -lt 5000 ] && IFS= read -r -t 0.1 _ <&8; do n=$((n + 1)); done
+        restore_or_stop ;;
+      0:*) ;;                 # something was added: nothing to look at
+      *) restore_or_stop ;;   # nothing was said in time, or the monitor has ended
+    esac
+    # More than 128: nothing was said in time. Otherwise the monitor has ended.
+    if [ "$rc" != 0 ] && [ "$rc" -le 128 ]; then break; fi
+  done
+  stop_monitor
+  sleep 2
+done

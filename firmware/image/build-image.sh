@@ -24,7 +24,9 @@
 # Options
 #   --arch amd64|arm64   which kind of processor (default: this computer's). The build does not
 #                        cross over: run it on an ARM computer for arm64.
-#   --deb FILE           use this open-alert-base package instead of building one
+#   --deb FILE           use this open-alert-base package instead of building one. The pinned
+#                        release is still fetched and checked (or handed over with --tarball and
+#                        --sig), and the agent inside the package must be that release, file for file
 #   --tarball F --sig S  handed to build-deb.sh: the pinned release, already downloaded
 #   --out DIR            where the results go (default: dist/ at the top of the repository)
 #   --size SIZE          size of the image file, e.g. 3G (the default). The main partition grows to
@@ -53,6 +55,10 @@
 # radio stick has been near it. See "What has been tested, and where" in
 # firmware/README.md.
 set -euo pipefail
+# Files this script writes are readable by everybody and writable by root
+# alone, whatever the person running it has set for themselves: /etc/hosts in
+# the image must be readable by every user of the image.
+umask 022
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIRMWARE="$(dirname "$HERE")"
@@ -137,6 +143,9 @@ mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 IMG="$OUT/$NAME.img"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/oa-image.XXXXXX")
+# Readable by others, so that apt can do its downloading as its own
+# unprivileged user ("_apt") and not as root.
+chmod 0755 "$WORK"
 MNT="$WORK/root"
 LOOP=''; ROOTDEV=''; DONE=0
 
@@ -169,6 +178,7 @@ in_image() {
 # ═════════════════════════════════════════════════════════════════════════════
 step "1. The base station package (open-alert-base $VERSION)"
 # ═════════════════════════════════════════════════════════════════════════════
+GIVEN_DEB="$DEB"
 if [ -z "$DEB" ]; then
   "$FIRMWARE/deb/build-deb.sh" --out "$OUT" "${DEB_ARGS[@]}"
   DEB="$OUT/open-alert-base_${VERSION}_all.deb"
@@ -176,6 +186,30 @@ fi
 [ -f "$DEB" ] || die "no package at $DEB"
 [ "$(dpkg-deb --field "$DEB" Package)" = open-alert-base ] || die "$DEB is not the open-alert-base package"
 [ "$(dpkg-deb --field "$DEB" Version)" = "$VERSION" ] || die "$DEB is version $(dpkg-deb --field "$DEB" Version), and firmware/PIN says $VERSION"
+if [ -n "$GIVEN_DEB" ]; then
+  # A package handed over was not built here, so nothing here has checked
+  # where its agent came from. The pinned release is fetched and checked
+  # (hash and signature), and the agent in the package is held against it.
+  say "the package was handed over (--deb): checking its agent against the signed release"
+  "$FIRMWARE/lib/fetch-agent.sh" --out "$WORK/release" "${DEB_ARGS[@]}"
+  mkdir "$WORK/deb-given"
+  dpkg-deb --extract "$DEB" "$WORK/deb-given"
+  ( cd "$WORK/deb-given/usr/lib/open-alert-base/agent" && find . -type f | LC_ALL=C sort ) > "$WORK/deb-given.files"
+  [ -s "$WORK/deb-given.files" ] || die "$DEB holds no agent"
+  # The same files both ways: every file of the release's agent is in the
+  # package (all but its README.md, which build-deb.sh leaves out), and the
+  # package's agent holds nothing the release does not.
+  ( cd "$WORK/release/agent" && find . -type f ! -path ./README.md | LC_ALL=C sort ) > "$WORK/release.files"
+  if ! cmp -s "$WORK/release.files" "$WORK/deb-given.files"; then
+    die "the agent in $DEB does not hold the same files as the signed release's: $(diff "$WORK/release.files" "$WORK/deb-given.files" | sed -n 's/^</missing from the package:/p; s/^>/not in the release:/p' | head -n 3 | tr '\n' ' ')— the image is not built"
+  fi
+  while read -r f; do
+    cmp -s "$WORK/release/agent/$f" "$WORK/deb-given/usr/lib/open-alert-base/agent/$f" \
+      || die "the agent in $DEB is not the signed release's: ${f#./} differs. The image is not built."
+  done < "$WORK/deb-given.files"
+  say "agent      $(wc -l < "$WORK/deb-given.files") files in the package, each the same as in the signed release $(pin AGENT_TAG)"
+  rm -rf "$WORK/deb-given" "$WORK/release"
+fi
 DEB_SHA=$(sha256sum "$DEB" | awk '{print $1}')
 say "package    $DEB"
 say "sha256     $DEB_SHA"
@@ -297,8 +331,11 @@ step "5. How this image differs from a stock Debian"
 # ═════════════════════════════════════════════════════════════════════════════
 # Every file under files/ is copied to the same place in the image. They are
 # few, and each says at its top what it is for.
+# (The boot menu's script and the start-up file system's scripts are programs
+# that are run as they are: 0755. The rest are read, or run through bash: 0644.)
 ( cd "$HERE/files" && find . -type f | LC_ALL=C sort ) | while read -r f; do
-  install -D -m 0644 -o root -g root "$HERE/files/$f" "$MNT/$f"
+  case "$f" in ./etc/grub.d/*|./etc/initramfs-tools/scripts/*) mode=0755 ;; *) mode=0644 ;; esac
+  install -D -m "$mode" -o root -g root "$HERE/files/$f" "$MNT/$f"
   say "  ${f#.}"
 done
 sed -i "s|@CONSOLE@|$CONSOLE|" "$MNT/etc/default/grub.d/50-open-alert-image.cfg"
@@ -356,7 +393,8 @@ ln -sfn ../run/systemd/resolve/stub-resolv.conf "$MNT/etc/resolv.conf"
 
 # What starts with the computer, beyond what Debian's packages set themselves.
 in_image systemctl enable systemd-networkd.service systemd-resolved.service systemd-timesyncd.service \
-  nftables.service ssh.service open-alert-image-ssh-host-keys.service
+  nftables.service ssh.service open-alert-image-ssh-host-keys.service open-alert-image-own-cidata.service \
+  open-alert-image-boot-stub.service open-alert-image-boot-stub.path
 
 # No account has a password, root included: the second field of every line of
 # /etc/shadow must be "*" or start with "!" (both mean "no password opens this").
@@ -373,6 +411,18 @@ step "6. The boot files (the signed chain: shim, GRUB, kernel)"
 in_image update-initramfs -u -k all
 KERNEL=$(cd "$MNT/boot" && find . -maxdepth 1 -name 'vmlinuz-*' | sed 's|^\./vmlinuz-||' | sort -V | tail -n 1)
 [ -n "$KERNEL" ] || die "no kernel in the image's /boot"
+# The start-up file system refuses to go on while two disks carry the main
+# partition (files/etc/initramfs-tools/scripts): both of its checks must be in it.
+IRD_LIST=$(in_image lsinitramfs "/boot/initrd.img-$KERNEL") || die "the start-up file system (/boot/initrd.img-$KERNEL) cannot be listed"
+for s in scripts/local-premount/open-alert-image-one-main-partition scripts/local-bottom/open-alert-image-one-main-partition; do
+  printf '%s\n' "$IRD_LIST" | grep -qx "$s" || die "the start-up file system lacks $s: it would start from any disk carrying the main partition's identifier"
+done
+# And the rule that keeps /dev/disk/by-uuid/… on the computer's own disk when a
+# USB disk carries the same identifier (files/etc/udev/rules.d).
+printf '%s\n' "$IRD_LIST" | grep -qx 'usr/lib/udev/rules.d/61-open-alert-image-own-disk-first.rules' \
+  || die "the start-up file system lacks the udev rule 61-open-alert-image-own-disk-first.rules"
+printf '%s\n' "$IRD_LIST" | grep -Eqx '(usr/)?s?bin/blkid' || die "the start-up file system has no blkid, which its check of the disks needs"
+say "start-up   the check that only one disk carries the main partition is in /boot/initrd.img-$KERNEL (before and after it is mounted), with the rule that names this disk before a USB one"
 
 # The boot menu's own folder (/boot/grub), filled as GRUB's installer fills
 # it: GRUB's parts, and "core.efi", a GRUB put together for this disk. That
@@ -391,8 +441,32 @@ in_image grub-editenv /boot/grub/grubenv create
 in_image update-grub
 grep -q "root=UUID=$ROOT_UUID" "$MNT/boot/grub/grub.cfg" \
   || die "the boot menu does not name the main partition by its identifier (root=UUID=$ROOT_UUID)"
-grep -q "search --no-floppy --fs-uuid --set=root.* $ROOT_UUID" "$MNT/boot/grub/grub.cfg" \
-  || die "the boot menu does not look for the main partition by its identifier"
+grep -q 'panic=30' "$MNT/boot/grub/grub.cfg" \
+  || die "the kernel's start-up line lacks panic=30: a failed start would offer a prompt as administrator"
+# The menu never looks for the main partition by its identifier, which a USB
+# stick made from this image carries too: its entries use the partition the
+# small file on the EFI partition chose ($oa_main: the disk GRUB started from).
+if grep -Eq '^[[:space:]]*search[[:space:]]' "$MNT/boot/grub/grub.cfg"; then
+  die "the boot menu still looks for a partition by its identifier (a \"search\" line): $(grep -E '^[[:space:]]*search[[:space:]]' "$MNT/boot/grub/grub.cfg" | head -n 1)"
+fi
+# shellcheck disable=SC2016  # $oa_main is GRUB's, not this shell's
+if grep -E '^[[:space:]]*(if .*then )?set root=' "$MNT/boot/grub/grub.cfg" | grep -qv 'set root="\$oa_main"'; then
+  die "the boot menu sets the partition to start from by another means than \$oa_main: $(grep -E 'set root=' "$MNT/boot/grub/grub.cfg" | grep -v 'oa_main' | head -n 1)"
+fi
+N_LINUX=$(grep -Ec '^[[:space:]]*linux[[:space:]]' "$MNT/boot/grub/grub.cfg" || true)
+# shellcheck disable=SC2016  # the same
+N_OWN=$(grep -c 'if \[ -n "\$oa_main" \]; then set root="\$oa_main"; fi' "$MNT/boot/grub/grub.cfg" || true)
+if [ "$N_LINUX" -lt 1 ] || [ "$N_OWN" != "$N_LINUX" ]; then die "of the menu's $N_LINUX entries that load Linux, $N_OWN start it from the disk GRUB started from"; fi
+# The menu is closed (files/etc/grub.d/09_open-alert-image): it has an owner
+# with no password, and every entry starts by itself all the same.
+grep -q '^set superusers="open-alert-nobody"$' "$MNT/boot/grub/grub.cfg" || die "the boot menu has no owner: its editor and command line would be open"
+if grep -Eq '^[[:space:]]*password' "$MNT/boot/grub/grub.cfg"; then die "the boot menu holds a password line: there should be none"; fi
+LOCKED_ENTRIES=$(grep -E '^[[:space:]]*(menuentry|submenu) ' "$MNT/boot/grub/grub.cfg" | grep -c -v -e '--unrestricted' || true)
+N_ENTRIES=$(grep -Ec '^[[:space:]]*menuentry .*--unrestricted' "$MNT/boot/grub/grub.cfg" || true)
+[ "$N_ENTRIES" -ge 1 ] || die "the boot menu has no entry that starts by itself"
+[ "$LOCKED_ENTRIES" = 0 ] || say "note: $LOCKED_ENTRIES menu entries need the menu's owner (who has no password) and so cannot be used: $(grep -E '^[[:space:]]*(menuentry|submenu) ' "$MNT/boot/grub/grub.cfg" | grep -v -e '--unrestricted' | sed -E "s/^[[:space:]]*(menuentry|submenu) '([^']*)'.*/\2/" | tr '\n' ';')"
+[ ! -x "$MNT/etc/grub.d/10_linux" ] || die "Debian's own menu script is still switched on: the entries would be written twice"
+say "boot menu  closed: an owner with no password; $N_ENTRIES entries that start by themselves"
 
 # The EFI system partition, made as a file and filled with mtools: the files
 # are the signed ones from Debian's packages, copied and not changed, in the
@@ -406,13 +480,17 @@ for f in "$SHIM_DIR/shim$EFI_ARCH.efi.signed" "$SHIM_DIR/mm$EFI_ARCH.efi.signed"
          "$SHIM_DIR/BOOT$EFI_ARCH_UPPER.CSV" "$GRUB_SIGNED"; do
   [ -f "$f" ] || die "the signed boot file $f is not in the image: is the signed package for $ARCH in Debian's archive?"
 done
-# The one file here that is not Debian's: three lines that tell GRUB which
-# partition holds its menu. (Debian's grub-install writes the same three.)
-cat > "$WORK/grub-stub.cfg" <<STUB
-search.fs_uuid $ROOT_UUID root
-set prefix=(\$root)'/boot/grub'
-configfile \$prefix/grub.cfg
-STUB
+# The one file here that is not Debian's: the small grub.cfg that tells GRUB
+# where its menu is. Debian's grub-install would write three lines that take
+# the first disk carrying the main partition's identifier, which a USB stick
+# made from this image carries too. The image's own
+# (files/usr/lib/open-alert-image/efi-grub.cfg, also in the image, where
+# boot-stub puts it back after every GRUB or shim update) takes partition 3 of
+# the disk GRUB was started from, and no other.
+STUB_SRC="$HERE/files/usr/lib/open-alert-image/efi-grub.cfg"
+cmp -s "$STUB_SRC" "$MNT/usr/lib/open-alert-image/efi-grub.cfg" || die "the image's copy of the small boot file is not files/usr/lib/open-alert-image/efi-grub.cfg"
+if grep -Eq '^[[:space:]]*search' "$STUB_SRC"; then die "$STUB_SRC looks for a partition by its identifier: it must take the disk GRUB started from"; fi
+cp "$STUB_SRC" "$WORK/grub-stub.cfg"
 ESP="$WORK/esp.img"
 truncate -s $((ESP_SECTORS * 512)) "$ESP"
 mkfs.vfat -F 32 -n EFI -i "$ESP_ID" "$ESP" >/dev/null
@@ -472,7 +550,7 @@ say "machine-id empty; no SSH host keys; the agent's data folder empty; no token
 in_image dpkg-query -W -f '${binary:Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n' \
   | LC_ALL=C sort > "$OUT/$NAME.packages.tsv"
 USED_MB=$(df -BM --output=used "$MNT" | tail -n 1 | tr -dc '0-9')
-say "$(wc -l < "$OUT/$NAME.packages.tsv") Debian packages; $USED_MB MB used of $((ROOT_SECTORS / 2048)) MB"
+say "$(wc -l < "$OUT/$NAME.packages.tsv") packages in all (Debian's, and open-alert-base); $USED_MB MB used of $((ROOT_SECTORS / 2048)) MB"
 
 # ═════════════════════════════════════════════════════════════════════════════
 step "9. Close the image"
@@ -482,7 +560,7 @@ umount "$MNT/dev" "$MNT/sys" "$MNT/proc"
 fstrim "$MNT" 2>/dev/null || true
 umount "$MNT"
 rm -f "$ROOTDEV"; ROOTDEV=''
-e2fsck -fn "$LOOP" >/dev/null || die "the main partition's file system does not pass its check"
+FSCK=$(e2fsck -fn "$LOOP" 2>&1) || { printf '%s\n' "$FSCK" >&2; die "the main partition's file system does not pass its check"; }
 losetup -d "$LOOP"; LOOP=''
 # The two FAT partitions go to their places in the disk.
 dd if="$ESP" of="$IMG" bs=512 seek="$ESP_START" conv=notrunc,sparse status=none

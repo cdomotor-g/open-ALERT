@@ -1,0 +1,60 @@
+#!/bin/bash
+# open-ALERT base station image: keep the image's own small boot file on the
+# EFI partition, the one that tells GRUB where its menu is.
+#
+# The image's file (/usr/lib/open-alert-image/efi-grub.cfg) sends GRUB to the
+# main partition of the disk GRUB itself was started from. Debian's own
+# version, which "grub-install" writes each time GRUB or shim is updated, sends
+# it to the first disk carrying the main partition's identifier, which a USB
+# stick made from the same image also carries. So whenever Debian's version
+# appears, this puts the image's own back.
+#
+# Run by open-alert-image-boot-stub.service: at every start, and each time the
+# file is written (open-alert-image-boot-stub.path); and by the menu maker
+# (/etc/grub.d/09_open-alert-image), which every GRUB and kernel update runs.
+#
+#   boot-stub            put the image's own file back wherever another was written
+#   boot-stub --check    only say whether each is the image's own (exit 1 if one is not)
+set -u
+
+OWN=/usr/lib/open-alert-image/efi-grub.cfg
+ESP=/boot/efi
+CHECK=0
+case "${1:-}" in
+  --check) CHECK=1 ;;
+  '') ;;
+  *) echo "boot-stub: unknown option $1" >&2; exit 2 ;;
+esac
+
+say() { printf 'open-alert-image: %s\n' "$*"; }
+
+if [ ! -f "$OWN" ]; then say "the image's own boot file ($OWN) is missing: nothing can be put right" >&2; exit 1; fi
+# While the image is being built, and on a computer whose EFI partition did not
+# mount, there is nothing here to look at.
+if ! mountpoint -q "$ESP" 2>/dev/null; then
+  if [ "$CHECK" = 1 ]; then say "the EFI partition is not mounted at $ESP: nothing to check" >&2; exit 1; fi
+  exit 0
+fi
+
+# GRUB reads EFI/debian/grub.cfg; started from the copy every firmware looks
+# for (EFI/BOOT), it reads a grub.cfg beside it first, if there is one.
+rc=0
+for f in "$ESP/EFI/debian/grub.cfg" "$ESP/EFI/BOOT/grub.cfg"; do
+  case "$f" in
+    */EFI/BOOT/*) [ -e "$f" ] || continue ;;
+    *) [ -d "$(dirname "$f")" ] || { say "$(dirname "$f") is missing on the EFI partition" >&2; rc=1; continue; } ;;
+  esac
+  if cmp -s "$OWN" "$f"; then
+    if [ "$CHECK" = 1 ]; then say "${f#"$ESP"/} is the image's own"; fi
+    continue
+  fi
+  if [ "$CHECK" = 1 ]; then say "${f#"$ESP"/} is NOT the image's own"; rc=1; continue; fi
+  if cp "$OWN" "$f.new" && sync -f "$f.new" && mv -f "$f.new" "$f" && sync -f "$f"; then
+    say "${f#"$ESP"/} had been written by another program (a GRUB or shim update): the image's own is back in its place, so GRUB takes its menu from this disk only"
+  else
+    rm -f "$f.new"
+    say "COULD NOT PUT BACK ${f#"$ESP"/}: GRUB may take its menu from another disk that carries this one's identifier" >&2
+    rc=1
+  fi
+done
+exit "$rc"

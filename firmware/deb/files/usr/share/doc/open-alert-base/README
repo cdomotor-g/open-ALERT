@@ -17,6 +17,11 @@ Made for Debian 13 and Ubuntu 24.04, on an ordinary 64-bit PC or a 64-bit ARM
 computer. On Debian 12 it installs and runs, but that system's rtl-sdr package
 does not know the RTL-SDR Blog V4 stick (V3 and generic sticks only);
 "open-alert-base version" says which sticks this computer's rtl-sdr knows.
+On Ubuntu 24.04, Node.js (version 18) and rtl-sdr come from the "universe"
+part of Ubuntu's archive, which must be switched on. Node.js 18 is no longer
+looked after by its own makers, and Ubuntu gives universe packages security
+fixes only through Ubuntu Pro. Debian 13 (Node.js 20) is the better choice
+where you have one.
 
 
 First steps
@@ -46,7 +51,7 @@ The two commands
         status         the service, the profile, and the agent's own status
         profile [name] show the profile, or put one in force (root)
         sync           make the service and the firewall lock follow the
-                       settings as they are now (root)
+                       profile and the settings as they are now (root)
         audit          print the security posture (root, for all of it)
         selftest       run the agent's own tests on this computer
         bench          measure how many channels this computer will carry
@@ -58,7 +63,16 @@ The two profiles
 A profile is a short list of the agent's own settings, merged into
 /etc/rpi-alert/config.json. One is applied when the package is first installed
 and there is no settings file yet ("standard", unless the install was told
-otherwise); an existing settings file is never overwritten by an install.
+otherwise with OPEN_ALERT_BASE_PROFILE=enterprise). An install leaves an
+existing settings file as it is, with one exception: when it is told which
+profile to use and that is not the profile in force, it puts that profile in
+force, and says so. A profile changes only the settings it names; the token,
+the name and the channels stay.
+
+A settings file that root put in place (configuration management, a restored
+backup) belongs to root, and the agent could not read it. The install, and
+"open-alert-base sync", hand such a file to the agent's user and say so. A
+link in its place is left alone, and "sync" stops with an error.
 
     sudo open-alert-base profile enterprise
 
@@ -79,6 +93,23 @@ to 0.23 opens its dashboard on every address of the computer and has no setting
 for that; from 0.24 it has one (web.bind), which the enterprise profile already
 sets, and the firewall rules stay as a second lock.
 
+No lock, no agent. In the enterprise profile the agent's service is tied to
+the lock's service (a small file of its own, 20-dashboard-lock.conf, in
+/etc/systemd/system/open-alert-base.service.d/), and runs only while it does.
+If the rules cannot be loaded (a slip in the file, no nftables), the lock's
+service fails, the agent is stopped, and both start again by themselves
+within about a quarter of a minute once it is put right. The lock's service
+stays running and puts the table back at once if something clears the
+computer's firewall tables (starting or restarting the system's own nftables
+service does). Stopping the lock's service does not open the dashboard; only
+"sudo open-alert-base profile standard" does.
+
+The profile in force is root's own record (/etc/open-alert-base/profile). The
+agent's settings file belongs to the agent's user, so nothing in it can loosen
+what the profile asks for: if it no longer says "this computer only", the lock
+is kept, and "sync", "status" and "audit" say so loudly: "sync" ends with
+status 4 and "status" with status 1, and "audit" lists it as a fault.
+
 To turn remote management off altogether:   rpi-alert remote off
 
 In both profiles the audio and the agent's "self-recovery" are off: the
@@ -89,8 +120,10 @@ If you change the dashboard's port yourself (rpi-alert config set web.port …),
 run "sudo open-alert-base sync" afterwards. A port below 1024 needs one
 privilege (CAP_NET_BIND_SERVICE), which "sync" and "profile" give the service
 in a small file of its own, /etc/systemd/system/open-alert-base.service.d/
-10-low-port.conf, and take away again for any other port. Without it the
-agent cannot open a low port and falls back to port 8080.
+10-low-port.conf, and take away again for any other port. They give it only
+where the profile in force itself uses such a port (the standard profile's
+80); the enterprise profile never has it. Without it the agent cannot open a
+low port and falls back to port 8080.
 
 
 What is where
@@ -113,6 +146,10 @@ What is where
                                         keeps the kernel's TV driver off the sticks
     /usr/lib/modules-load.d/open-alert-base.conf
                                         loads the two USB serial drivers at start-up
+                                        (the install loads them at once as well)
+    /usr/lib/systemd/system/open-alert-base-firewall.service
+                                        the "this computer only" lock, and its keeper
+                                        (/usr/lib/open-alert-base/lock-keeper)
 
 The log is the system journal:   journalctl -u open-alert-base
 
@@ -123,6 +160,29 @@ A web proxy, a private certificate authority
 Put the proxy in /etc/open-alert-base/env (HTTPS_PROXY=…, NO_PROXY=…) and
 restart the service. Add a private certificate authority to the operating
 system the usual way (update-ca-certificates). The file explains both.
+
+A proxy that is set is never gone around. If its address cannot be used (a
+slip in it, or a kind of proxy that is not a web proxy, such as socks5://),
+the agent still runs and keeps what it hears, but sends nothing, and its log
+says why. An address without "http://" in front is taken as http://. If the
+proxy takes connections and closes them without an answer, the agent waits a
+little longer each time (up to a minute) before it tries again, rather than
+calling it over and over.
+
+
+Serial receivers
+----------------
+
+The service may open USB serial ports (/dev/ttyUSB*, /dev/ttyACM*) and no
+other device but the sticks. A serial port built into the computer
+(/dev/ttyS0 and the like, often an RS-232 port on an industrial PC) is closed
+to it. To open one:
+
+    sudo systemctl edit open-alert-base
+        and in the file that opens, add:
+            [Service]
+            DeviceAllow=/dev/ttyS0 rw
+    sudo systemctl restart open-alert-base
 
 
 The clock

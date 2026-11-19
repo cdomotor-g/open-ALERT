@@ -1,3 +1,22 @@
+open-alert-base (0.23.1+oa2) unstable; urgency=medium
+
+  * The same agent, RPi ALERT v0.23.1, unchanged; the layer around it
+    changed after two reviews.
+  * Enterprise profile: no lock, no agent. The agent runs only while the
+    firewall lock that keeps the dashboard to this computer holds; the lock
+    is put back at once when the firewall tables are cleared, and the agent
+    comes back by itself once it holds again.
+  * The lock and the privilege for port 80 are decided from root's own
+    record of the profile, not from settings the agent can write.
+  * Web proxy: a setting that cannot be used is refused instead of passed
+    over, and a proxy that drops connections is not hammered.
+  * Settings files owned by root are handed to the agent's user; the
+    installed size is counted from the files; USB serial drivers load at
+    once; reinstalling with OPEN_ALERT_BASE_PROFILE is honoured.
+  * 0.23.1+oa1 was a snapshot and was never released.
+
+ -- open-ALERT <cdomotor-g@users.noreply.github.com>  Wed, 18 Nov 2026 00:00:00 +0000
+
 open-alert-base (0.23.1+oa1) unstable; urgency=medium
 
   * First package: the RPi ALERT agent from its signed release v0.23.1,

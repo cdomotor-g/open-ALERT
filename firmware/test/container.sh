@@ -23,7 +23,10 @@
 #      (there is no USB on this computer): refused without the rule, let
 #      through to the kernel with it.
 #   7. The web proxy, with a private certificate authority, with and without
-#      a password, with Flood-Net reachable only through the proxy.
+#      a password, with Flood-Net reachable only through the proxy. And the
+#      three rules the start-up file keeps: a proxy that cannot be used is not
+#      gone around, the library is the system's own, and a proxy that drops
+#      every connection is not hammered.
 #
 # Options
 #   --tarball FILE --sig FILE   the release already here (no download); also OA_AGENT_TARBALL, OA_AGENT_SIG
@@ -310,6 +313,12 @@ build_checks() {
   for l in $want; do printf '%s' "$labels" | grep -q "\"org.opencontainers.image.$l\":\"[^\"]" || missing="$missing $l"; done
   oa_is "the labels a registry shows are all there (title, description, source, licence, version, revision, created, documentation, base)" "" "$missing"
   oa_is "the version label is the pin's: agent version +oa revision" "$(oa_pin AGENT_VERSION)+oa$(oa_pin OA_REVISION)" "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')"
+  # Which Debian it was built on: by name always; by its exact identifier when the build was given one.
+  l=$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.base.name"}}')
+  case "$l" in
+    *@sha256:*) oa_is "the image says exactly which base image it was built on: the digest in its base label is the one in the base's name" "${l##*@}" "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.base.digest"}}')" ;;
+    *) oa_note "this image was built on \"$l\" by name, with no digest given: its labels do not say which version of that base (the automatic build gives one for every container it publishes; build.sh --base-image does by hand)" ;;
+  esac
   oa_is "the image's user is the number 990:990" "990:990" "$(docker image inspect "$IMAGE" --format '{{.Config.User}}')"
   oa_is "the image's volumes are the settings and the data" "/etc/rpi-alert /var/lib/rpi-alert" "$(docker image inspect "$IMAGE" --format '{{range $k, $v := .Config.Volumes}}{{$k}} {{end}}' | tr ' ' '\n' | sort | grep . | tr '\n' ' ' | sed 's/ $//')"
   oa_has "the image has a health check on the dashboard" <(docker image inspect "$IMAGE" --format '{{json .Config.Healthcheck.Test}}') 'healthcheck\.js'
@@ -520,7 +529,110 @@ proxy_checks() {
     for n in flood direct proxy; do docker rm -f "$P-$n" > /dev/null 2>&1 || true; done
   done
   docker network rm "$in" "$out" > /dev/null 2>&1 || true
+  proxy_rule_checks
   oa_note "the proxy in this test is a few lines written for it (it tunnels, and can ask for a password); a real one, and a real inspecting network, have not been tried"
+}
+
+# The three rules the start-up file keeps (proxy-preload.js), tried in the
+# image itself: each case is one short container with no network at all, as
+# the image's own user, that plays both ends and prints one line.
+proxy_rule_checks() {
+  oa_section "proxy: what the start-up file refuses"
+  local d=$WORK/sim got n home=$WORK/sim/home
+  cat > "$d/scripts/proxy-rules.js" <<'JS'
+// "around": an HTTPS server on this container (direct.test:8443) and one call to it. With a proxy
+// set that cannot be used, the call must fail and the server must see nothing.
+// "drops": twelve calls through a stand-in proxy that closes every connection. Prints "RESULT …".
+const net = require('node:net'), https = require('node:https'), fs = require('node:fs');
+const what = process.argv[2];
+const call = async (u) => {
+  try { const r = await fetch(u, { signal: AbortSignal.timeout(5000) }); await r.text(); return 'answered ' + r.status; }
+  catch (e) { return 'failed ' + ((e.cause && (e.cause.code || e.cause.message)) || e.message); }
+};
+if (what === 'around') {
+  let seen = 0;
+  https.createServer({ key: fs.readFileSync('/sim/tls/srv.key'), cert: fs.readFileSync('/sim/tls/srv.crt') }, (req, res) => { seen++; res.end('hello'); })
+    .on('connection', () => { seen++; }).listen(8443, '127.0.0.1', async () => {
+      const r = await call('https://direct.test:8443/x');
+      console.log('RESULT ' + r + ' seen=' + seen); process.exit(0);
+    });
+} else {
+  let n = 0, drop = true;
+  net.createServer((s) => {
+    n++; s.on('error', () => {});
+    if (!drop) { s.once('data', () => s.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')); return; }
+    if (n % 2) s.destroy(); else s.once('data', () => s.destroy());
+  }).listen(3199, '127.0.0.1', async () => {
+    let refused = 0;
+    for (let i = 0; i < 12; i++) { if (/OA_PROXY/.test(await call('https://flood.test/x'))) refused++; }
+    const during = n;
+    await new Promise((r) => setTimeout(r, 2000));
+    const after = n; drop = false;
+    await new Promise((r) => setTimeout(r, 4000));
+    const later = await call('https://flood.test/x');
+    console.log('RESULT connections=' + during + ' later=' + after + ' refused=' + refused + ' then=' + later.replace(/ /g, '_') + ' total=' + n);
+    process.exit(0);
+  });
+}
+JS
+  chmod a+r "$d/scripts/proxy-rules.js"
+  # One case: the image's own user and start line, no network, the test's files read-only.
+  # Two minutes at most: a proxy that is hammered can keep Node.js too busy
+  # ever to finish, and that is a failed check, not a stuck run.
+  #   rule LOG [docker-run arguments…] -- CASE
+  rule() {
+    local log=$1 args=(); shift
+    while [ "$1" != -- ]; do args+=("$1"); shift; done; shift
+    docker rm -f "$P-rule" > /dev/null 2>&1 || true
+    timeout -k 10 120 docker run --rm --name "$P-rule" --network none --add-host direct.test:127.0.0.1 -v "$d/scripts:/sim/scripts:ro" -v "$d/tls:/sim/tls:ro" \
+      -e NODE_EXTRA_CA_CERTS=/sim/tls/ca.crt "${args[@]}" --entrypoint node "$IMAGE" \
+      --require=/usr/lib/open-alert-base/proxy-preload.js /sim/scripts/proxy-rules.js "$@" 2> "$log" | sed -n 's/^RESULT //p' | head -n 1 || true
+    docker rm -f "$P-rule" > /dev/null 2>&1 || true
+  }
+  got=$(rule "$LOGDIR/proxy-rule-none.txt" -- around)
+  oa_is "with no proxy set, the far end in this check is reached directly (so the next lines show something)" "answered 200 seen=2" "$got"
+  got=$(rule "$LOGDIR/proxy-rule1.txt" -e HTTPS_PROXY=socks5://127.0.0.1:1080 -e NO_PROXY=localhost -- around)
+  oa_is "a proxy address that cannot be used (socks5://…): the call is refused, and nothing at all reaches the far end directly" "failed OA_PROXY seen=0" "$got"
+  oa_has "… and the log says why nothing is sent" "$LOGDIR/proxy-rule1.txt" 'cannot be used: it starts with "socks5://".*nothing is sent directly instead'
+  got=$(rule "$LOGDIR/proxy-rule1-exempt.txt" -e HTTPS_PROXY=socks5://127.0.0.1:1080 -e NO_PROXY=direct.test -- around)
+  oa_is "… while an address in NO_PROXY still goes direct" "answered 200 seen=2" "$got"
+  # A look-alike of the library where Node.js would look first: the home folder, which in the
+  # container is the agent's data folder.
+  mkdir -p "$home/.node_modules/undici" "$home/.node_libraries"
+  for n in "$home/.node_modules/undici/index.js" "$home/.node_libraries/undici.js"; do
+    echo 'require("node:fs").writeFileSync("/var/lib/rpi-alert/oa-lookalike-ran", "x"); module.exports = {};' > "$n"
+  done
+  chmod -R a+rwX "$home"
+  docker run --rm --network none -v "$home:/var/lib/rpi-alert" --entrypoint node "$IMAGE" -e 'require("undici")' > /dev/null 2>&1 || true
+  if [ -e "$home/oa-lookalike-ran" ]; then
+    rm -f "$home/oa-lookalike-ran"
+    got=$(rule "$LOGDIR/proxy-rule2.txt" -v "$home:/var/lib/rpi-alert" -e HTTPS_PROXY=http://127.0.0.1:9 -e NO_PROXY=localhost -- around)
+    if [ "$got" = "failed OA_PROXY seen=0" ] && [ ! -e "$home/oa-lookalike-ran" ] && ! grep -q 'could not be loaded' "$LOGDIR/proxy-rule2.txt"; then
+      oa_ok "a look-alike \"undici\" library in the agent's data folder (which a plain \"node\" in this image does load) is not loaded by the start-up file: the system's own is, and the call is sent to the proxy"
+    else oa_fail "with a look-alike library in the data folder: \"$got\"; the look-alike $( [ -e "$home/oa-lookalike-ran" ] && echo RAN || echo 'did not run') — see $LOGDIR/proxy-rule2.txt"; fi
+  else
+    oa_skip "a look-alike library in the agent's data folder — a plain \"node\" in this image does not load one from there, so the check would show nothing"
+  fi
+  got=$(rule "$LOGDIR/proxy-rule3.txt" -e HTTPS_PROXY=http://127.0.0.1:3199 -e NO_PROXY=localhost -- drops)
+  printf '%s\n' "$got" > "$LOGDIR/proxy-rule3-result.txt"
+  n=$(printf '%s' "$got" | sed -n 's/.*connections=\([0-9]*\) .*/\1/p')
+  if [ -n "$n" ] && [ "$n" -ge 1 ] && [ "$n" -le 12 ]; then oa_ok "a proxy that closes every connection without an answer: twelve calls made $n connections to it (unguarded, one call makes thousands a second)"
+  else oa_fail "a proxy that closes every connection: twelve calls made ${n:-an unknown number of} connections — $got"; fi
+  if printf '%s' "$got" | grep -q " later=$n " && [ "$(printf '%s' "$got" | sed -n 's/.* refused=\([0-9]*\) .*/\1/p')" = 12 ]; then oa_ok "… none went on by itself after the calls had ended, and each call failed at once with this layer's own error"
+  else oa_fail "the dropping proxy: $got"; fi
+  oa_has_not "… and the guard was put in place on the image's undici (the start-up file does not say it could not be)" "$LOGDIR/proxy-rule3.txt" 'could not be put in place'
+  case "$got" in
+    *"then=failed_OA_PROXY"*|*" total=$n") oa_fail "after the wait the proxy was not asked again: $got" ;;
+    *) oa_ok "… and once the wait is over and the proxy answers again, it is asked again" ;;
+  esac
+  # The whole container with a proxy address that cannot be used: it starts all the same.
+  docker rm -f "$P-unusable" > /dev/null 2>&1 || true
+  docker run -d --name "$P-unusable" -e HTTPS_PROXY=socks5://127.0.0.1:1080 "$IMAGE" > /dev/null 2>&1 || true
+  if oa_wait 60 bash -c "docker logs $P-unusable 2>&1 | grep -q 'dashboard on'" && docker logs "$P-unusable" 2>&1 | grep -q 'cannot be used: it starts with "socks5://"'; then
+    oa_ok "the container started with a proxy address that cannot be used: the agent runs and shows its dashboard, and the log says nothing is sent until the address is put right"
+  else oa_fail "the container with an unusable proxy address did not start, or did not say why nothing is sent: $(docker logs "$P-unusable" 2>&1 | tail -n 3 | tr '\n' ' ')"; fi
+  docker logs "$P-unusable" > "$LOGDIR/agent-proxy-unusable.log" 2>&1 || true
+  docker rm -f "$P-unusable" > /dev/null 2>&1 || true
 }
 
 # ═════════════════════════════════════════════════════════════════════════════

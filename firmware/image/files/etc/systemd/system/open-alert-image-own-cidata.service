@@ -1,0 +1,42 @@
+# open-ALERT base station image: the first set-up files, from this disk only.
+#
+# Run early at every start, before cloud-init: it copies "user-data" and
+# "meta-data" from the CIDATA partition of the disk the computer started from
+# into the one place cloud-init reads on this image. A USB stick or any other
+# disk with a partition of the same label is never looked at. The script says
+# how (/usr/lib/open-alert-image/own-cidata).
+#
+# Not run at all once /etc/cloud/cloud-init.disabled exists ("never read the
+# set-up file again"; the last lines of user-data show how).
+
+[Unit]
+Description=open-ALERT base station image: first set-up files from this disk's own CIDATA partition
+DefaultDependencies=no
+After=systemd-remount-fs.service
+Before=cloud-init-main.service cloud-init-local.service
+Before=shutdown.target
+Conflicts=shutdown.target
+RequiresMountsFor=/var/lib/cloud
+ConditionPathExists=!/etc/cloud/cloud-init.disabled
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/lib/open-alert-image/own-cidata
+# Its one or two lines appear on the console as well as in the log.
+StandardOutput=journal+console
+# It reads one partition of this disk and writes one folder: no network, no
+# way to gain a privilege, the rest of the system read-only.
+PrivateNetwork=yes
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+# The one folder it writes (made if it is not there), and where it mounts the partition.
+StateDirectory=cloud
+ReadWritePaths=/run
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=cloud-init.target

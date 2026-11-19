@@ -32,24 +32,40 @@ case "${1:-}" in
     fi
     if [ -d /run/systemd/system ]; then systemctl --system daemon-reload >/dev/null || true; fi
 
-    # ── settings: a profile only when there is no settings file yet ──────────
+    # ── settings and the profile ─────────────────────────────────────────────
+    # The profile asked for: OPEN_ALERT_BASE_PROFILE in the environment of the
+    # install. The profile in force: the name in /etc/open-alert-base/profile.
+    asked="${OPEN_ALERT_BASE_PROFILE:-}"
+    recorded=''
+    if [ -r /etc/open-alert-base/profile ]; then recorded=$(head -n 1 /etc/open-alert-base/profile); fi
     if [ ! -e /etc/rpi-alert/config.json ] && [ ! -L /etc/rpi-alert/config.json ]; then
-      # The profile to start with: OPEN_ALERT_BASE_PROFILE in the environment
-      # of the install, else a name already written in /etc/open-alert-base/profile,
-      # else "standard".
-      profile="${OPEN_ALERT_BASE_PROFILE:-}"
-      if [ -z "$profile" ] && [ -r /etc/open-alert-base/profile ]; then profile=$(head -n 1 /etc/open-alert-base/profile); fi
-      [ -n "$profile" ] || profile=standard
+      # No settings file yet: start with the profile asked for, else the one
+      # recorded, else "standard".
+      profile="${asked:-${recorded:-standard}}"
       rc=0
       open-alert-base profile "$profile" || rc=$?
       # 3: the settings are in force but the firewall lock could not be put on
-      # (said plainly above); anything else stops the install.
+      # (said plainly above, and the agent does not run without it); anything
+      # else stops the install.
+      if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then exit "$rc"; fi
+    elif [ -n "$asked" ] && [ "$asked" != "$recorded" ]; then
+      # A settings file is here, and the install was told which profile to
+      # use: the person installing has said so, and is not left believing it
+      # when it did not happen. A profile changes only the settings it names
+      # (the token, the name and the channels stay).
+      echo "open-alert-base: OPEN_ALERT_BASE_PROFILE=$asked was given, and the profile in force is \"${recorded:-none}\":"
+      echo "                 putting \"$asked\" in force over the settings file that is here (only the settings a profile names change)."
+      rc=0
+      open-alert-base profile "$asked" || rc=$?
       if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then exit "$rc"; fi
     else
-      if [ "$first_install" = 1 ]; then
-        echo "open-alert-base: a settings file is already here (/etc/rpi-alert/config.json) and was left as it is."
-        echo "                 To put a profile in force: sudo open-alert-base profile standard   (or: enterprise)"
+      if [ -z "$recorded" ]; then
+        echo "open-alert-base: a settings file is already here (/etc/rpi-alert/config.json) and was left as it is; no profile is in force."
+        echo "                 To put one in force: sudo open-alert-base profile standard   (or: enterprise)"
       fi
+      # Hands a settings file that root put there to the agent's user, and
+      # makes the service and the lock follow the profile and the settings.
+      # What it finds wrong it says; it does not stop the install.
       open-alert-base sync || true
     fi
 
@@ -60,10 +76,15 @@ case "${1:-}" in
     fi
     # A stick plugged in already may be held by the kernel's TV driver: let it
     # go now (the block list keeps the driver away from the next start-up on).
+    # And load the two USB serial drivers now, before the service is started:
+    # the service may open USB serial ports only, and systemd works that list
+    # out from the drivers loaded when the service starts (the modules-load.d
+    # file does this at every later start-up). A kernel without them is fine.
     if [ -d /run/systemd/system ] && [ -r /proc/modules ] && command -v modprobe >/dev/null 2>&1; then
       for m in dvb_usb_rtl28xxu rtl2832_sdr rtl2832 rtl2830 r820t; do
         if grep -q "^$m " /proc/modules; then modprobe -r "$m" >/dev/null 2>&1 || true; fi
       done
+      for m in usbserial cdc_acm; do modprobe -q "$m" >/dev/null 2>&1 || true; done
     fi
 
     # ── the service: on at start-up; started now where systemd is running ────
@@ -77,11 +98,26 @@ case "${1:-}" in
     fi
     if [ -d /run/systemd/system ]; then
       systemctl --system daemon-reload >/dev/null || true
-      if [ "$first_install" = 1 ]; then action=start; else action=restart; fi
-      if command -v deb-systemd-invoke >/dev/null 2>&1; then
-        deb-systemd-invoke "$action" "$UNIT" >/dev/null || true
+      invoke() {
+        if command -v deb-systemd-invoke >/dev/null 2>&1; then deb-systemd-invoke "$1" "$2" >/dev/null || true
+        else systemctl "$1" "$2" >/dev/null || true; fi
+      }
+      if [ "$first_install" = 1 ]; then
+        invoke start "$UNIT"
+      elif systemctl is-active --quiet "$FW_UNIT" 2>/dev/null; then
+        # An update with the lock running: the lock is restarted, so that it
+        # runs the new version's keeper, and the agent, which is tied to it,
+        # restarts with it. Then the agent is started in case it was not running.
+        invoke restart "$FW_UNIT"
+        invoke start "$UNIT"
       else
-        systemctl "$action" "$UNIT" >/dev/null || true
+        invoke restart "$UNIT"
+      fi
+      # In a profile that keeps the dashboard to this computer, the agent
+      # does not start without the lock: say so here, where it is looked for.
+      if [ -e /etc/systemd/system/open-alert-base.service.d/20-dashboard-lock.conf ] && ! systemctl is-active --quiet "$FW_UNIT" 2>/dev/null; then
+        echo "open-alert-base: THE AGENT IS NOT RUNNING: the dashboard's firewall lock is not on, and in this profile the agent runs only behind it."
+        echo "                 See: systemctl status $FW_UNIT    When it is put right: sudo open-alert-base sync"
       fi
     fi
 

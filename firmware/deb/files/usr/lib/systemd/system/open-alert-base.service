@@ -13,6 +13,10 @@ Documentation=https://github.com/cdomotor-g/open-ALERT/tree/main/firmware
 Documentation=https://github.com/cdomotor-g/RPi_ALERT/tree/main/docs
 # Not network-online: a base station with no network still receives, decodes
 # and keeps what it hears on disk; it sends when the network comes.
+# After the dashboard's firewall lock, where a profile uses it. In such a
+# profile "open-alert-base profile" also ties this service to the lock's (a
+# file of its own, 20-dashboard-lock.conf, in the service's .d folder under
+# /etc/systemd/system): it then runs only while the lock's service does.
 After=network.target open-alert-base-firewall.service
 
 [Service]
@@ -50,8 +54,10 @@ UMask=0077
 # ── No way up ────────────────────────────────────────────────────────────────
 # It can never gain a privilege it did not start with (sudo and set-user-id
 # programs do nothing for it), and it starts with none at all. When the
-# dashboard is on a port below 1024, "open-alert-base profile" adds the one
-# privilege that allows that (see the service's .d folder under /etc/systemd/system).
+# profile in force puts the dashboard on a port below 1024, "open-alert-base
+# profile" adds the one privilege that allows that (10-low-port.conf, in the
+# service's .d folder under /etc/systemd/system). The agent's own settings
+# file cannot ask for it: the profile is root's.
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
@@ -79,6 +85,12 @@ ProtectHostname=yes
 # ── Devices: USB device files (the sticks) and USB serial ports, nothing else ─
 # No disks, no memory, no sound card, no screen. (A real-time clock chip can be
 # read, not set: ProtectClock adds that by itself.)
+# A serial port built into the computer (/dev/ttyS0 and the like) is NOT on
+# the list. To let the agent use one for a receiver, add it yourself:
+#   sudo systemctl edit open-alert-base     and in the file that opens:
+#       [Service]
+#       DeviceAllow=/dev/ttyS0 rw
+#   then: sudo systemctl restart open-alert-base
 DevicePolicy=closed
 DeviceAllow=char-usb_device rw
 DeviceAllow=char-ttyUSB rw

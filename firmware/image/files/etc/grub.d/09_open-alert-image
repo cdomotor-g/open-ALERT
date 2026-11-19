@@ -1,0 +1,75 @@
+#!/bin/sh
+# open-ALERT base station image: the boot menu cannot be edited, and GRUB's
+# command line cannot be opened.
+#
+# GRUB, the boot menu, shows for three seconds at each start. Left as Debian
+# makes it, anybody at the keyboard or on the serial port can press "e" there
+# and change how Linux is started, or "c" for GRUB's own command line. Either
+# way they can start the computer as its administrator, with no account and
+# no password. Secure Boot does not stop that: it checks the programs that
+# start, not what they are told to do.
+#
+# This script closes both, in the menu file it helps to write
+# (/boot/grub/grub.cfg):
+#   1. It names an owner for the menu ("superusers") and gives that owner no
+#      password. "e" and "c" then ask for a name and a password, and there is
+#      none that works. No password is stored anywhere, in keeping with the
+#      rest of the image.
+#   2. It writes the menu's entries for Linux itself, by running Debian's own
+#      script for them (10_linux) and marking each entry "--unrestricted":
+#      such an entry starts by itself, as it is written, without the owner.
+#      Debian's script is switched off (made not executable) so that the
+#      entries are not written a second time; an update of GRUB that switches
+#      it on again is undone here the next time the menu is made.
+#   3. It makes each of those entries start Linux from the disk GRUB itself
+#      was started from. Debian's entries look for "the first disk carrying
+#      the main partition's identifier", and every disk made from the image
+#      carries that identifier: a USB stick made from it could be taken in
+#      place of the computer's own disk. Those lines are taken out, and each
+#      entry uses the partition the small file on the EFI partition chose
+#      ($oa_main: partition 3 of the disk GRUB started from; see
+#      /usr/lib/open-alert-image/efi-grub.cfg).
+#
+# It also puts that small file back on the EFI partition if a GRUB update has
+# written Debian's own version of it there (/usr/lib/open-alert-image/boot-stub).
+#
+# If Debian's script cannot be run, or writes no entry, this script fails and
+# writes nothing. The menu maker then stops and leaves the menu file that was
+# there: a computer is never left with a menu that asks for a password nobody
+# has. Run by "update-grub" (and so by every kernel and GRUB update).
+set -e
+
+linux=/etc/grub.d/10_linux
+if [ ! -f "$linux" ]; then echo "09_open-alert-image: $linux is missing" >&2; exit 1; fi
+entries=$(/bin/sh "$linux")
+case "$entries" in
+  *"menuentry "*) ;;
+  *) echo "09_open-alert-image: Debian's script ($linux) wrote no menu entry" >&2; exit 1 ;;
+esac
+# Not a second time, by the menu maker itself, a little further on.
+if [ -x "$linux" ]; then chmod a-x "$linux" 2>/dev/null || true; fi
+
+cat <<'MENU'
+# open-ALERT base station image: nobody may edit the menu or open GRUB's
+# command line (an owner with no password); the entries below start by
+# themselves all the same ("--unrestricted").
+set superusers="open-alert-nobody"
+export superusers
+MENU
+# Each entry: marked to start by itself; the lines that look for the main
+# partition by its identifier (or name it by GRUB's guess of its number) are
+# taken out; just before Linux is loaded, the partition chosen by the small
+# file on the EFI partition is used.
+# shellcheck disable=SC2016  # $feature_platform_search_hint and $oa_main are GRUB's, not this shell's
+printf '%s\n' "$entries" | sed -E \
+  -e '/^[[:space:]]*(menuentry|submenu) /s/[[:space:]]*\{[[:space:]]*$/ --unrestricted {/' \
+  -e '/^[[:space:]]*if \[ x\$feature_platform_search_hint = xy \]; then[[:space:]]*$/,/^[[:space:]]*fi[[:space:]]*$/d' \
+  -e '/^[[:space:]]*search[[:space:]].*--set=root/d' \
+  -e '/^[[:space:]]*set root=/d' \
+  -e 's/^([[:space:]]*)(linux[[:space:]].*)$/\1if [ -n "$oa_main" ]; then set root="$oa_main"; fi\n\1\2/'
+
+# The small file on the EFI partition: put back if something wrote another.
+# (Its words go to the screen, not into the menu file.)
+if [ -f /usr/lib/open-alert-image/boot-stub ]; then
+  /bin/bash /usr/lib/open-alert-image/boot-stub >&2 || echo "09_open-alert-image: the small boot file on the EFI partition could not be put right (see above)" >&2
+fi

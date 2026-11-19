@@ -31,9 +31,17 @@ What to know
 - There is no default password, and no account at all until user-data names
   one. Out of the box the base station starts, receives and shows its
   dashboard, but nobody can log in to it.
-- The first start takes a few minutes longer than later ones: the disk's
-  main partition is grown to fill the disk, and this computer's own SSH keys
-  are made.
+- The first start takes a minute or two longer than later ones: the disk's
+  main partition is grown to fill the disk, this computer's own SSH keys are
+  made, and this file is applied.
+- Only this partition, on the disk the base station starts from, is read.
+  A USB stick or another disk that carries a partition of the same name is
+  not looked at.
+- Do not leave a second disk or USB stick made from this image plugged into
+  a base station. The base station takes its start-up menu and its system
+  from its own disk only, and while it sees two disks made from the image it
+  does not start: it says so on the screen and restarts every 30 seconds
+  until the other one is unplugged.
 - The file is not removed after it has been read, and anybody who holds the
   disk can read it and change it. Put no password and no private key in it.
   A person with the disk in their hands can also add an account this way;

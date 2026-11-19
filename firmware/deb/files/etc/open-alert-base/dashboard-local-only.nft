@@ -4,6 +4,8 @@
 # enterprise" turns on. It is one table of its own: it adds to whatever
 # firewall the computer already has and changes none of it. To look at it:
 #     sudo nft list table inet open_alert_base
+# To take it off, on purpose:   sudo open-alert-base profile standard
+# (Stopping the service does not take it off.)
 #
 # Why it is here: RPi ALERT up to 0.23 opens its dashboard on every network
 # address of the computer and has no setting for that. These rules are what
@@ -11,15 +13,21 @@
 # (web.bind, which the enterprise profile already sets), and these rules stay
 # as a second lock.
 #
+# No lock, no agent. While a profile asks for this lock, the agent runs only
+# while open-alert-base-firewall.service does. If this file does not load (a
+# slip in it, no nftables on the computer), that service fails and the agent
+# is not started; put the file right and both come back by themselves.
+#
 # If your own firewall set-up starts with "flush ruleset" (Debian's
-# /etc/nftables.conf does), that line removes this table too whenever it is
-# loaded by hand. Reloading through "systemctl reload nftables" puts this table
-# back by itself; to be sure in every case, add this line to your own file:
+# /etc/nftables.conf does), that line removes this table too each time it is
+# loaded. The service notices and puts this table back at once (well under a
+# second). To leave no gap at all, add this line to your own file as well:
 #     include "/etc/open-alert-base/dashboard-local-only.nft"
 
 # The dashboard's port: the enterprise profile's web.port. If you change the
 # port in the agent's settings, change it here too, then:
-#     sudo systemctl restart open-alert-base-firewall
+#     sudo open-alert-base sync
+# (The second rule below keeps other computers from the agent whatever its port.)
 define dashboard_port = 8080
 
 # Start clean each time this file is loaded (make sure the table exists, remove

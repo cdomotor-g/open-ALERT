@@ -5,8 +5,9 @@
 #   open-alert-base status           is the service running, which profile, and the agent's own status
 #   open-alert-base profile          which profile is in force, and the ones there are
 #   open-alert-base profile <name>   put a profile in force: standard or enterprise          (root)
-#   open-alert-base sync             make the service and the firewall lock follow the
-#                                    settings as they are now (after changing the port, say)  (root)
+#   open-alert-base sync             make the service and the firewall lock follow the profile
+#                                    and the settings as they are now (after changing the
+#                                    port, say)                                               (root)
 #   open-alert-base audit            the security posture, for a reviewer: what listens, who it
 #                                    runs as, what it is kept from, what is switched off      (root, for all of it)
 #   open-alert-base selftest         run the agent's own tests on this computer (a few minutes)
@@ -29,6 +30,8 @@ FW_RULES=$ETC/dashboard-local-only.nft
 FW_TABLE=open_alert_base
 DROPIN_DIR=/etc/systemd/system/$UNIT.d
 DROPIN=$DROPIN_DIR/10-low-port.conf
+LOCK_DROPIN=$DROPIN_DIR/20-dashboard-lock.conf
+KEEPER=$LIB/lock-keeper
 SVC_USER=rpi-alert
 SETTINGS_DIR=/etc/rpi-alert
 DATA_DIR=/var/lib/rpi-alert
@@ -72,6 +75,40 @@ load_summary() {
 }
 setting() { printf '%s\n' "$SUMMARY" | sed -n "s|^$1=\(.*\)\$|\1|p" | head -n 1; }
 is_loopback() { case "$1" in 127.*|::1|localhost) return 0 ;; *) return 1 ;; esac; }
+
+# A settings file that root put in place (configuration management, a restored
+# backup, cloud-init) belongs to root, and the agent cannot read it: it would
+# run on its built-in settings, without the token. Such a file is handed to
+# the agent's user. adopt-settings.js does it on the open file itself, never
+# through its name, and only for a plain file that is root's: a link, or a
+# file with a second name somewhere else, is left alone and said so.
+adopt_settings() {
+  local f="$SETTINGS_DIR/config.json"
+  is_root || return 0
+  id "$SVC_USER" >/dev/null 2>&1 || return 0
+  if [ ! -e "$f" ] && [ ! -L "$f" ]; then return 0; fi
+  "$NODE" "$LIB/adopt-settings.js" "$f" "$(id -u "$SVC_USER")" "$(id -g "$SVC_USER")" || true
+}
+
+# What the profile in force asks of the dashboard. The profile is root's own
+# record (/etc/open-alert-base/profile names it; its file under
+# /usr/share/open-alert-base/profiles is root's too). Left in P_NAME, P_PORT
+# and P_BIND; all three empty when no profile is recorded.
+P_NAME=''; P_PORT=''; P_BIND=''
+load_profile() {
+  local name file web
+  P_NAME=''; P_PORT=''; P_BIND=''
+  [ -r "$ETC/profile" ] || return 0
+  name=$(head -n 1 "$ETC/profile")
+  file=$(profile_file "$name") || return 0
+  web=$("$NODE" -e '
+    const p = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+    const w = (p.settings || {}).web || {};
+    process.stdout.write(String(w.port == null ? "" : w.port) + " " + String(w.bind == null ? "" : w.bind));' "$file" 2>/dev/null) || return 0
+  P_NAME=$name; P_PORT=${web%% *}; P_BIND=${web#* }
+}
+# Does the profile in force keep the dashboard to this computer?
+profile_locks() { [ -n "$P_NAME" ] && is_loopback "$P_BIND"; }
 
 # The running agent's process number, or nothing: asked of systemd, else found
 # among the agent user's own processes.
@@ -138,11 +175,21 @@ cmd_status() {
     say "Service    systemd is not running here (a container, or a system being built): nothing to ask"
   fi
   say "Profile    $(current_profile)"
+  local bad=0
   if is_root && load_summary; then
     local port bind
     port=$(setting web.port); bind=$(setting web.bind)
-    if is_loopback "$bind"; then
+    load_profile
+    if [ -n "$(setting unusable)" ]; then
+      say "Settings   CANNOT BE USED — $(setting unusable)"
+      say "           (the agent runs on its built-in settings until this is put right; then: sudo open-alert-base sync)"
+      bad=1
+    elif is_loopback "$bind" || profile_locks; then
       say "Dashboard  http://127.0.0.1:$port/ — for this computer only (firewall lock: $(lock_state))"
+      if ! is_loopback "$bind"; then
+        say "           THE SETTINGS NO LONGER MATCH THE PROFILE: they do not ask for \"this computer only\" any more. The lock is kept. See: sudo open-alert-base audit"
+        bad=1
+      fi
     else
       say "Dashboard  port $port, for the local network"
     fi
@@ -151,6 +198,7 @@ cmd_status() {
   if ! /usr/bin/rpi-alert status 2>/dev/null; then
     say "The agent is not answering on this computer (try: sudo systemctl status open-alert-base)."
   fi
+  return "$bad"
 }
 
 # ── the platform follows the settings ────────────────────────────────────────
@@ -171,18 +219,66 @@ lock_state() {
   if ! is_root; then echo "ask as root"; return; fi
   if nft list table inet "$FW_TABLE" >/dev/null 2>&1; then echo "on"; else echo "NOT ON"; fi
 }
+# Write a small file of the service's own (a "drop-in"), only when it differs.
+# Sets UNITS_CHANGED=1 when systemd has to read its files again.
+UNITS_CHANGED=0
+write_dropin() {     # write_dropin FILE TEXT
+  if [ ! -f "$1" ] || [ "$(cat "$1")" != "$2" ]; then
+    install -d -m 0755 "$DROPIN_DIR"
+    printf '%s\n' "$2" > "$1.new"; chmod 0644 "$1.new"; mv -f "$1.new" "$1"
+    UNITS_CHANGED=1
+    return 0
+  fi
+  return 1
+}
+remove_dropin() {    # remove_dropin FILE
+  [ -f "$1" ] || return 1
+  rm -f "$1"; rmdir "$DROPIN_DIR" 2>/dev/null || true
+  UNITS_CHANGED=1
+}
 
+# Who decides what. The settings file belongs to the agent's own user, so
+# nothing in it may loosen what root set up: the profile root put in force
+# decides whether the dashboard is kept to this computer, and whether the
+# service may have the privilege for a port below 1024. The settings can only
+# ask for less: they can ask for the lock where the profile does not, and for
+# a port that needs no privilege. Only "open-alert-base profile <name>", run
+# by root, changes the profile.
+#
 # Sets CHANGED=1 when the service has to be restarted for it. Returns 3 when
-# the dashboard should be for this computer only and the lock could not be put on.
+# the dashboard should be for this computer only and the lock could not be put
+# on; 4 when the settings no longer match the profile in force (the stricter
+# of the two is kept).
 CHANGED=0
 sync_platform() {
-  local port bind rc=0 want
+  local port bind rc=0 want want_lock=0 may_low=1
+  adopt_settings
   load_summary || die "cannot read the agent's settings (is the package fully installed?)"
+  if [ -n "$(setting unusable)" ]; then
+    die "the agent's settings file ($(setting file)) cannot be used: $(setting unusable). Nothing was changed. Put the file right, or move it away, then run: sudo open-alert-base sync"
+  fi
   port=$(setting web.port); bind=$(setting web.bind)
   case "$port" in ''|*[!0-9]*) die "the agent's settings give no usable dashboard port" ;; esac
+  load_profile
+  if profile_locks || is_loopback "$bind"; then want_lock=1; fi
+  if [ -n "$P_NAME" ]; then
+    case "$P_PORT" in ''|*[!0-9]*) may_low=0 ;; *) if [ "$P_PORT" -ge 1024 ]; then may_low=0; fi ;; esac
+  else
+    say "No profile is recorded on this computer, so the settings file alone decides. To put one in force: sudo open-alert-base profile standard   (or: enterprise)"
+  fi
 
-  # 1. A port below 1024 needs one privilege; any other port needs none.
-  if [ "$port" -lt 1024 ]; then
+  if profile_locks && ! is_loopback "$bind"; then
+    warn "THE SETTINGS NO LONGER MATCH THE PROFILE IN FORCE ($P_NAME)."
+    warn "The profile keeps the dashboard to this computer. The settings file (which the agent's own user can write) no longer asks for that: web.bind is \"${bind:-not set}\"."
+    warn "The firewall lock is KEPT ON. If the settings were not changed on purpose, find out who changed them."
+    warn "To open the dashboard to the local network on purpose: sudo open-alert-base profile standard"
+    warn "To put the settings back as the profile has them:       sudo open-alert-base profile $P_NAME"
+    rc=4
+  fi
+
+  # 1. A port below 1024 needs one privilege; any other port needs none. The
+  #    privilege is given only where the profile in force itself uses such a port.
+  if [ "$port" -lt 1024 ] && [ "$may_low" = 1 ]; then
     want="# Written by \"open-alert-base profile\" and \"open-alert-base sync\" — do not edit; it is rewritten.
 # The dashboard's port ($port) is below 1024, which an ordinary user may not
 # open. This gives the service that one privilege (CAP_NET_BIND_SERVICE) and
@@ -190,47 +286,68 @@ sync_platform() {
 [Service]
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE"
-    if [ ! -f "$DROPIN" ] || [ "$(cat "$DROPIN")" != "$want" ]; then
-      install -d -m 0755 "$DROPIN_DIR"
-      printf '%s\n' "$want" > "$DROPIN.new"; chmod 0644 "$DROPIN.new"; mv -f "$DROPIN.new" "$DROPIN"
+    if write_dropin "$DROPIN" "$want"; then
       CHANGED=1
       say "Port $port is below 1024: the service is given the one privilege to open it (and no other)."
     fi
-  elif [ -f "$DROPIN" ]; then
-    rm -f "$DROPIN"; rmdir "$DROPIN_DIR" 2>/dev/null || true
-    CHANGED=1
-    say "Port $port needs no privilege: the service runs with none at all."
+  else
+    if [ "$port" -lt 1024 ]; then
+      warn "THE SETTINGS NO LONGER MATCH THE PROFILE IN FORCE ($P_NAME)."
+      warn "The settings file puts the dashboard on port $port, below 1024. The profile's own port is ${P_PORT:-not given} and needs no privilege, so the service is given NONE: the agent cannot open port $port (it falls back to 8080)."
+      warn "For a port below 1024: sudo open-alert-base profile standard. Otherwise choose a port from 1024 up."
+      rc=4
+    fi
+    if remove_dropin "$DROPIN"; then
+      CHANGED=1
+      if [ "$port" -ge 1024 ]; then say "Port $port needs no privilege: the service runs with none at all."; fi
+    fi
   fi
-  if [ "$CHANGED" = 1 ] && have_systemd; then systemctl daemon-reload; fi
 
   # 2. "For this computer only" is kept by a firewall rule (RPi ALERT before
-  #    0.24 listens on every address whatever its settings say).
-  if is_loopback "$bind"; then
+  #    0.24 listens on every address whatever its settings say), and the agent
+  #    is tied to it: it runs only while the lock's service does.
+  if [ "$want_lock" = 1 ]; then
+    want="# Written by \"open-alert-base profile\" and \"open-alert-base sync\" — do not edit; it is rewritten.
+# The dashboard is for this computer only, and the firewall lock is what keeps
+# it so. The agent runs only while the lock's service does: no lock, no agent.
+[Unit]
+BindsTo=$FW_UNIT
+After=$FW_UNIT"
+    write_dropin "$LOCK_DROPIN" "$want" || true
+    if [ "$UNITS_CHANGED" = 1 ] && have_systemd; then systemctl daemon-reload; UNITS_CHANGED=0; fi
     if ! grep -Eq "^define dashboard_port = $port\$" "$FW_RULES" 2>/dev/null; then
-      warn "the dashboard is on port $port, and $FW_RULES names another: change its \"define dashboard_port\" line to $port"
+      warn "the dashboard is on port $port, and $FW_RULES names another: change its \"define dashboard_port\" line to $port, then run this again"
     fi
     unit_enable "$FW_UNIT" || warn "could not set the firewall lock to load at start-up"
     if ! command -v nft >/dev/null 2>&1; then
-      warn "THE DASHBOARD IS NOT YET KEPT TO THIS COMPUTER: nftables is not installed."
-      warn "Other computers can still open it on port $port: they can look without a password, and need its password to change anything."
-      warn "Install it (apt install nftables), then run: open-alert-base sync"
+      warn "THE DASHBOARD'S LOCK CANNOT BE PUT ON: nftables is not installed."
+      warn "The agent is not started without it (no lock, no agent). Install it (apt install nftables), then run: sudo open-alert-base sync"
       rc=3
     elif have_systemd; then
-      if systemctl restart "$FW_UNIT" && nft list table inet "$FW_TABLE" >/dev/null 2>&1; then
-        say "Firewall lock on: only this computer can reach the dashboard (port $port)."
+      # Running already: load the rules again in place (the agent is not disturbed). Otherwise start it.
+      if { if systemctl is-active --quiet "$FW_UNIT"; then systemctl reload "$FW_UNIT"; else systemctl restart "$FW_UNIT"; fi; } \
+         && nft list table inet "$FW_TABLE" >/dev/null 2>&1; then
+        say "Firewall lock on: only this computer can reach the dashboard (port $port). The agent runs only while it holds."
       else
-        warn "THE DASHBOARD IS NOT YET KEPT TO THIS COMPUTER: the firewall rules could not be loaded."
-        warn "Other computers can still open it on port $port: they can look without a password, and need its password to change anything."
-        warn "See: systemctl status $FW_UNIT"
+        warn "THE DASHBOARD'S LOCK COULD NOT BE PUT ON: the firewall rules do not load."
+        warn "The agent is not started without it (no lock, no agent). See: systemctl status $FW_UNIT"
+        warn "When it is put right: sudo open-alert-base sync"
         rc=3
       fi
     else
-      say "Firewall lock: set to load when the computer starts (systemd is not running here, so not loaded now)."
+      say "Firewall lock: set to load when the computer starts, with the agent tied to it (systemd is not running here, so not loaded now)."
     fi
   else
+    # Untie the agent first, so that taking the lock off does not stop it.
+    remove_dropin "$LOCK_DROPIN" || true
+    if [ "$UNITS_CHANGED" = 1 ] && have_systemd; then systemctl daemon-reload; UNITS_CHANGED=0; fi
     unit_disable "$FW_UNIT"
-    if have_systemd && systemctl is-active --quiet "$FW_UNIT"; then systemctl stop "$FW_UNIT" || true; fi
+    if have_systemd && { systemctl is-active --quiet "$FW_UNIT" || systemctl is-failed --quiet "$FW_UNIT"; }; then
+      systemctl stop "$FW_UNIT" || true; systemctl reset-failed "$FW_UNIT" 2>/dev/null || true
+    fi
+    if [ -x "$KEEPER" ]; then "$KEEPER" --remove || true; fi
   fi
+  if [ "$UNITS_CHANGED" = 1 ] && have_systemd; then systemctl daemon-reload; UNITS_CHANGED=0; fi
   return "$rc"
 }
 
@@ -238,10 +355,13 @@ cmd_sync() {
   need_root sync
   local rc=0
   sync_platform || rc=$?
-  if [ "$CHANGED" = 1 ] && have_systemd && systemctl is-active --quiet "$UNIT"; then
+  if [ "$rc" != 3 ] && [ "$CHANGED" = 1 ] && have_systemd && systemctl is-active --quiet "$UNIT"; then
     systemctl restart "$UNIT"; say "Service restarted."
   fi
-  [ "$rc" != 0 ] || say "The service and the firewall lock match the settings."
+  case "$rc" in
+    0) say "The service and the firewall lock match the profile and the settings." ;;
+    4) warn "sync: the stricter of the two was kept (see above); nothing was loosened" ;;
+  esac
   return "$rc"
 }
 
@@ -271,6 +391,7 @@ cmd_profile() {
   # The agent writes its settings file from memory when a setting changes, so
   # it is stopped while the file is changed underneath it.
   if have_systemd && systemctl is-active --quiet "$UNIT"; then was_active=1; systemctl stop "$UNIT"; fi
+  adopt_settings
   if ! as_agent "$NODE" "$LIB/settings.js" apply "$file"; then
     if [ "$was_active" = 1 ]; then systemctl start "$UNIT" || true; fi
     die "the profile \"$name\" was not put in force"
@@ -278,8 +399,15 @@ cmd_profile() {
   install -d -m 0755 "$ETC"
   printf '%s\n' "$name" > "$ETC/profile.new"; chmod 0644 "$ETC/profile.new"; mv -f "$ETC/profile.new" "$ETC/profile"
   sync_platform || rc=$?
-  if [ "$was_active" = 1 ]; then systemctl start "$UNIT"; say "Service restarted."; fi
-  if [ "$rc" = 0 ]; then say "Profile \"$name\" is in force."; else warn "profile \"$name\": the settings are in force, the firewall lock is not (see above)"; fi
+  if [ "$was_active" = 1 ]; then
+    if [ "$rc" = 3 ]; then warn "the service is NOT started again: in this profile the agent runs only behind the firewall lock"
+    else systemctl start "$UNIT"; say "Service restarted."; fi
+  fi
+  case "$rc" in
+    0) say "Profile \"$name\" is in force." ;;
+    3) warn "profile \"$name\": the settings are in force, the firewall lock is not (see above)" ;;
+    *) warn "profile \"$name\": the settings are in force, with the warnings above" ;;
+  esac
   return "$rc"
 }
 
@@ -398,6 +526,11 @@ cmd_audit() {
   else
     say "    Privileges: none at all (CapabilityBoundingSet and AmbientCapabilities are empty)."
   fi
+  if [ -f "$LOCK_DROPIN" ]; then
+    say "    Tied to the firewall lock: yes — $LOCK_DROPIN makes the service run only while $FW_UNIT does (no lock, no agent)."
+  else
+    say "    Tied to the firewall lock: no (this profile does not use the lock)."
+  fi
   say "    Not set: MemoryDenyWriteExecute — Node.js makes machine code as it runs and needs such memory."
   pid=$(agent_pid)
   if [ -n "$pid" ] && [ -r "/proc/$pid/status" ]; then
@@ -430,19 +563,40 @@ cmd_audit() {
   say "    profile in force: $(current_profile)"
   if is_root && load_summary; then
     port=$(setting web.port); bind=$(setting web.bind); remote=$(setting remote.mode)
-    [ -z "$(setting problems)" ] || say "    SETTINGS FILE PROBLEM: $(setting problems)"
+    load_profile
+    if [ -n "$(setting unusable)" ]; then
+      say "    FAULT — THE SETTINGS FILE CANNOT BE USED: $(setting unusable). The agent runs on its built-in settings, and what follows is those."
+    elif [ -n "$(setting problems)" ]; then
+      say "    SETTINGS FILE PROBLEM: $(setting problems)"
+    fi
+    if profile_locks && ! is_loopback "$bind"; then
+      say "    FAULT — THE SETTINGS NO LONGER MATCH THE PROFILE: \"$P_NAME\" keeps the dashboard to this computer, and the settings file"
+      say "      (which the agent's own user can write) no longer asks for that: web.bind is \"${bind:-not set}\". The firewall lock is kept on all the same."
+      say "      If nobody changed it on purpose, find out who did. To put it back: sudo open-alert-base profile $P_NAME"
+    fi
+    if [ -n "$P_NAME" ] && [ "$port" -lt 1024 ] 2>/dev/null && [ "${P_PORT:-0}" -ge 1024 ] 2>/dev/null; then
+      say "    FAULT — THE SETTINGS NO LONGER MATCH THE PROFILE: the settings put the dashboard on port $port (below 1024); \"$P_NAME\" uses port $P_PORT,"
+      say "      and gives the service no privilege for a low port. None is given."
+    fi
+    [ -n "$P_NAME" ] || say "    no profile is recorded, so the settings file alone decides the lock and the low-port privilege"
     say "    dashboard port          $port, plain HTTP, password $(setting web.password)"
-    if is_loopback "$bind"; then
+    if is_loopback "$bind" || profile_locks; then
       # Said from what is so at this moment, not from what the settings ask for.
       lock=$(lock_state)
       case "$lock:$(reach_of "$uid")" in
         on:*)  say "    dashboard reach         this computer only — the firewall lock is on" ;;
         *:no)  say "    dashboard reach         this computer only — the agent listens on this computer's own address only; the firewall lock, the second lock, is $lock" ;;
-        *:yes) say "    dashboard reach         NOT KEPT TO THIS COMPUTER — the settings ask for it, but this agent listens on every address (see 4) and the firewall lock is $lock" ;;
+        *:yes) say "    dashboard reach         NOT KEPT TO THIS COMPUTER — it should be, but this agent listens on every address (see 4) and the firewall lock is $lock" ;;
         *)     say "    dashboard reach         meant for this computer only; the agent is not running and the firewall lock is $lock, so that cannot be confirmed now" ;;
       esac
-      say "    web.bind                $bind — RPi ALERT takes notice of this setting from 0.24; this one is $(agent_version)"
+      say "    web.bind                ${bind:-not set} — RPi ALERT takes notice of this setting from 0.24; this one is $(agent_version)"
       say "    firewall lock           $lock  (table inet $FW_TABLE; $FW_UNIT)"
+      if have_systemd; then
+        case "$(systemctl is-active "$FW_UNIT" 2>/dev/null || true)" in
+          active) say "    the lock's keeper       running — it puts the table back at once if something clears the firewall, and the agent runs only while it does" ;;
+          *)      say "    the lock's keeper       NOT RUNNING ($(systemctl is-active "$FW_UNIT" 2>/dev/null || true)) — see: systemctl status $FW_UNIT" ;;
+        esac
+      fi
     else
       say "    dashboard reach         the local network (every address of this computer)"
       say "                            from another computer, looking needs no password; changing anything needs the dashboard's password"
@@ -499,7 +653,13 @@ cmd_audit() {
   say "7. Parts of RPi ALERT's Raspberry Pi installer that this package does not install"
   absent "root helper and its sudo rule" /etc/sudoers.d/rpi-alert
   absent "the \"alert\" maintenance account's sudo rule" /etc/sudoers.d/rpi-alert-maint
-  if id alert >/dev/null 2>&1; then say "    PRESENT  a user called \"alert\" exists on this computer — not from this package"; else say "    absent   the \"alert\" maintenance account"; fi
+  if id alert >/dev/null 2>&1; then say "    PRESENT  a user called \"alert\" exists on this computer — not from this package (to remove it: sudo userdel -r alert)"; else say "    absent   the \"alert\" maintenance account"; fi
+  if id rpi-alert-kiosk >/dev/null 2>&1; then say "    PRESENT  a user called \"rpi-alert-kiosk\" exists on this computer — not from this package (to remove it: sudo userdel -r rpi-alert-kiosk)"; else say "    absent   the screen's own account"; fi
+  if id -nG "$SVC_USER" 2>/dev/null | tr ' ' '\n' | grep -Eqx 'audio|video'; then
+    say "    PRESENT  the agent's user is in the sound or video group ($(id -nG "$SVC_USER" | tr ' ' '\n' | grep -Ex 'audio|video' | tr '\n' ' ' | sed 's/ $//')) — not from this package (to take it out: sudo gpasswd -d $SVC_USER audio)"
+  else
+    say "    absent   the agent's user in the sound and video groups"
+  fi
   absent "hourly SSH-key fetch" /etc/systemd/system/rpi-alert-access.timer
   absent "self-updater" /etc/systemd/system/rpi-alert-update.service
   absent "nightly update timer" /etc/systemd/system/rpi-alert-update-auto.timer

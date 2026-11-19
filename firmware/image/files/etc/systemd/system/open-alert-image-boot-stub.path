@@ -1,0 +1,14 @@
+# open-ALERT base station image: notice at once when the small boot file on
+# the EFI partition is written (a GRUB or shim update does), and have
+# open-alert-image-boot-stub.service put the image's own back.
+
+[Unit]
+Description=open-ALERT base station image: watch the small boot file on the EFI partition
+
+[Path]
+PathChanged=/boot/efi/EFI/debian/grub.cfg
+PathChanged=/boot/efi/EFI/BOOT/grub.cfg
+Unit=open-alert-image-boot-stub.service
+
+[Install]
+WantedBy=paths.target

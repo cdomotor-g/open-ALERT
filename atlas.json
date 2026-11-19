@@ -27,7 +27,7 @@
       "Check the review's prices and links by hand in a browser (Core Electronics, PB Tech, element14, Arrow, Toradex direct): the links matter more than the figures",
       "Ask Lenovo for the ThinkEdge SE10n Gen2's Ubuntu certificate and which release it covers, and what its 0.7 m/s air-flow rating means in a closed cabinet; ask Moxa or its seller whether Moxa Industrial Linux 4 Secure takes Node.js and rtl-sdr from Debian's packages",
       "Switch on private vulnerability reporting in this repository's and RPi ALERT's settings, and confirm or change the support period in docs/security/support.md",
-      "Review and release the RPi ALERT settings a managed network needs (docs/hardware-review/wip), then move firmware/PIN to that release",
+      "Move firmware/PIN to RPi ALERT 0.24.0, the release with the settings a managed network needs (reviewed twice and being released on 19 November 2026)",
       "Check what is still marked est. with suppliers: the mating Bulgin lead, the earth kit, the 18 Ah battery, delivery from shops that price it only at checkout",
       "Point the Quansheng V3 entry at quansheng_alert_ALL's browser installer",
       "Re-check the FW-LAB entry: Flood-Net's runbook says to retire and archive it",

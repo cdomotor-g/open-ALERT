@@ -10,7 +10,11 @@
 
 # ── A web proxy ──────────────────────────────────────────────────────────────
 # If this computer reaches the internet only through a web proxy, name it here.
-# Readings then go to Flood-Net through it.
+# Readings then go to Flood-Net through it, and never around it: if the
+# address below cannot be used (a slip in it; a kind of proxy that is not a
+# web proxy, such as socks5://), the agent still runs and keeps what it hears,
+# but sends nothing, and says why in its log (journalctl -u open-alert-base).
+# An address without "http://" in front is taken as http://.
 #HTTPS_PROXY=http://proxy.example.internal:3128
 # Addresses that must NOT go through the proxy, separated by commas.
 #NO_PROXY=localhost,127.0.0.1

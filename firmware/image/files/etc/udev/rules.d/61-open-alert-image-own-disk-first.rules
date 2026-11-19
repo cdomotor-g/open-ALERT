@@ -1,0 +1,19 @@
+# open-ALERT base station image: when two disks carry the same identifier, the
+# names that stand for it (/dev/disk/by-uuid/…, by-partuuid/…, by-label/…)
+# point to the one that is not on USB.
+#
+# Linux is told its main partition by its identifier (root=UUID=… on the
+# kernel's start-up line), and the start-up file system (initramfs) checks and
+# mounts whatever /dev/disk/by-uuid/… points to at that moment. Every disk made
+# from the image carries the same identifier, and among equals udev points the
+# name to the disk it saw last: a USB stick made from the image, found a moment
+# after the computer's own disk, would have been checked and mounted in its
+# place. (It would not have been started: the image's check in the start-up
+# file system refuses to go on while two disks carry the main partition. But
+# its file system would have been read.) With this, a disk on USB gives way to
+# one that is not; a disk that is the only one with its identifier is named as
+# before, wherever it is.
+#
+# Copied into the start-up file system as well (Debian's initramfs takes the
+# rules in /etc/udev/rules.d with it), where it matters most.
+SUBSYSTEM=="block", ACTION!="remove", SUBSYSTEMS=="usb", OPTIONS+="link_priority=-50"

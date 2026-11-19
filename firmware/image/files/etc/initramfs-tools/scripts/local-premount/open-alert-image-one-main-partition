@@ -1,0 +1,93 @@
+#!/bin/sh
+# open-ALERT base station image: start Linux only from this computer's own
+# main partition, never from another disk that carries the same identifier.
+#
+# The kernel is told which partition holds the system by its identifier
+# (root=UUID=… in the boot menu). Every disk made from the image carries that
+# same identifier, so with a USB stick made from the image plugged in, the
+# start-up file system could take the stick's partition for the computer's own
+# and start whatever system is on the stick, as administrator, with no
+# account. This refuses to go on while more than one disk carries it: it says
+# so on the screen and the serial port, and restarts the computer 30 seconds
+# later. Once the stick is out, the computer starts as usual.
+#
+# Run twice in the start-up file system (the "initramfs"), which the kernel
+# loads from this computer's own disk: just before the main partition is
+# mounted (scripts/local-premount), and once more just after
+# (scripts/local-bottom). The second time, when the partition that was
+# mounted is on a USB disk, it waits five seconds more first, so that a
+# computer's own disk that is slow to appear is seen as well.
+#
+# Only the start-up file system's own small tools are used here: no grep, no sed.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "${1:-}" in prereqs) prereqs; exit 0 ;; esac
+
+# shellcheck disable=SC1091  # the start-up file system's own functions (panic)
+. /scripts/functions
+
+AGAIN=0
+[ "${1:-}" = again ] && AGAIN=1
+
+uuid=''
+# shellcheck disable=SC2013  # the kernel's start-up line is one line of words
+for x in $(cat /proc/cmdline); do
+	case "$x" in root=UUID=*) uuid="${x#root=UUID=}" ;; esac
+done
+# Linux was not started by the image's own menu entry (with the menu closed,
+# nobody can start it another way): there is nothing to hold it against.
+[ -n "$uuid" ] || exit 0
+
+if [ "$AGAIN" = 1 ]; then
+	# Which disk the main partition was mounted from: its device number, as
+	# the kernel lists the mounts ($ROOT may be a name that points elsewhere
+	# by now), then where that device sits.
+	majmin=''
+	while read -r _ _ mm _ mnt _; do
+		[ "$mnt" = "${rootmnt:-/root}" ] && majmin=$mm
+	done < /proc/self/mountinfo
+	if [ -n "$majmin" ]; then
+		case "$(readlink -f "/sys/dev/block/$majmin" 2>/dev/null)" in
+			*/usb*) sleep 5 ;;
+		esac
+	fi
+fi
+
+# Every disk and partition the kernel has found so far, each read for itself
+# ("blkid -p" reads the disk, not a list kept by udev, which holds one name
+# for an identifier however many disks carry it).
+udevadm settle --timeout=10 >/dev/null 2>&1 || true
+found=''
+n=0
+for s in /sys/class/block/*; do
+	name=${s##*/}
+	[ -b "/dev/$name" ] || continue
+	u=$(blkid -p -s UUID -o value "/dev/$name" 2>/dev/null) || continue
+	[ "$u" = "$uuid" ] || continue
+	found="$found /dev/$name"
+	n=$((n + 1))
+done
+
+if [ "$n" = 0 ]; then
+	echo "open-alert-image: could not count the disks that carry the main partition (identifier $uuid): blkid found none. Going on."
+	exit 0
+fi
+[ "$n" -gt 1 ] || exit 0
+
+when='before the main partition was mounted'
+[ "$AGAIN" = 1 ] && when='after the main partition was mounted'
+msg="open-alert-image: NOT STARTING. $n disks carry this computer's main partition (identifier $uuid, seen $when):$found. A USB stick or another disk made from the same image is plugged in, and Linux could start from it in place of this computer's own disk. Unplug it: the computer restarts by itself and then starts as usual."
+# On the screen as well as the serial port: the kernel's own log goes to both.
+echo "<2>$msg" > /dev/kmsg 2>/dev/null || true
+# With "panic=" on the kernel's start-up line (the image puts it there), the
+# start-up file system's own panic restarts the computer and never offers a
+# prompt. Without it, it would offer a prompt as administrator: so it is not
+# called then, and the computer is restarted from here.
+if [ -n "${panic:-}" ]; then
+	panic "$msg"
+fi
+echo "$msg"
+echo "Restarting in 30 seconds."
+sleep 30
+reboot -f
+exit 1

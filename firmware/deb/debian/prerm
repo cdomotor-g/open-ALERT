@@ -11,6 +11,10 @@ case "${1:-}" in
         else systemctl stop "$u" >/dev/null 2>&1 || true; fi
       done
     fi
+    # The agent is stopped: the dashboard's firewall table can go (stopping the
+    # lock's service leaves it in place on purpose).
+    if [ -x /usr/lib/open-alert-base/lock-keeper ]; then /usr/lib/open-alert-base/lock-keeper --remove >/dev/null 2>&1 || true; fi
+    rm -rf /run/open-alert-base
     ;;
 esac
 exit 0

@@ -16,8 +16,14 @@
 #   --lintian     also run Debian's package checker, if it is installed (its findings are shown, not fatal)
 #
 # Built twice from the same pin and the same files, it gives the same .deb,
-# byte for byte (file times are set to the newest file time in the release).
+# byte for byte, whatever computer, user or kind of disk it is built on: file
+# times are set to the newest file time in the release, modes and owners are
+# set here, and the installed size is worked out from the files' own lengths.
 set -euo pipefail
+# Folders and files made here are readable by everybody and writable by the
+# builder alone, whatever the builder has set for themselves (dpkg-deb refuses
+# a control folder that others cannot read).
+umask 022
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIRMWARE="$(dirname "$HERE")"
@@ -111,14 +117,20 @@ gzip -9n < "$HERE/changelog" > "$DOC/changelog.gz"
 find "$STAGE" -type d -exec chmod 0755 {} +
 find "$STAGE" -type f -perm /0111 -exec chmod 0755 {} +
 find "$STAGE" -type f ! -perm /0111 -exec chmod 0644 {} +
-chmod 0755 "$STAGE/usr/bin/open-alert-base" "$STAGE/usr/bin/rpi-alert" "$STAGE/usr/lib/open-alert-base/start"
-chmod 0644 "$STAGE/usr/lib/open-alert-base/settings.js" "$STAGE/usr/lib/open-alert-base/proxy-preload.js"
+chmod 0755 "$STAGE/usr/bin/open-alert-base" "$STAGE/usr/bin/rpi-alert" "$STAGE/usr/lib/open-alert-base/start" "$STAGE/usr/lib/open-alert-base/lock-keeper"
+chmod 0644 "$STAGE/usr/lib/open-alert-base/settings.js" "$STAGE/usr/lib/open-alert-base/proxy-preload.js" "$STAGE/usr/lib/open-alert-base/adopt-settings.js"
 # It may come to hold a proxy's user name and password: root only.
 chmod 0640 "$STAGE/etc/open-alert-base/env"
 
 # ── 7. the control files ─────────────────────────────────────────────────────
 mkdir -p "$STAGE/DEBIAN"
-SIZE_KB=$(du -sk --exclude=DEBIAN "$STAGE" | awk '{print $1}')
+chmod 0755 "$STAGE/DEBIAN"
+# The installed size, the way Debian's own tools count it: each file and link
+# rounded up to a whole kilobyte, and one kilobyte for each folder. (Not what
+# "du" says: that is the space taken on the build computer's own disk, which
+# differs from one kind of file system to the next, and with it the package.)
+SIZE_KB=$(find "$STAGE" -mindepth 1 -path "$STAGE/DEBIAN" -prune -o -printf '%y %s\n' \
+  | awk '{ if ($1 == "f" || $1 == "l") n += int(($2 + 1023) / 1024); else n += 1 } END { print n + 0 }')
 sed "s/@VERSION@/$VERSION/g; s/@TAG@/$TAG/g; s/@INSTALLED_SIZE@/$SIZE_KB/g" "$HERE/control.in" > "$STAGE/DEBIAN/control"
 cp "$HERE/debian/conffiles" "$STAGE/DEBIAN/conffiles"
 for s in preinst postinst prerm postrm; do install -m 0755 "$HERE/debian/$s" "$STAGE/DEBIAN/$s"; done

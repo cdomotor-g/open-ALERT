@@ -9,12 +9,17 @@
 # The same file builds for linux/amd64 and linux/arm64 (add --platform): it
 # holds no compiled code of its own, only Debian's packages for each.
 #
-# Pinning the base image. A tag such as debian:trixie-slim moves each time Debian
-# publishes an update. To build from exactly one version of it, give its digest:
+# The base image. A tag such as debian:trixie-slim moves each time Debian
+# publishes an update, so by name alone nobody can say later which Debian a
+# container was built on. To build from exactly one version of it, give its
+# digest (its exact identifier):
 #   docker buildx imagetools inspect debian:trixie-slim      # shows "Digest: sha256:…"
-#   docker build --build-arg BASE_IMAGE=debian:trixie-slim@sha256:<that digest> …
-# Refresh it the same way when you want Debian's newer fixes (then run
-# firmware/test/container.sh again).
+#   firmware/container/build.sh --base-image debian:trixie-slim@sha256:<that digest>
+# The image then says which base it was built on, in its labels
+# (org.opencontainers.image.base.name and .base.digest). The automatic build
+# does this for every container it publishes: it looks the digest up once, as
+# Debian has it at that moment, builds both kinds of processor from that one
+# base, and writes it in the release notes.
 #
 # Building without the network. The release is downloaded from GitHub and
 # checked in the "fetch" step. To use two files you already hold, give the
@@ -54,6 +59,8 @@ ARG BASE_IMAGE
 ARG OA_VERSION=0.0.0
 ARG OA_REVISION=unknown
 ARG OA_CREATED=unknown
+# The base image's digest, when the build was given one (empty otherwise).
+ARG OA_BASE_DIGEST=""
 LABEL org.opencontainers.image.title="open-alert-base" \
       org.opencontainers.image.description="An open-ALERT flood-warning base station: the RPi ALERT agent (signed release, unchanged) that receives ALERT and ALERT2 radio telemetry on RTL-SDR USB sticks and sends it to Flood-Net over outbound HTTPS. Runs as an ordinary user, with no privileges." \
       org.opencontainers.image.source="https://github.com/cdomotor-g/open-ALERT" \
@@ -64,7 +71,8 @@ LABEL org.opencontainers.image.title="open-alert-base" \
       org.opencontainers.image.version="${OA_VERSION}" \
       org.opencontainers.image.revision="${OA_REVISION}" \
       org.opencontainers.image.created="${OA_CREATED}" \
-      org.opencontainers.image.base.name="${BASE_IMAGE}"
+      org.opencontainers.image.base.name="${BASE_IMAGE}" \
+      org.opencontainers.image.base.digest="${OA_BASE_DIGEST}"
 
 # (The last line takes the set-user-id bit off the few programs that carry it,
 # su and mount among them. The container runs with no-new-privileges, which

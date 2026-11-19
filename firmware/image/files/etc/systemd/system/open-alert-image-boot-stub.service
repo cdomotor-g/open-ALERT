@@ -1,0 +1,33 @@
+# open-ALERT base station image: keep the image's own small boot file on the
+# EFI partition (EFI/debian/grub.cfg), the one that sends GRUB to the main
+# partition of the disk GRUB was started from and to no other disk.
+#
+# A GRUB or shim update runs Debian's "grub-install", which writes Debian's own
+# version of that file: it takes the first disk carrying the main partition's
+# identifier, and a USB stick made from the same image carries it too. This
+# puts the image's own back. It is run at every start and, through
+# open-alert-image-boot-stub.path, each time the file is written. The script
+# says more (/usr/lib/open-alert-image/boot-stub).
+
+[Unit]
+Description=open-ALERT base station image: keep GRUB's menu on this disk (the small boot file on the EFI partition)
+RequiresMountsFor=/boot/efi
+ConditionPathIsMountPoint=/boot/efi
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/lib/open-alert-image/boot-stub
+# It writes the EFI partition and nothing else.
+ProtectSystem=strict
+ReadWritePaths=/boot/efi
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

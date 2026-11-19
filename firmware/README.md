@@ -2,7 +2,9 @@
 
 **First version, 11 November 2026. Tested with stand-ins for the radio sticks only — see
 [What has been tested, and where](#what-has-been-tested-and-where). Not reviewed by a second
-person, and not released.**
+person, and not released.** Two automated reviews (one for security, one for correctness) read
+it and tried it on 18 November 2026; what they found, and what was done about each point, is in
+[After the two reviews](#after-the-two-reviews-18-november-2026).
 
 [RPi ALERT](https://github.com/cdomotor-g/RPi_ALERT) is the program a base station runs: it
 listens to ALERT and ALERT2 flood-warning radio telemetry on RTL-SDR USB sticks, decodes it, and
@@ -23,7 +25,7 @@ Why this exists, and which computers were looked at, is in the
 |---|---|---|
 | A native package, `open-alert-base` | Any Debian 13 or Ubuntu 24.04 computer, an ordinary 64-bit PC or a 64-bit ARM board | `deb/` — described on this page |
 | A hardened container | Toradex's Torizon OS, and any computer that runs containers | `container/` — described under [The container](#the-container) |
-| Ready-to-flash disk images | A computer that is to be a base station and nothing else | `image/` — its section is added when that part is finished |
+| A ready-to-flash disk image | A computer that is to be a base station and nothing else | `image/` — described under [The disk image](#the-disk-image) |
 
 All three start from the same checked release (`PIN`, `keys/`, `lib/`).
 
@@ -38,7 +40,9 @@ All three start from the same checked release (`PIN`, `keys/`, `lib/`).
 | `deb/` | Builds the native package |
 | `test/lib.sh`, `test/deb.sh` | The checks for the release check and for the native package |
 | `container/`, `test/container.sh` | The container (its image recipe, its compose files, the one-time set-up of the computer it runs on) and its checks |
+| `image/`, `test/image.sh` | The disk image (its build script, its lists of packages, the first set-up files) and the check that starts it in a virtual machine |
 | `bench/` | A benchmark: how many channels a computer will carry (it has its own notes) |
+| `../.github/workflows/firmware.yml` | The automatic build: see [How it is built and checked automatically](#how-it-is-built-and-checked-automatically) |
 | `../dist/` | Where builds and test logs go. Not kept in git |
 
 ## The pin: which release is shipped, and how it is checked
@@ -61,6 +65,10 @@ ALERT signs each release with an Ed25519 key, and this repository keeps the publ
 4. The file holds only plain files and folders, all inside one folder named after the release:
    no links, nothing that climbs out with `..`, nothing set to run as another user.
 5. The agent inside says it is the version the pin names.
+
+The two files are first copied into a folder of the script's own that nobody else can write,
+and every check and the unpacking are done on those copies, so what is unpacked is the very
+file that was checked.
 
 ```
 firmware/lib/fetch-agent.sh --verify-only                      # download, check, unpack nothing
@@ -98,18 +106,21 @@ firmware/deb/build-deb.sh --tarball F --sig S            # uses two files alread
 
 It needs `dpkg-deb`, `tar`, `gzip`, either OpenSSL 3 or Node.js, and `curl` for the download;
 no compiler. The result is
-`dist/open-alert-base_0.23.1+oa1_all.deb`, about 2.4 MB. The version is the agent's version,
-then `+oa` and this layer's own revision. `all` means one file for every kind of processor: the
+`dist/open-alert-base_0.23.1+oa2_all.deb`, about 2.4 MB. The version is the agent's version,
+then `+oa` and this layer's own revision (2: the `0.23.1+oa1` that earlier snapshots of this
+folder built was never released, and differs from it). `all` means one file for every kind of processor: the
 package is JavaScript and shell scripts. Built twice from the same files it is the same file,
-byte for byte. After packing, the script unpacks its own result and compares every agent file
-with the release again.
+byte for byte, whatever kind of disk it is built on and whatever file mask the builder has
+(the installed size it records is worked out from the files' own lengths, as Debian's tools
+count it, not from the space they take on the build computer's disk). After packing, the
+script unpacks its own result and compares every agent file with the release again.
 
 ### Installing it
 
 On Debian 13 or Ubuntu 24.04, as the administrator:
 
 ```
-sudo apt install ./open-alert-base_0.23.1+oa1_all.deb
+sudo apt install ./open-alert-base_0.23.1+oa2_all.deb
 rpi-alert setup                    # the Flood-Net token, a name, where the base station is
 open-alert-base status
 ```
@@ -118,15 +129,32 @@ open-alert-base status
 `rtl-sdr`, `ca-certificates`, `adduser`, and `nftables` (recommended: the enterprise profile's
 firewall lock uses it). Nothing comes from npm or from anywhere else.
 
+**On Ubuntu 24.04**, `nodejs` (18.19) and `rtl-sdr` are in the *universe* part of Ubuntu's
+archive, which must be switched on, or the install stops for want of them. Node.js 18 is no
+longer looked after by its own makers (since 30 April 2025), and Ubuntu gives universe packages
+security fixes only through its paid Ubuntu Pro. A security reviewer will rightly ask about it.
+Debian 13, with Node.js 20 in its main archive, is the better target where there is a choice,
+and the better one for the enterprise profile.
+
 To start locked down from the first moment, name the profile at install:
 
 ```
-sudo OPEN_ALERT_BASE_PROFILE=enterprise apt install ./open-alert-base_0.23.1+oa1_all.deb
+sudo OPEN_ALERT_BASE_PROFILE=enterprise apt install ./open-alert-base_0.23.1+oa2_all.deb
 ```
+
+The same works on a computer that already has settings (the package removed and installed
+again, say): when the profile named is not the one in force, it is put in force over them, and
+the install says so. A profile changes only the settings it names; the Flood-Net token, the
+name and the channels stay.
 
 The package refuses, with a plain message, to install on a computer where RPi ALERT's own
 installer has been used (`/opt/rpi-alert` or an `rpi-alert.service` is there): both would run
-the same agent on the same settings. It says how to remove the other one first.
+the same agent on the same settings. It says how to remove the other one first, and that RPi
+ALERT's own `install.sh --uninstall` leaves three things behind which this package does not
+want: the `alert` maintenance account (it can log in), the screen's account `rpi-alert-kiosk`,
+and the agent's user in the `audio` and `video` groups. The message gives the commands that
+remove them (`userdel -r alert`, `userdel -r rpi-alert-kiosk`, `gpasswd -d rpi-alert audio`,
+the same for `video`), and `sudo open-alert-base audit` lists any of them that are still there.
 
 Debian 12 is not a target. The package installs there and its checks pass, with one real
 limit: Debian 12's `rtl-sdr` is too old to know the RTL-SDR Blog V4 stick (see the table below).
@@ -140,11 +168,11 @@ limit: Debian 12's `rtl-sdr` is too old to know the RTL-SDR Blog V4 stick (see t
 | `/usr/bin/rpi-alert` | RPi ALERT's own command, under the name its documentation uses |
 | `/usr/bin/open-alert-base` | This layer's command (below) |
 | `/usr/lib/systemd/system/open-alert-base.service` | The service |
-| `/usr/lib/systemd/system/open-alert-base-firewall.service`, `/etc/open-alert-base/dashboard-local-only.nft` | The enterprise profile's firewall lock |
+| `/usr/lib/systemd/system/open-alert-base-firewall.service`, `/etc/open-alert-base/dashboard-local-only.nft`, `/usr/lib/open-alert-base/lock-keeper` | The enterprise profile's firewall lock, and the small program that keeps it in place |
 | `/etc/open-alert-base/env` | Where a web proxy is named (readable by root only: it may hold a proxy's password) |
 | `/usr/lib/udev/rules.d/60-open-alert-base.rules` | Lets the agent's user open RTL-SDR sticks (USB ids `0bda:2832` and `0bda:2838`, as in RPi ALERT's own rule) |
 | `/usr/lib/modprobe.d/open-alert-base-blacklist-dvb.conf` | Keeps the kernel's digital-TV drivers off the sticks (the five names in RPi ALERT's own list) |
-| `/usr/lib/modules-load.d/open-alert-base.conf` | Loads the two USB serial drivers when the computer starts, for serial receivers |
+| `/usr/lib/modules-load.d/open-alert-base.conf` | Loads the two USB serial drivers when the computer starts, for serial receivers (the install loads them at once as well, so a receiver works before the first restart) |
 | `/usr/share/doc/open-alert-base/` | A README for whoever looks after the computer, the licence, the change log |
 
 The agent keeps its own usual places, so its command and its documentation stay true:
@@ -161,11 +189,11 @@ service file tells it to run the agent as the user `rpi-alert` with these limits
 |---|---|
 | No root helper | RPi ALERT on a Pi can ask the administrator account (root) to reboot, change networks, update itself and change SSH, through a helper program. Here the agent is pointed at a helper that does not exist (`RPI_ALERT_PRIV` names a path where nothing is), so it can ask root for nothing |
 | `NoNewPrivileges` | It can never gain a right it did not start with: `sudo` and set-user-id programs do nothing for it |
-| No capabilities | A *capability* is one named piece of root's power. The service has none — or exactly one, `CAP_NET_BIND_SERVICE`, when the dashboard is on a port below 1024 (see the profiles) |
+| No capabilities | A *capability* is one named piece of root's power. The service has none — or exactly one, `CAP_NET_BIND_SERVICE`, when the profile in force puts the dashboard on a port below 1024 (see the profiles) |
 | `ProtectSystem=strict` | The whole disk is read-only to it, except its two folders |
 | `ProtectHome`, `PrivateTmp`, `PrivateMounts`, `ProtectProc=invisible` | It cannot see people's home folders, has a `/tmp` of its own and its own view of what is mounted, and cannot see other users' programs |
 | `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectKernelLogs`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname` | It cannot change kernel settings, load drivers, read the kernel log, or set the clock or the computer's name |
-| `DevicePolicy=closed` with three `DeviceAllow` lines | Of the computer's devices it may open USB device files (the sticks) and USB serial ports — no disks, no memory, no sound card, no screen |
+| `DevicePolicy=closed` with three `DeviceAllow` lines | Of the computer's devices it may open USB device files (the sticks) and USB serial ports — no disks, no memory, no sound card, no screen. A serial port built into the computer (`/dev/ttyS0` and the like, often an RS-232 port on an industrial PC) is closed to it too; to open one for a receiver, `sudo systemctl edit open-alert-base`, add the two lines `[Service]` and `DeviceAllow=/dev/ttyS0 rw`, and restart the service (the service file and the package's README say the same; not tried here) |
 | `RestrictAddressFamilies`, `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `LockPersonality` | Ordinary internet and local sockets only; none of the kernel features that sandbox escapes lean on |
 | `SystemCallFilter` | Only the system calls an ordinary service needs |
 | Not set: `MemoryDenyWriteExecute` | Node.js turns JavaScript into machine code as it runs, which needs memory that is both writable and executable |
@@ -195,10 +223,10 @@ sub-commands belong to the Raspberry Pi install and are turned away with the rea
 | Command | What it does |
 |---|---|
 | `open-alert-base version` | The package, the agent, the signed release it came from, Node.js, and whether this computer's `rtl-sdr` knows the V4 stick |
-| `open-alert-base status` | Is the service running, which profile, and the agent's own status |
+| `open-alert-base status` | Is the service running, which profile, and the agent's own status. Ends with an error when the settings file cannot be used or no longer matches the profile |
 | `open-alert-base profile` | The profile in force and the ones there are; as root, also what has been changed since |
 | `sudo open-alert-base profile <name>` | Put `standard` or `enterprise` in force |
-| `sudo open-alert-base sync` | After changing the dashboard's port by hand: make the service's one capability and the firewall lock follow the settings |
+| `sudo open-alert-base sync` | After changing the dashboard's port by hand: make the service's one capability and the firewall lock follow the profile and the settings. An install and an update run it too. Status 3: the lock could not be put on; 4: the settings ask for less than the profile, and the profile was kept |
 | `sudo open-alert-base audit` | The security posture on one page, for a reviewer: what is installed and whether every agent file still matches the signed release, who it runs as, what it is kept from (read from the running program, not only from the file), what listens on the network, the profile and the settings that matter, the proxy, and which parts of RPi ALERT's Pi installer are absent |
 | `open-alert-base selftest` | Run the agent's own test suite on this computer, as the service's user |
 | `open-alert-base bench` | Run the benchmark in `bench/`, when it was built into the package |
@@ -208,8 +236,30 @@ sub-commands belong to the Raspberry Pi install and are turned away with the rea
 A profile is a short list of the agent's own settings, merged into
 `/etc/rpi-alert/config.json` through the agent's own settings code, so every value is held to
 the agent's own rules and nothing else in the file is touched. One is applied when the package
-is first installed **and there is no settings file yet**; an existing settings file is never
-overwritten by an install or an update.
+is first installed **and there is no settings file yet**. An install or an update leaves an
+existing settings file as it is, with one exception: an install told which profile to use
+(`OPEN_ALERT_BASE_PROFILE`) when that is not the profile in force puts it in force, and says so.
+
+The profile in force is root's own record, `/etc/open-alert-base/profile`. The settings file
+belongs to the agent's user, so the agent, or anybody using its dashboard from the computer
+itself, can change it; root never takes a looser rule from it. The profile decides whether the
+dashboard is kept to the computer (the firewall lock) and whether the service may have the
+capability for a low port. The settings can ask for more care than the profile, never for less:
+"this computer only" set under the standard profile turns the lock on; `web.bind` taken out of
+the settings under the enterprise profile does not turn it off. In that case `sync` (which an
+update runs) keeps the lock, says in capitals that the settings no longer match the profile,
+and ends with status 4; `status` calls it a fault and ends with status 1, and `audit` lists it
+as a fault. Only `sudo open-alert-base
+profile standard` opens the dashboard to the network.
+
+A settings file that root put in place — by configuration management, a restored backup, or
+cloud-init's `write_files` — belongs to root, and the agent could not read it: it would run on
+its built-in settings, without the token. The install and `sync` hand such a file to the agent's
+user (readable by that user alone) and say so. They do it on the opened file itself, and only
+for a plain file of root's with no second name, so a link put in its place is not followed: it
+is left alone, and `sync` stops with an error. A settings file the agent cannot use for any
+other reason (not valid JSON, say) stops `sync` and `profile` too, and nothing is written over
+it.
 
 | | `standard` | `enterprise` |
 |---|---|---|
@@ -233,12 +283,14 @@ own rule and this layer does not change it; it is the reason the enterprise prof
 dashboard to the computer itself.
 
 **Port 80 and the one capability.** A program that is not root may not open a port below 1024.
-The service file gives no capability at all. When the settings ask for a port below 1024,
-`open-alert-base profile` and `open-alert-base sync` write a small file of the service's own,
+The service file gives no capability at all. When the settings ask for a port below 1024 and
+the profile in force itself uses such a port (the standard profile's 80), `open-alert-base
+profile` and `open-alert-base sync` write a small file of the service's own,
 `/etc/systemd/system/open-alert-base.service.d/10-low-port.conf`, that adds
 `CAP_NET_BIND_SERVICE` and nothing else; for any other port they remove it. So the standard
-profile really serves port 80, and the enterprise profile holds no capability. Without that
-file the agent is refused port 80 and falls back to 8080 (this is checked).
+profile really serves port 80, and the enterprise profile holds no capability, whatever its
+settings file says (a low port asked for there gets none, and `sync` says so with status 4).
+Without that file the agent is refused port 80 and falls back to 8080 (this is checked).
 
 **"This computer only", today.** RPi ALERT 0.23.1 opens its dashboard on every network address
 of the computer and has no setting for that. The profile writes `web.bind` = `127.0.0.1` all the
@@ -248,8 +300,26 @@ lock: one small table of *nftables* rules (nftables is Linux's firewall) that
 `open-alert-base-firewall.service` loads. It refuses the dashboard's port to everything but the
 computer itself, and — a second net — throws away the reply to any call from another computer
 to any port the agent's user has open. It is a table of its own and changes nothing in whatever
-firewall the computer already has. If `nftables` is not installed, `profile enterprise` says in
-capitals that the dashboard is not yet kept to this computer, and ends with status 3.
+firewall the computer already has.
+
+**No lock, no agent.** In a profile that keeps the dashboard to the computer, the agent's
+service is tied to the lock's (`BindsTo=`, in a small file of its own,
+`/etc/systemd/system/open-alert-base.service.d/20-dashboard-lock.conf`): it runs only while the
+lock's service does. The lock's service loads the rules first, and fails if they do not load —
+a slip in the rules file, the file missing, no `nftables` on the computer, a kernel without
+nftables — and then the agent is stopped, or not started. `profile enterprise` and `sync` say
+so in capitals and end with status 3. systemd tries the lock again every 15 seconds, with no
+limit on how many times (its usual limit, five starts in ten seconds, is soon reached by a
+person putting the file right, and would make it give up); once it holds, the agent is started
+again by itself. The lock's service then stays running, as a
+keeper (`lock-keeper`): when something takes the table away — every firewall table cleared by
+hand, or the system's own `nftables` service started, restarted or stopped, each of which
+clears every table on Debian and Ubuntu — it puts it back at once (in about half a second in
+the tests), and if it cannot, it stops with an error and the agent stops with it. Stopping the
+lock's service does not open the dashboard: the table stays, and only `profile standard` (or
+removing the package) takes it away. A flood-warning receiver that stops because its firewall
+rule failed is the price of this; it says why, and the earlier choice (the agent runs on
+without the lock) let other computers reach the dashboard without anybody being told.
 
 Anybody logged in on the computer itself can still read and change the agent's settings through
 `http://127.0.0.1:8080/` without a password: RPi ALERT treats callers from the computer itself
@@ -280,7 +350,32 @@ takes no notice of a proxy, so the start command picks one of two ways:
 | Older (Debian 13's 20, Ubuntu 24.04's 18) | A short start-up file, `proxy-preload.js`, is loaded first. It points `fetch` at the proxy using the `undici` library that Debian and Ubuntu install with their Node.js. It honours `NO_PROXY`, and a user name and password in the proxy's address |
 | No proxy set | Nothing is loaded and nothing is added |
 
-A proxy's password is kept out of the log line that names the proxy.
+A proxy's password is kept out of the log line that names the proxy. Three more rules the
+start command and the start-up file keep:
+
+- **A proxy that is set is never gone around.** An address written without `http://` in front
+  (`proxy.example.internal:3128`, which curl accepts) is taken as `http://`. An address that
+  cannot be used at all — a slip of the keyboard, or a kind of proxy that is not a web proxy,
+  such as `socks5://` — does not stop the agent, and does not let it call out directly either:
+  on any Node.js the start-up file is loaded and refuses every call that should have gone
+  through the proxy (addresses in `NO_PROXY` aside). The agent receives and keeps what it hears,
+  and its log says why nothing is sent.
+- **The `undici` library is taken from the operating system's folders only.** Node.js looks for
+  a library named without a path in the user's home folder first, and the service's home is its
+  data folder, which the agent can write. The start-up file takes the home folder off Node's
+  list before it looks, so a file planted there by an agent that was once taken over is not run
+  at the next start.
+- **A proxy that takes a connection and closes it without an answer is not called again and
+  again.** (Debian's undici library otherwise opens thousands of connections a second for as
+  long as that lasts: a load balancer with nothing behind it, or a wrong port, does it.) After 8
+  such connections within 10 seconds, calls are refused for 5 seconds, then 10, 20, 40, and at
+  most a minute, and the proxy is tried again after each wait. **Not on Node.js 22.21 or
+  newer**: such a Node.js reads the proxy itself, the start-up file is not loaded, and there is
+  no guard. Node.js 22.23.4 was measured doing the same (about 9,000 connections a second to a
+  proxy that closes them). None of the systems this package is made for ships such a Node.js
+  (Debian 13 has 20, Ubuntu 24.04 has 18, the container 20); it applies to one installed from
+  elsewhere. Loading the start-up file there instead is not a way out: such a Node.js comes
+  without the system's `undici`, and the file would then refuse every call.
 
 A private certificate authority (a network that opens HTTPS traffic for inspection and signs it
 again) is added to the operating system the usual way — copy its `.crt` file into
@@ -329,30 +424,74 @@ passed. In order:
    another version; a pin whose address is not HTTPS; and tarballs made and correctly signed by
    the test itself that hold a link, a file outside the folder, a `..` path, a set-user-id
    program, or an agent of another version.
-2. **The scripts and the build.** shellcheck; the package builds, twice the same; its contents
-   are what they should be and the agent in it is the release's, file for file.
+2. **The scripts and the build.** shellcheck; the package builds, twice the same, and a third
+   time the same with its work folder on a memory disk (`/dev/shm`, another kind of file system)
+   and the builder's file mask as tight as it goes (`umask 077`); its contents are what they
+   should be and the agent in it is the release's, file for file.
 3. **On each system, in clean containers** (`debian:trixie-slim`, `ubuntu:24.04`,
    `debian:bookworm-slim`):
    - *a. Install.* `apt-get install ./the.deb`; files, owners and modes; the agent's own test
      suite as the service's user; the agent started exactly as the service file says (same
      user, groups, environment, capabilities, start command — read from the installed file)
      with RPi ALERT's own stand-ins for a stick and for Flood-Net, as its `simulate.sh` sets
-     them up; the dashboard answers and decoded readings reach the stand-in; both profiles; a
-     web proxy that is the only way to the stand-in, with a private certificate authority, with
-     and without a password, on the system's Node.js and on a Node.js 22.21+ when the test
-     computer has one; remove, reinstall, purge; the refusal beside RPi ALERT's own install;
-     systemd's checker and exposure score; udev's checker on the device rules.
-   - *b. The firewall lock*, tried from a second container that plays another computer. This
-     container is given the one capability that changing firewall rules needs (`NET_ADMIN`).
+     them up; the dashboard answers and decoded readings reach the stand-in; both profiles, and
+     that the settings file (as the agent's user would change it) cannot loosen the profile root
+     put in force; a web proxy that is the only way to the stand-in, with a private certificate
+     authority, with and without a password, on the system's Node.js and on a Node.js 22.21+
+     when the test computer has one; the start-up file's three rules — a proxy address that
+     cannot be used is not gone around, a look-alike `undici` in the agent's own folder is not
+     loaded, a proxy that drops every connection is not hammered — and the whole agent started
+     with an unusable proxy address; remove, reinstall, purge; a settings file put there by root
+     before and after the install, and a link in its place; an install told which profile to use
+     over settings that are already there; the refusal beside RPi ALERT's own install; systemd's
+     checker and exposure score; udev's checker on the device rules.
+   - *b. The firewall lock*, tried from a second container that plays another computer; its
+     keeper put back the lock after every table was cleared, after the table was removed by name
+     and after its rules were emptied, and stopped with an error when the rules file no longer
+     loaded. This container is given the one capability that changing firewall rules needs
+     (`NET_ADMIN`).
    - *c. Under a real systemd*, as the container's first program: the package installed and the
      real service started, sandbox and all; the service itself tries what it should not be able
      to do, and asks what it must be able to ask (whether the clock is set from the network);
-     both profiles; an update over itself; remove and purge. This container is given
-     `SYS_ADMIN` (systemd needs it to build the sandbox) and `NET_ADMIN`. Where systemd will not
-     start in a container the part is skipped and says so (`--require-systemd` makes that a
-     failure).
+     both profiles; no lock, no agent — the lock cleared by hand and by the system's own
+     `nftables` service started, restarted and stopped (put back each time, the agent running
+     on), a slip in the rules file, the rules file missing, no `nft` program, the keeper killed
+     (the agent stopped each time, and started again by itself once the lock held); an update
+     over itself; remove, an install again with `OPEN_ALERT_BASE_PROFILE=enterprise`, remove and
+     purge. This container is given `SYS_ADMIN` (systemd needs it to build the sandbox) and
+     `NET_ADMIN`, and Docker's AppArmor profile is left off it (`apparmor=unconfined`): on a
+     computer with AppArmor, such as GitHub's Ubuntu runners, that profile forbids the mounts a
+     service's sandbox is made of. It is still not privileged, and Docker's seccomp filter stays
+     on. Where systemd will not start in a container the part is skipped and says so
+     (`--require-systemd` makes that a failure).
 
 ## What has been tested, and where
+
+**18 November 2026, after the third check** (see [A check of the result](#a-check-of-the-result-18-november-2026-later)).
+A whole run of `firmware/test/deb.sh --require-systemd` on the files as they are in this folder
+(started 23:01 UTC, 21 minutes, all three systems, the same computer and release files as in
+the run described next, nothing else running on it): **1,034 checks passed, none failed, 2
+skipped** — the same two skips. The package is `0.23.1+oa2` (2,433,216 bytes; built three
+times, the same file each time). The checks added since: the rules file changed to throw the
+dashboard's packets away (`drop`) is a lock as well, under a real systemd, on all three
+systems. A run started before it was stopped part way: it had found that the first version of
+the keeper's fix let a table whose rules were emptied pass for a lock, which was then put
+right (the run's log: one failure, "the dashboard rule did not come back after the table's
+rules were emptied"). Docker's AppArmor profile is now left off the systemd container; this
+computer has no AppArmor, so that part behaves here as before.
+
+**18 November 2026, after the two reviews.** A whole run of `firmware/test/deb.sh
+--require-systemd`, on the files as they are in this folder (started 20:46 UTC, 22 minutes, all
+three systems, from the release files already on the computer, on the same kind of computer as
+below: x86-64, Ubuntu 24.04.5, Docker 29.9, no USB, no KVM): **1,030 checks passed, 1 failed, 2
+skipped.** The one that failed is in RPi ALERT's own test suite, on Ubuntu 24.04: a test that
+expects the "light" decoder to be quicker than "lean" on the same recording
+(`test/lean-decoder.test.js`, line 91) found it 7 ms slower, while the computer was busy with
+another build. Run again alone on Ubuntu 24.04 (`open-alert-base selftest`, twice): the first
+time every test passed; the second time that one test failed in the full pass and passed when
+the self-test ran it again by itself. It is a timing test of the agent's, and nothing in this
+layer touches the decoders. The two skipped checks are the ones in the tables below. The new
+checks (the rows marked *new* below) passed on all three systems.
 
 Everything below was run on 11 November 2026 on one computer: a virtual machine with an ordinary
 64-bit PC processor (x86-64), Ubuntu 24.04, Docker 29. **It has no USB at all, so no radio stick,
@@ -380,17 +519,24 @@ The three systems, as the containers had them:
 | What | Debian 13 | Ubuntu 24.04 | Debian 12 |
 |---|---|---|---|
 | `apt install ./the.deb`, everything it needs from the system's own packages; files, owners and modes; `dpkg --verify`; every installed agent file has the SHA-256 it has in the signed release | Passed | Passed | Passed |
-| The agent's own test suite from the installed files, as the service's user (30 of its 31 test files; the other tests the root helper, which is not installed) | 238 of 238 | 238 of 238 | 238 of 238 |
+| The agent's own test suite from the installed files, as the service's user (30 of its 31 test files; the other tests the root helper, which is not installed) | 238 of 238 | 238 of 238 (18 November: 237 — one timing test, see above) | 238 of 238 |
 | The agent started as the service file says, with stand-ins for a stick and for Flood-Net: the dashboard answers, decoded readings reach the stand-in | Passed | Passed | Passed |
 | Standard profile: port 80 with exactly one capability; the same service without the drop-in file is refused port 80 | Passed | Passed | Passed |
 | Enterprise profile: port 8080, no capability at all, checks in with Flood-Net as "report"; `web.bind` survives the agent rewriting its settings | Passed | Passed | Passed |
 | A web proxy that is the only way out, with a private certificate authority, `NO_PROXY`, with and without a password — on the system's own Node.js (the start-up file) | Passed | Passed | Passed |
 | The same on Node.js 22.23.4 (`NODE_USE_ENV_PROXY`); this Node.js was the test computer's own, not a Debian or Ubuntu package | Passed | Passed | Passed |
 | Remove keeps settings and data; reinstall leaves the settings byte for byte; purge deletes everything; refused beside RPi ALERT's own install | Passed | Passed | Passed |
+| *New.* The settings file, changed as the agent's user could change it, cannot loosen the profile: "every address" or a port below 1024 under the enterprise profile keeps the lock and gives no capability, `sync` ends with status 4, `status` and `audit` call it a fault; more care ("this computer only" under the standard profile) is taken; only `profile standard` takes the lock off | Passed | Passed | Passed |
+| *New.* The start-up file's rules: a `socks5://` address and one with a slip in it refuse the call and nothing reaches the far end directly (`NO_PROXY` still honoured); an address without `http://` is used; a look-alike `undici` in the agent's home folder, which a plain Node.js there does load, is not loaded; a proxy that closes every connection gets 8 connections from twelve calls, none after, and is asked again after the wait; the whole agent with an unusable address runs and says why it sends nothing | Passed (undici 7.3) | Passed (undici 5.26) | Passed (undici 5.15) |
+| *New.* A settings file put there by root before the install, and after it: handed to the agent's user (0600), its contents kept, no profile put over it; a link in its place is not followed (`/etc/passwd` keeps its owner and mode) and `sync` and `profile` stop | Passed | Passed | Passed |
+| *New.* `OPEN_ALERT_BASE_PROFILE` on an install over settings that are already there: applied and said, the token and the name kept; once more with the same profile in force: the settings file not touched | Passed | Passed | Passed |
 | systemd's checker (`systemd-analyze verify`) on both service files | Nothing to report | Nothing to report | Nothing to report |
 | Exposure score of the service (`systemd-analyze security`), enterprise profile then standard: worked out from the file alone, and for the running service | 1.7, 1.9 both ways | 1.7, 1.9 both ways | 1.7, 1.9 both ways |
+| *New.* Exposure score of the lock's service, which now stays running as root with one capability | 2.0 | 2.0 | 2.1 |
 | udev's own checker (`udevadm verify`) on the device rules — read, not tried on a device: a container has no udev running | Nothing to report | Nothing to report | Skipped: this older udev has no checker |
 | The firewall lock, tried from a second container: the dashboard's port open before, refused with the lock on, another user's port left alone, open again when the table is removed | Passed | Passed | Passed |
+| *New.* The lock's keeper, started as its service starts it: every table cleared, the table removed by name, its rules emptied — put back each time (about half a second after `nft flush ruleset`, as measured there); with a slip in the rules file it stops with an error and says so | Passed | Passed | Passed |
+| *New.* No lock, no agent, under a real systemd: the agent tied to the lock (`BindsTo`); every table cleared by hand, and Debian's or Ubuntu's own `nftables` service started, restarted and stopped — the lock back each time and the agent running on, the same process; a slip in the rules file, the rules file missing, no `nft` program, the keeper killed — the agent stopped, not startable by hand, `sync` status 3, `audit` says the keeper is not running; once put right, the lock and then the agent back by themselves within a minute; removed, then installed again with `OPEN_ALERT_BASE_PROFILE=enterprise`: the agent running behind the lock | Passed | Passed | Passed |
 | Under a real systemd in a container: the install starts the service; port 80 by the drop-in file; the service itself is refused writing in `/usr`, `/etc` and `/var`, can write its two folders, has its own `/tmp`, cannot read the proxy file; the agent arms systemd's watchdog; killed, it is restarted; the enterprise profile loads the firewall lock; an update over itself; remove and purge | Passed | Passed | Passed |
 | From inside the running service, the question the agent asks before it trusts the clock (`timedatectl`) gets an answer | Passed (the answer was "no": a container's clock is not set from the network) | Passed, the same | Passed, the same |
 | The kernel's device list for the running service | Skipped: this systemd keeps it where it cannot be listed | Listed: the standard pseudo-devices only. USB was not on it, because the test computer's kernel has no USB | As Ubuntu |
@@ -402,20 +548,29 @@ Also, on the test computer itself:
 | The release check accepts the real v0.23.1 and refuses the 14 bad cases listed under Testing | Passed |
 | By hand, not part of `deb.sh`: the release check downloads the release from GitHub and accepts it (20:29 UTC) | Passed |
 | By hand: the release check in a clean Debian 13 container with OpenSSL alone (3.5.7), then with Node.js alone (20.19.2): the real release accepted, a changed tarball with a pin to match refused; with neither tool it stops and says so (status 3) | Passed |
-| shellcheck 0.9.0 on the 11 shell scripts here | Nothing to report |
-| The package builds; a second build is the same file | Passed: 2,423,076 bytes (2.4 MB), 5.9 MB installed, with the benchmark in it as `bench/` had it at 20:32 UTC (the size moves by a little when that file changes) |
-| lintian, Debian's package checker | No errors; 7 warnings, none acted on (no manual pages; the 0640 mode of `env`; a `systemctl` call in the install script; two files with a script line but no run permission, one of them the release's own; a udev rule without desktop-catalogue data) |
+| shellcheck 0.9.0 on the 11 shell scripts here | Nothing to report. 18 November: the 12 that `deb.sh` checks (the lock's keeper is the new one); and, by hand, all 21 shell scripts under `firmware/` and the 37 `run:` blocks of the workflow file: nothing to report |
+| The package builds; a second build is the same file | Passed: 2,423,076 bytes (2.4 MB), 5.9 MB installed, with the benchmark in it as `bench/` had it at 20:32 UTC (the size moves by a little when that file changes). 18 November: 2,432,364 bytes, 5,614 kB installed (now counted from the files' lengths); a third build on a memory disk with `umask 077` is the same file too, and the package the disk image's build made from the same files that day was the same file as well. After the third check (`0.23.1+oa2`): 2,433,216 bytes, 5,615 kB installed, three builds and the disk image's the same file |
+| lintian, Debian's package checker | No errors; 7 warnings, none acted on (no manual pages; the 0640 mode of `env`; a `systemctl` call in the install script; two files with a script line but no run permission, one of them the release's own; a udev rule without desktop-catalogue data). 18 November: 6 warnings, the same less the one about `systemctl` |
+| *New.* The benchmark's quick test (`bench/test.sh`), and the repository's own tests (`npm test` at its top) | 18 November: 11 of 11, and 75 of 75; again after the third check, the same |
 
 ## What has not been tested
+
+*Added 14 November 2026: the disk image's start test has since tried four of the points below
+in a virtual machine — with pretend devices, not real ones. Each such point says so; the
+results are under [The disk image](#the-disk-image-what-has-been-tested-where).*
 
 - **A real radio stick on a computer that is not a Raspberry Pi.** Not natively, not in a
   container. The udev rule, the driver block list and the service's device list
   (`DeviceAllow=char-usb_device`) have never met a real stick: the test computer's kernel has no
   USB, so systemd had no USB device class to put on the list. This is the first thing to try on
-  real hardware.
+  real hardware. *Since then, in the image's virtual machine: all three met a pretend stick (a
+  software USB device with a real stick's ids) and did their part. Still no real stick.*
 - **The device rules on a real udev.** udev's checker read them without a complaint on Debian
-  13 and Ubuntu 24.04; no udev has applied them to a device.
+  13 and Ubuntu 24.04; no udev has applied them to a device. *Since then: Debian 13's udev
+  applied the stick's rule to the pretend stick.*
 - **Serial receivers** (a Quansheng radio, an ERT-A2, a GPS) under the service's device list.
+  *Since then: an emulated USB serial adapter, fed a Quansheng radio's lines, was read by the
+  sandboxed agent. Still no real receiver.*
 - **The clock on a real computer.** The service can ask systemd whether the clock is set from
   the network, and in these containers the answer was "no", so the stand-in runs are told to
   trust the clock (`RPI_ALERT_ASSUME_CLOCK=1`, as RPi ALERT's own `simulate.sh` does). The
@@ -427,10 +582,21 @@ Also, on the test computer itself:
 - **A real computer start-up.** The systemd checks ran in containers. Nothing has been
   restarted to see the service, the firewall lock and the two serial drivers come up by
   themselves, and the firewall lock has not been tried beside another firewall (`ufw`,
-  `firewalld`, a `flush ruleset` in `/etc/nftables.conf`).
+  `firewalld`, a `flush ruleset` in `/etc/nftables.conf`). *Since then: the image's virtual
+  machine was restarted and all three came up by themselves, the lock beside the image's own
+  firewall table. And (18 November) under systemd in a container, Debian's own `nftables`
+  service, whose file begins with `flush ruleset`, was started, restarted and stopped after the
+  lock was on: the keeper put the lock back each time. Still not on a real computer, and not
+  beside `ufw` or `firewalld`.*
 - **A real web proxy and a real inspecting network.** The proxy in the test is a few lines
   written for it; it tunnels and can ask for a password, and does nothing else a commercial
-  proxy does (no NTLM or Kerberos sign-in, for one — the start-up file cannot do those).
+  proxy does (no NTLM or Kerberos sign-in, for one — the start-up file cannot do those). The
+  guard against a proxy that closes every connection was tried with a stand-in that does just
+  that; on Node.js 22.21 or newer there is no guard (see the proxy section).
+- **IPv6.** The firewall lock's rules are written for IPv4 and IPv6 alike (one `inet` table),
+  but the test computer's kernel has no IPv6, so only IPv4 was tried.
+- **A built-in serial port opened for the agent** with the `DeviceAllow` line the service file
+  gives. Written, not tried.
 - **An update from an older version of this package.** There is no older version. The same
   package installed over itself is tested.
 - **Flood-Net itself.** The stand-in is RPi ALERT's own test helper.
@@ -444,12 +610,21 @@ Also, on the test computer itself:
 
 Where the design left something open, this is what was chosen and why.
 
-- **The capability follows the port, not the profile's name.** `profile` and `sync` look at
-  `web.port`: below 1024, the drop-in file is written; otherwise it is removed. A person who
-  moves the standard profile to port 8080 loses the capability too.
-- **The firewall lock is one table of its own**, loaded by a small service of its own that runs
-  for a moment as root with one capability (`CAP_NET_ADMIN`), rather than a line in the
-  computer's `/etc/nftables.conf`, which is the organisation's file.
+- **The capability follows the port, within what the profile in force allows.** `profile` and
+  `sync` look at `web.port`: below 1024, and the profile itself on a low port, the drop-in file
+  is written; otherwise it is removed. A person who moves the standard profile to port 8080
+  loses the capability too. Under the enterprise profile no setting brings it back.
+- **Root decides from root's own record.** What the lock and the capability follow is the
+  profile named in `/etc/open-alert-base/profile`, never the agent's settings file alone (the
+  agent's user can write that). Where no profile is recorded at all (an install over a settings
+  file that was already there), the settings file decides, as before, and `sync` says so.
+- **The firewall lock is one table of its own**, loaded by a small service of its own that
+  stays running as root with one capability (`CAP_NET_ADMIN`) to keep the table in place,
+  rather than a line in the computer's `/etc/nftables.conf`, which is the organisation's file.
+  It watches the kernel's own reports of firewall changes (`nft monitor`), and looks at the
+  table every 20 seconds as well. An organisation that loads its own firewall can also put the
+  line `include "/etc/open-alert-base/dashboard-local-only.nft"` in its file, which leaves no
+  gap at all.
 - **`web.bind` is in the enterprise profile already**, after checking that 0.23.1 keeps and
   ignores it. In the standard profile it is written as "the agent's own default", which takes
   it out of the file while the agent does not know the setting.
@@ -458,19 +633,21 @@ Where the design left something open, this is what was chosen and why.
   there would be a way up.
 - **The start profile can be named at install** (`OPEN_ALERT_BASE_PROFILE=enterprise`, or a
   file `/etc/open-alert-base/profile` put there beforehand), so a disk image or a container can
-  be locked down from its first start.
+  be locked down from its first start. The variable is honoured over settings that are already
+  there as well, so that nobody believes a computer is locked down when it is not.
 - **The udev rule gives the sticks to the group `plugdev` only** (mode 0660; RPi ALERT's own
   rule lets everybody read them, 0664).
-- **The two USB serial drivers are loaded at start-up.** systemd works out the service's device
-  list from the drivers loaded when the service starts; without this a serial receiver plugged
-  in for the first time later would be refused until a restart. On a kernel built without them
-  systemd reports that it could not load them; the file says how to silence that.
-- **If the firewall lock cannot be loaded when the computer starts, the agent still starts.**
-  A flood-warning receiver that stays silent because a firewall rule failed seemed the worse
-  of the two. Other computers can then open the dashboard as with the standard profile (look
-  without a password, change nothing without it), and `audit` says in capitals that the
-  dashboard is not kept to this computer. An organisation that wants it the other way adds `Requires=open-alert-base-firewall.service`
-  to the service with `sudo systemctl edit open-alert-base` (not tested here).
+- **The two USB serial drivers are loaded at start-up, and by the install.** systemd works out
+  the service's device list from the drivers loaded when the service starts; without this a
+  serial receiver plugged in for the first time later would be refused until a restart. On a
+  kernel built without them systemd reports that it could not load them; the file says how to
+  silence that. The install tries them once and passes over a kernel that has none.
+- **If the firewall lock cannot be loaded, the agent does not run** (no lock, no agent; above).
+  This was the other way round until the security review of 18 November 2026: the agent ran on
+  and `audit` said in capitals that the dashboard was not kept to the computer. The review
+  showed how easily the lock went missing without anybody being told — a slip in the port line
+  the rules file invites people to edit, or Debian's own `nftables` service started after the
+  profile — and that the dashboard's status page was then open to the network.
 - **The clock rule is left as the agent has it.** Readings wait until the operating system says
   the clock is set from the network; the package does not switch that off, and
   `/etc/open-alert-base/env` says how to, for a computer whose clock is kept right another way.
@@ -531,14 +708,20 @@ containers (Docker, or Podman with a compose file).
 
 ```
 firmware/container/build.sh                     # for this computer; the release is downloaded and checked
-firmware/container/build.sh --platform linux/arm64 --tag registry.example.org/open-alert-base:0.23.1-oa1 --push
+firmware/container/build.sh --platform linux/arm64 --tag registry.example.org/open-alert-base:0.23.1-oa2 --push
 ```
 
 The base image can be fixed to one exact version: `docker buildx imagetools inspect
 debian:trixie-slim` prints its *digest* (a fingerprint, `sha256:…`); pass
-`--base-image debian:trixie-slim@sha256:<that>`. Do it again, and run
-`firmware/test/container.sh`, when you want Debian's newer fixes. With no network, hand the
-build the two release files with `--release-dir`: they are checked just the same.
+`--base-image debian:trixie-slim@sha256:<that>`. The image's labels then say exactly which base
+it was built on (`org.opencontainers.image.base.digest`, beside `.base.name`); built on a name
+alone, they cannot. Do it again, and run `firmware/test/container.sh`, when you want Debian's
+newer fixes. The automatic build does this for every container it publishes: it looks the
+digest up once per release, builds both kinds of processor on it, and names it in the release
+notes. (The digest is looked up at release time rather than kept in the repository beside
+`PIN`: either way a reviewer can tell afterwards which base a container has, and this way each
+release carries Debian's fixes of that day.) With no network, hand the build the two release
+files with `--release-dir`: they are checked just the same.
 
 ### Running it: `compose.yaml`
 
@@ -588,7 +771,15 @@ uses this computer's network.
 ### The container: what has been tested, where
 
 On the computer named at the top of this section. **98 passed, none failed, none skipped**
-(13 November 2026, 20:34 UTC; shellcheck clean on the three scripts).
+(13 November 2026, 20:34 UTC; shellcheck clean on the three scripts). Again on 18 November
+2026, on the files after the two reviews (started 20:37 UTC, about 3½ minutes, on the same kind
+of computer: Ubuntu 24.04, Docker 29.9, Compose 5.6): **108 passed, none failed, none
+skipped** — ten more than then, among them the proxy rules in the last row below. And once
+more on the files as they are in this folder, after the third check (started 23:23 UTC, 3
+minutes 20 seconds): **108 passed, none failed, none skipped**. Both runs built the image on
+`debian:trixie-slim` by name, so their check of the digest label only noted that none was
+given; a run on an image built with `--base-image` and a digest, as the automatic build makes
+the published one, is described under the table.
 
 | What | Result |
 |---|---|
@@ -606,6 +797,7 @@ On the computer named at the top of this section. **98 passed, none failed, none
 | `compose stop`: ends in under 15 seconds with the signal's status; the data is kept; start again answers; the agent killed inside is brought back by the restart policy | Passed |
 | **The USB device rule**, tried with a device file of the USB class made for the purpose (this computer has no USB): without the rule, Docker refuses the open; with the rule but not the group, the file's own permission refuses; with the compose file's two lines the open reaches the kernel (which has no USB driver here, so it answers "no such device"); a read-only `/dev/bus/usb` does not stop that; a disk device is refused even with the rule | Passed |
 | The web proxy, with a private certificate authority: with no proxy set nothing reaches Flood-Net's stand-in; through a proxy the readings arrive, over HTTPS, under a name only the proxy can find; with and without a name and password (the password is not in the log); `NO_PROXY` is honoured (a station-list address is fetched without the proxy) | Passed |
+| The start-up file's rules, in the image itself, with no network: a `socks5://` proxy address refuses the call and nothing reaches the far end directly (an address in `NO_PROXY` still goes direct); a look-alike `undici` in the data folder, which a plain `node` there does load, is not loaded; twelve calls through a proxy that closes every connection make 8 connections, none after the calls end, and the proxy is asked again once the wait is over; the whole container started with a `socks5://` address runs, shows its dashboard and says why nothing is sent | Passed |
 
 Numbers, measured there (a stand-in stick, so not what a real station will use):
 
@@ -651,3 +843,696 @@ Numbers, measured there (a stand-in stick, so not what a real station will use):
   and carries on without it.
 - **The memory limit is 768 MB**, from the measurement above, so that the agent's own growth is not cut off.
 - **The test mounts the agent's own test stand-ins in** and leaves them out of the image.
+
+## The disk image
+
+**Built and started on 14 November 2026, and again on 18 November after the two reviews, on one
+x86-64 computer (Ubuntu 24.04, QEMU 8.2.2), in a virtual machine only. It has never been
+written to a real disk or started a real computer, no real radio stick has been near it, and
+the image for ARM computers has not been built at all. Not reviewed by a second person. See
+[what is not yet proved](#the-disk-image-what-is-not-yet-proved).**
+
+A *disk image* is one file that holds a whole disk, byte for byte. Written to an SSD or a USB
+stick ("flashed"), it makes that disk start a computer as a base station and nothing else: what
+RPi ALERT's SD-card image is for a Raspberry Pi, for an ordinary 64-bit PC. It is for a computer
+bought to be a base station. A computer that already runs Debian or Ubuntu takes the package
+instead, and one that runs containers takes the container.
+
+### What is in `image/`
+
+| File | What it is |
+|---|---|
+| `build-image.sh` | The build: one shell script, read from top to bottom, in nine numbered steps |
+| `packages.common`, `packages.amd64`, `packages.arm64` | Every Debian package the image asks for by name, each with its reason |
+| `packages.firmware.amd64` | Three more, from the part of Debian's archive that holds hardware makers' own files: fixes for Intel and AMD processors, and what some Realtek network ports need. `--no-firmware` leaves them out |
+| `files/` | Twenty small files copied into the image as they are. They are everything that makes it differ from a stock Debian; each says at its top what it is for |
+| `cidata/` | The first set-up files a person edits after flashing: `user-data`, `meta-data`, `README.txt` |
+| `sbom.sh` | Writes a *software bill of materials*: the list of everything inside a build, with versions, in a standard form (SPDX 2.3) that security scanners read |
+
+### What the disk image holds
+
+- **Debian 13 ("trixie"), from Debian's own archive.** Debian's tool for installing Debian into
+  a folder (`mmdebstrap`) does it; `apt` downloads the packages and checks Debian's signature
+  on every one. The base is Debian's smallest, plus the packages named in the lists and what
+  those cannot work without; nothing that is only "recommended". 269 packages in all, 705 MB.
+  The build downloads from two places and no others: Debian's archive, and the pinned RPi ALERT
+  release (checked as described under [the pin](#the-pin-which-release-is-shipped-and-how-it-is-checked)).
+- **Debian's signed boot files, unchanged.** With *UEFI Secure Boot* switched on, a PC starts
+  only programs signed by a key it trusts. The chain here is the one every Debian PC uses: the
+  PC trusts Microsoft's key; Microsoft has signed Debian's first program (called *shim*); shim
+  trusts Debian's key; Debian has signed the boot menu (GRUB) and the kernel. All four are
+  copied from Debian's packages as they are, so the image starts with Secure Boot **on**.
+- **The `open-alert-base` package**, the file `deb/build-deb.sh` makes, installed with its
+  standard profile. Everything on this page about the package holds for the image: the same
+  service, the same sandbox, the same two commands.
+- **No account and no password.** The administrator account (root) is locked and no other
+  account exists until the first set-up file names one. SSH takes keys only.
+- **Nothing that is one computer's own.** The computer's identifier, its SSH host keys and the
+  dashboard's first password are each made by the computer itself at its first start.
+
+The disk has three partitions:
+
+| | Size | What |
+|---|---|---|
+| 1 | 256 MB | The EFI system partition: the boot files, where the PC's firmware looks for them |
+| 2 | 32 MB | `CIDATA`: the first set-up files. Plain FAT, so that any computer can open it |
+| 3 | The rest | Debian and the base station. It grows to fill the disk at the first start |
+
+How the image differs from a stock Debian — the twenty files in `files/`, and a few lines of
+the build script (its step 5):
+
+| What | How it is set |
+|---|---|
+| SSH | Keys only: no password is accepted for any account, and root cannot log in at all |
+| Firewall (nftables) | What may come in from other computers: SSH, the standard profile's dashboard (port 80), ping, and the network's own answers. Everything else is thrown away — port 8080 too, the enterprise profile's port, so that the image's own firewall keeps that dashboard to the computer as well, beside the profile's lock. It is one table of its own |
+| Network | Every wired port asks the network for an address (DHCP). Wi-Fi is not set up. The two kinds of name look-up that listen to the local network (LLMNR, multicast DNS) are off |
+| Time | Debian's own time service (`systemd-timesyncd`) is on. The agent sends nothing until the clock is set: see [The clock](#the-clock) |
+| Security updates | Debian's `unattended-upgrades` is on: it looks every day and installs Debian's security updates. An update never stops to ask a question |
+| First set-up | Read by `cloud-init` from the `CIDATA` partition of this disk and from nowhere else: no network address is ever asked for set-up, and no other disk is looked at. cloud-init's own search for a disk labelled `CIDATA` is switched off (it would try a USB stick first); a small service of the image's own (`open-alert-image-own-cidata.service`) runs before it at every start and copies the two files, read-only, from the second partition of the disk that holds the main partition — found through that disk, not by a label or an identifier another disk could carry too |
+| Start-up | The boot menu shows for three seconds; start-up messages go to the screen and to the first serial port (115200 baud), and both give a login prompt. No "recovery" entries (they would ask for root's password, and root has none). The menu is **closed**: its editor (`e`) and GRUB's command line (`c`) ask for a name and a password and take none, because the menu has an owner who has no password; every entry that starts Linux is marked to start by itself all the same (`--unrestricted`). A kernel or GRUB update keeps it so (`files/etc/grub.d/09_open-alert-image`, checked) |
+| Which disk it starts from | **This one, and no other, even when another disk carries the same identifiers.** Every disk made from the image carries the same identifier for its main partition, so a USB stick made from it is, to Debian's usual way of finding the main partition, the same disk. Three things here keep to the disk the computer started from. (1) The small `grub.cfg` beside GRUB on the EFI partition (`files/usr/lib/open-alert-image/efi-grub.cfg`) sends GRUB to partition 3 *of the disk GRUB itself was started from*, where Debian's version takes the first disk carrying the identifier; a GRUB or shim update writes Debian's version again, and the image puts its own back at once (`open-alert-image-boot-stub.path` watches the file; the menu maker does it too). (2) The menu's entries load Linux from that same partition; none looks for an identifier. (3) Linux itself is told the main partition by its identifier (`root=UUID=…`), and the start-up file system (*initramfs*) refuses to go on while two disks carry it — just before the main partition is mounted and again just after — and restarts the computer 30 seconds later (`files/etc/initramfs-tools/scripts/`); and when a USB disk and one that is not carry the same identifier, the names that stand for it (`/dev/disk/by-uuid/…` and the like, which is what the start-up file system checks and mounts) point to the one that is not (`files/etc/udev/rules.d/`). `panic=30` on the kernel's start-up line makes every failed start a restart: without it, the start-up file system would offer a prompt as administrator to anybody at the screen or the serial port. Checked: part 12 of the test |
+| Boot files | Kept in the two places Debian keeps them, so Debian's own updates of shim and GRUB go on working (checked) |
+
+### Building the disk image
+
+```
+sudo firmware/image/build-image.sh                         # for the kind of computer it is run on
+sudo firmware/image/build-image.sh --tarball F --sig S     # the release's two files already here
+sudo firmware/image/build-image.sh --help
+```
+
+It needs the administrator account, because it makes file systems and installs Debian into a
+folder, and these tools: `mmdebstrap`, `debian-archive-keyring`, `fdisk`, `dosfstools`,
+`mtools`, `e2fsprogs`, `xz-utils`, `jq`, and what `build-deb.sh` needs. It uses one loop device
+and mounts one file system, the image's main partition. It does not use a container, and never
+a privileged one.
+
+The results, in `dist/`:
+
+| File | What |
+|---|---|
+| `open-alert-base-0.23.1+oa2-amd64-uefi.img` | The disk, 3.0 GB (it fits any disk of 4 GB or more) |
+| `…-uefi.img.xz` and `…-uefi.img.xz.sha256` | The same packed for download, about 290 MB, and its SHA-256 |
+| `…-uefi.packages.tsv` | Every Debian package in it with its version |
+| `…-uefi.spdx.json` | The bill of materials: the same list, the `open-alert-base` package, and the RPi ALERT release with its hash and the key that signed it |
+
+`--arch arm64` builds the image for 64-bit ARM computers that start the way a PC does (UEFI
+firmware: ARM servers and "SystemReady" boards). The build does not cross over: it must be run
+on an ARM computer. **It has not been run**; the automatic build is to do it. A board that
+starts from its maker's own boot loader (most small ARM boards) needs its maker's image, and
+takes the package or the container.
+
+`--deb FILE` builds the image with a package already made instead of building one. Such a
+package was not checked here, so the build fetches and checks the pinned release all the same
+and compares the package's agent with it, file for file and both ways (nothing missing,
+nothing added); any difference stops the build.
+
+Two builds are not the same file byte for byte (each makes new identifiers for the file
+systems, and Debian's archive moves on). What is in a build is recorded beside it instead.
+
+### Flashing it, and the first set-up
+
+1. Check the download, then write it to the disk — for example, on Linux (`sdX` is the disk;
+   be sure of it, everything on it is lost):
+
+   ```
+   sha256sum -c open-alert-base-0.23.1+oa2-amd64-uefi.img.xz.sha256
+   xz -dc open-alert-base-0.23.1+oa2-amd64-uefi.img.xz | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
+   ```
+
+   Any program that writes a disk image will do. None has been tried (the checks start the
+   image file itself).
+2. Unplug the disk and plug it in again. A small partition named `CIDATA` appears. Open
+   `user-data` in it with a plain-text editor. Everything in it is switched off; a part is
+   switched on by removing the one `#` at the start of each of its lines. `README.txt` beside
+   it says the same in more words.
+3. Put the disk in the computer and switch it on. Secure Boot can stay on.
+4. The first start takes a minute or two longer than later ones: the main partition grows to
+   fill the disk, the SSH host keys are made, the set-up file is applied.
+5. Log in with the key (`ssh admin@<address>`), then `rpi-alert setup` for the Flood-Net token,
+   the base station's name and where it is.
+
+What `user-data` offers:
+
+| Part | What it sets |
+|---|---|
+| 1 | The computer's name on the network |
+| 2 | An administrator account and the SSH public key that opens it. **Without this part nobody can log in** |
+| 3 | The time zone (for the times a person reads; readings always go to Flood-Net in UTC) |
+| 4 | A private certificate authority, for a network that opens HTTPS traffic for inspection |
+| 5 | A web proxy for the base station and for Debian's updates; the organisation's own time servers; a fixed address |
+| 6 | Commands for the end of the first start — among them the one line that puts the **enterprise profile** in force, and one that stops the file ever being read again |
+
+Things to know:
+
+- **Out of the box nobody can log in**, by the network or at the keyboard. The base station
+  starts, receives and shows its dashboard, and that is all, until `user-data` names an account
+  (checked: part 8 of the test).
+- **The account has no password**, so it cannot be used at the screen or the serial port
+  either, only over SSH with its key. For a way in when the network is down, log in once over
+  SSH and give it one: `sudo passwd admin`.
+- **`user-data` stays on the disk**, readable by anybody who holds the disk, and a person with
+  the disk in their hands can add an account through it. Put no password or private key in it.
+  The last line of part 6 stops it being read again. Only the `CIDATA` partition of the disk the
+  computer starts from is read: a USB stick or another disk carrying a partition of the same
+  name, plugged in at a restart, is not looked at (checked: an "intruder's" stick is plugged in
+  through every start of the test). Nor can a stick that is a whole copy of the image take over
+  the start: the computer's GRUB never takes a boot menu from another disk, and Linux does not
+  start while two disks carry the main partition (see [Secure Boot](#secure-boot); checked:
+  part 12). It is read at every start, but cloud-init applies a set-up
+  once for each name in `meta-data`; it is left that way on purpose, because whoever can change
+  this disk's `CIDATA` partition can change its main partition too (the disk is not encrypted).
+- **With the enterprise profile chosen in `user-data`, the standard profile is in force for the
+  first moments of the first start**, until the set-up reaches that line. In the test that was
+  about 20 seconds from the agent's first start to its start under the enterprise profile; the
+  agent ran for the first 5 of them and was stopped before its log shows the dashboard coming
+  up on port 80. A real computer will have other timings. On a network where that matters,
+  give the computer its first start before it is plugged into that network.
+- **The dashboard is reached by the computer's address.** The agent's log names it as
+  `http://<name>.local/`, which works on a Raspberry Pi; on this image that kind of name
+  look-up is off.
+- **Kernel updates take effect at the next restart, and the image never restarts by itself.**
+  When to restart is the organisation's decision (`unattended-upgrades` can be told to; it is
+  not). A security update of Node.js likewise reaches the running agent when the service or
+  the computer is next restarted.
+
+### Secure Boot
+
+What was checked, in the virtual machine, with firmware that holds Microsoft's keys and has
+Secure Boot on: the image starts; the kernel says on the console that Secure Boot is on, and
+the running system says the same; the kernel is in the locked-down state Debian puts it in
+whenever Secure Boot is on. And the other way round: with **one bit** changed in shim the
+firmware refuses to start it, and with one bit changed in GRUB shim refuses it; in both cases
+no kernel starts. Shim carries both of Microsoft's signatures, the one from 2011 and the one
+from 2023 that replaces it.
+
+**What Secure Boot does and does not cover here.** It checks the programs that start — shim,
+GRUB and the kernel — and nothing they are told to do: not the menu file, not the options the
+kernel is started with, not the kernel's start-up file system (the *initrd*) and not the main
+partition. So, on its own, it would not stop a person at the keyboard, or on a serial port
+wired to a console server, from changing how Linux starts at the boot menu and getting an
+administrator's prompt with no account. On this image the menu is therefore closed (above):
+its editor and command line ask for a name and a password, and none works; the entries still
+start by themselves (checked over the serial port: part 11 of the test).
+
+**A USB stick made from the image.** A closed menu is worth something only if it is this
+disk's menu. Every disk made from the image carries the same identifier for its main
+partition, and Debian's usual small boot file has GRUB take its menu from the first disk that
+carries it: a USB stick holding a copy of the image with a menu of its own, plugged in before
+a restart, could then start the computer as administrator with no account, Secure Boot or
+not, and with no keyboard if its menu also names a start-up file system of its own (Secure
+Boot does not check that file either). On this image GRUB takes its menu from the main
+partition of the disk it was itself started from and never looks at another disk, and its
+entries take Linux from the same place; a GRUB or shim update that writes Debian's small file
+again has it replaced within seconds. Linux is told its main partition by the identifier too,
+so the start-up file system counts the disks that carry it, just before mounting it and again
+just after, and while there are two it does not go on: it says so on the screen and the serial
+port and restarts the computer 30 seconds later, offering no prompt. Checked in part 12 of the
+test: a whole copy of the image on a USB stick, its EFI partition emptied (so the firmware
+cannot start from the stick itself) and a menu of its own on it; the computer's GRUB did not
+take that menu, the kernel's start-up line was the computer's own, and the start-up file
+system refused to go on and restarted the computer. The stick showed up between the two
+counts each time, and the partition checked and mounted was the computer's own: a rule of the
+image's has the names that stand for an identifier (`/dev/disk/by-uuid/…`) point to a disk that
+is not on USB before one that is. (Before that rule, in two of four starts, the stick's
+partition was the one checked and mounted, because udev points such a name at the disk it saw
+last; it was only read, by the kernel and the file system check, and the second count stopped
+the start before anything on it was run.)
+
+One case is left, and it is narrow: a stick the start-up file system sees *before* the
+computer's own disk, with that disk still not seen when the main partition is mounted (and,
+when what was mounted is a USB disk, five seconds later too). Then only one disk carries the
+identifier, and it is the stick's. The same holds for a disk made from the image that is not on
+USB either (a memory card in a reader built into the computer, say) and is seen first. A computer's own SATA, NVMe or eMMC disk is found well
+before a USB stick (the kernel waits a second before it reads any USB disk); one whose own
+disk is itself on USB, or very slow to start, is the kind of computer this case could reach.
+
+What stays open to a person with the computer in their hands: the PC's own firmware set-up (it
+decides whether Secure Boot is on, and which disk starts: a computer allowed to start from a
+USB stick can be started from one), and the disk itself, which is not encrypted. A set-up
+password for the firmware, and the order it starts disks in (this disk only), are the
+organisation's own to set, as for any computer.
+
+On a real computer, once it is running:
+
+```
+mokutil --sb-state          # prints "SecureBoot enabled"
+```
+
+Two things a person may see:
+
+- Some business PCs are sold with the key for operating systems other than Windows switched
+  off. Any Linux, this image included, then needs one setting changed in the PC's firmware
+  set-up (it is named along the lines of "Allow Microsoft 3rd Party UEFI CA"). Not met in the
+  test, where the firmware had the key.
+- Before the boot menu, GRUB prints `error: prohibited by secure boot policy` once and goes on.
+  It comes from one of Debian's own menu files (`/etc/grub.d/25_bli`), which asks for an
+  optional part that Debian's signed GRUB may not load with Secure Boot on. It is not from this
+  image's files and nothing is wrong.
+
+### How it is checked: `firmware/test/image.sh`
+
+```
+firmware/test/image.sh              # the image in dist/; about 13 minutes without KVM
+firmware/test/image.sh --help
+```
+
+It starts the image in a virtual machine (QEMU) the way a freshly flashed computer starts, and
+checks it from outside and, over SSH, from inside. It needs `qemu-system-x86` and `ovmf` (the
+UEFI firmware for QEMU), `mtools`, `jq`, `openssl`, `curl`, an SSH client, and for some checks
+`sbsigntool` and `socat`. It does not need the administrator account. With KVM (the processor's
+own support for virtual machines) it uses it; without, QEMU plays the processor in software.
+Logs go to `dist/test-logs/image/`. In order:
+
+1. **The image file, before it is started**: the partitions, the boot files and who signed
+   them, the first set-up files, that the boot menu is closed, that the small `grub.cfg` on the
+   EFI partition is the image's own and the menu looks for no identifier (each Linux entry takes
+   the partition that file chose; `panic=30`), that cloud-init does not search other disks, that
+   the firewall does not let port 8080 in, and that nothing in it is one computer's own.
+2. **A working copy on a larger "disk"** (8 GB), with a `user-data` made from the image's own
+   example by removing one `#` a line, as a person would: a name, an account with a key made
+   for the run, the time zone, a private certificate authority, a web proxy. And an
+   **intruder's USB stick**: a copy of the image's own `CIDATA` partition (the same label, even
+   the same identifier) whose `user-data` would make an administrator account, write a file and
+   print a line on the console.
+3. **The start**, with Secure Boot on, a network card, the intruder's stick plugged in (it stays
+   in through every later start of this copy), and an emulated USB serial adapter that plays a
+   receiver (the lines of a Quansheng ALERT radio, as RPi ALERT's `simulate.sh` sends them).
+4. **From outside**: a login prompt on the serial console; the dashboard through the network;
+   SSH takes the key, refuses a password, refuses root; a port the firewall does not list is
+   shut.
+5. **From inside**: the set-up was applied, from this disk's own partition only, and nothing
+   of the intruder's stick; the main partition grew; no account has a password; security updates are on; the service runs inside its sandbox (tried, not only
+   read); systemd's exposure score; the sandboxed agent reads the USB serial receiver; and a
+   **pretend radio stick** — a USB device made by the kernel's own USB test driver, carrying a
+   real stick's USB ids — is handed to the agent by the device rule and opened by `rtl_sdr`
+   inside the sandbox.
+6. **Debian's own boot-loader updates**, made to run as a GRUB update would run them, then as
+   a shim update would (which writes Debian's small `grub.cfg` and makes no new menu), and the
+   menu made again as a kernel update makes it: each time the image's own small file is back,
+   the menu still closed, each entry once and none looking for an identifier.
+7. **The enterprise profile, then a restart**: the agent tied to the lock; the lock kept through
+   the image's firewall reloaded, restarted, and every table cleared by hand; everything comes
+   up again by itself.
+8. **A fresh copy exactly as it is flashed**, with nothing switched on in `user-data`: it
+   starts, the dashboard answers, and nobody can log in.
+9. **Another fresh copy** whose `user-data` switches on only an account and the enterprise
+   profile, as an organisation would: it comes up locked down without anybody logging in.
+10. **Two more copies with one bit changed** in shim and in GRUB: neither starts.
+11. **One more copy with its serial port in hand**, as a person with a serial cable has it:
+    `c` (GRUB's command line) and `e` (the menu's editor) both ask for a name and a password and
+    take none; no `grub>` prompt is ever shown; Enter on the menu's own entry still starts Linux,
+    with the image's own kernel options.
+12. **One more copy with a USB stick made from the image itself** plugged in: a whole copy of
+    the image (its main partition carries the same identifier), its EFI partition emptied, and a
+    boot menu of its own with no owner that adds a word to the kernel's start-up line. The
+    computer's GRUB must not take that menu, the kernel's start-up line must be the computer's
+    own, the partition the start-up file system checks and mounts must be the computer's own,
+    and Linux must not start from the stick: the start-up file system refuses to go on and
+    restarts the computer, with no prompt (or, if the stick shows up only after the computer's
+    own disk is mounted, starts from its own disk).
+
+### The disk image: what has been tested, where
+
+**18 November 2026, after the two reviews.** The image built from the files as they are in
+this folder (20:46 UTC, 3 minutes 45 seconds, 287 MB packed), then a whole run of
+`firmware/test/image.sh` on it, alone on the computer (started 21:14 UTC, 13 minutes): **223
+checks passed, none failed, 1 skipped** — the same skip as before (Debian's archive cannot be
+reached from the virtual machine here). The checks added since the run below are marked *new*
+in the table. In one of the starts QEMU itself crashed (signal 11) 14 seconds in; the test
+makes the copy afresh and starts it once more, as it is written to, and the second start
+passed. The same computer as the package's: x86-64, Ubuntu 24.04.5, no USB and no KVM.
+
+Before the reviews: everything below is from 14 November 2026 on the test computer described
+under [What has been tested, and where](#what-has-been-tested-and-where): x86-64, Ubuntu 24.04,
+**no USB and no KVM**, so the virtual machine's processor was emulated in software. The virtual
+machine: QEMU 8.2.2, the OVMF firmware with Secure Boot on and Microsoft's keys, 2 GB of memory,
+a SATA disk, an Intel network card. A whole run of `firmware/test/image.sh` with part 8 (the
+copy with nothing switched on), on an image built minutes before, ended on 18 November at
+09:08 UTC with **184 checks passed, none failed, 1 skipped**. Earlier runs on 14 November also
+passed (154, 174 and 175 checks, as parts 8 and 9 and one check were added). shellcheck 0.9.0
+had nothing to report on the three scripts.
+
+In the image as built: Debian 13.7, kernel 6.12.117, systemd 257.13, Node.js 20.19.2, rtl-sdr
+2.0.2, OpenSSH 10.0, cloud-init 25.1.4, shim 16.1, GRUB 2.12.
+
+| What | Result |
+|---|---|
+| The amd64 image builds from nothing, as root, with no container. Built three times; the last time with the builder's own file permissions set as tight as they go, to show the build does not lean on them | Passed |
+| Before it is started: a disk laid out the way UEFI firmware expects (a GPT partition table) with the three partitions, the main one last; the boot files where firmware looks; shim carries Microsoft's signatures, GRUB and the kernel Debian's; `CIDATA` holds the three files as they are in `image/cidata/`, and `user-data` switches nothing on; no identifier, no SSH host key, no password, nothing in the agent's data folder; the profile is `standard` | Passed |
+| **It starts with Secure Boot on**: a login prompt on the serial console; the kernel and the running system both say Secure Boot is on; the kernel is locked down; the console says there is no default password and where set-up is | Passed |
+| The first set-up file, made from the image's example by removing one `#` a line, was applied from the disk's own `CIDATA` partition: the name, the account, the time zone, the certificate authority in the system's list, the proxy in the service's file (still readable by root alone), the agent restarted with it and asking the stand-in proxy | Passed |
+| *New.* **Only this disk's `CIDATA` is read.** Before it starts: cloud-init's search by label is off, the boot menu is closed (an owner, no password, the Linux entries marked to start by themselves, Debian's own menu script switched off), and the firewall lists SSH and port 80 and not 8080. At the start: the console and the journal say the set-up files were taken from `/dev/sda2`, the second partition of the start-up disk; cloud-init read them from its own folder, which holds that partition's files byte for byte, root's alone. An intruder's USB stick with the same label (and identifier), plugged in from the first start to the last, was seen by the computer as `/dev/sdb`, and nothing of its set-up file was applied: no file, no account, no line on the console — at the first start, after the restart, and with the enterprise profile | Passed |
+| A new identifier, new SSH host keys and the dashboard's first password were made at the first start; a second copy of the same image made a different host key | Passed |
+| **The main partition grew** to fill the 8 GB disk (7,703 MB), partition and file system | Passed |
+| **SSH takes the key; a password is refused** ("Permission denied (publickey)"); root is refused even with the key; no account can be opened with a password | Passed |
+| **Security updates are on**: both of Debian's daily timers are waiting; `unattended-upgrade` reads its settings and names Debian's security updates; updates come from Debian's two addresses and nowhere else | Passed |
+| Fetching from Debian's archive from inside the virtual machine, and a trial run of an update against it | **Skipped**: on this test computer the virtual machine cannot reach the archive. The check is there and runs where it can |
+| The firewall: loaded at start; the only ports open to other computers are SSH and the dashboard; from outside, a listed port answers and an unlisted one does not. 18 November: a little server listening on 8080 and 9999 answers on the computer itself, and from outside neither answers: 8080 is no longer let in | Passed |
+| **The service is active under systemd with its sandbox** — tried, not only read: user `rpi-alert`, exactly one capability (standard profile), no-new-privileges and the system-call filter on; its user cannot write in `/usr`, `/etc` or `/var`, can write its two folders, has its own `/tmp`, cannot read the proxy file or look into `/home`; inside the service's group of processes even root is refused the disk and the kernel's log; nothing in the agent's log says it was refused something it needed | Passed |
+| **systemd's exposure score** for the running service (`systemd-analyze security`) | **1.9** standard profile, **1.7** enterprise — the same as the package's own tests found |
+| **The dashboard answers another computer** on port 80 through the forwarded port; the agent is the pinned version, every file of it the signed release's; another computer is not let into the settings without the password | Passed |
+| **An emulated USB serial receiver, read by the sandboxed agent**: the two USB serial drivers were loaded at start; the adapter belongs to the group `dialout`; the service's closed device list lets it be opened; the agent, as `rpi-alert`, opened it, took the lines for a Quansheng ALERT radio and shows it on the dashboard. Again after the restart, with no capability at all | Passed |
+| **A pretend radio stick** (the kernel's USB test driver, with the USB ids of an RTL-SDR Blog stick, `0bda:2838`): udev applied the package's rule — group `plugdev`, nobody else, power saving off; the kernel's TV driver, which this kernel has, did not take it; a user outside the group is refused; the agent found it; `rtl_sdr`, started by the sandboxed agent, opened the device and asked it for samples. It got none: there is no radio behind it | Passed |
+| Debian's own boot-loader update, run as a GRUB update would run it, wrote the same boot files the build had put there, file for file | Passed |
+| *New.* After that update the boot menu is still closed; Debian's own menu script switched on again, as a GRUB update would leave it, then `update-grub` (what a kernel update runs): no error, still closed, the script switched off again, each entry in the menu once | Passed |
+| The enterprise profile put in force by its command: port 8080, no capability, the firewall lock on beside the image's firewall and still there after the firewall is loaded again; from outside nothing answers on 8080 or 80. *New:* the agent tied to the lock; `audit` says the keeper is running; the lock still there after `systemctl restart nftables`; every table cleared by hand, the lock put back by its keeper with the agent running on (the same process), and the image's own table back after a reload | Passed |
+| **A restart**: a login prompt again; the same identifier, host key and partition size; the set-up file was not applied twice; the service, the firewall lock and the two serial drivers came up by themselves; still locked down | Passed |
+| **A fresh copy exactly as it is flashed**, nothing switched on in `user-data`: a login prompt; the first set-up ran to its end with nothing to set up; nothing on the console marked failed; the dashboard answers another computer on port 80; SSH answers and turns away `admin`, `root` and `debian` alike; its SSH host key is its own | Passed |
+| Another fresh copy with only an account and the enterprise profile switched on in `user-data`: it came up with the enterprise profile, port 8080 for the computer itself only, no capability, the firewall lock on, and nothing answering other computers on 8080 or 80 — before anybody had logged in | Passed |
+| With Secure Boot on, a copy with one bit changed in shim is refused by the firmware ("Access Denied"), and one with one bit changed in GRUB is refused by shim ("Security Violation"); no kernel starts | Passed |
+| *New.* **The boot menu over the serial port** (part 11): it shows; `c` asks for a user name and turns away a name and a password ("access denied"); `e` asks for a user name too; no `grub>` prompt is ever shown; Enter on the menu's own entry starts Linux with no name or password asked, and the kernel's start-up line on the console is the image's own | Passed |
+| It shuts down cleanly when asked | Passed |
+
+Numbers, measured there. **The times are on an emulated processor**; a real PC will differ.
+
+| | |
+|---|---|
+| The image | 3.0 GB as a disk (3,221,225,472 bytes), 705 MB of it in use; about 290 MB packed with xz |
+| Building it | About 2 minutes 25 seconds on four processor cores, Debian's packages downloaded each time. 18 November, with the packing: 3 minutes 45 seconds, the computer shared with other work |
+| First start, from power-on to a login prompt on the serial console | 96 to 105 seconds over the four runs, with the partition grown, the keys made and the set-up applied (a copy with less to set up: about 60 seconds). 18 November: 119 seconds (64 and 69 for the copies with less to set up) |
+| A later start, as systemd counts it | 35 to 40 seconds (about 10 the kernel, the rest systemd and the services) |
+| A restart, from the command to the next login prompt | 63 to 68 seconds, shutting down included. 18 November: 85 seconds |
+| The whole check | About 11 minutes. 18 November, with part 11: 13 minutes |
+
+### The disk image: what is not yet proved
+
+- **A real computer.** The image has not been written to a disk or started on one. Real
+  firmware differs from QEMU's from maker to maker: whether it finds the disk, whether its
+  Secure Boot holds the key (see [Secure Boot](#secure-boot)), whether its network port needs a
+  file the image does not have.
+- **A real radio stick**, and a stick doing its work. The pretend stick shows the device rule,
+  the block on the TV driver and the sandbox's device list up to the moment `rtl_sdr` has the
+  device open. Nothing shows a sample being read. This is still the first thing to try on real
+  hardware.
+- **A real serial receiver.** The adapter was QEMU's emulated one (an FTDI type), fed by the
+  test. A real Quansheng radio, an ERT-A2 or a GPS has not been plugged in.
+- **The ARM image.** `build-image.sh --arch arm64` and `image.sh --arch arm64` are written and
+  have never been run. The automatic build is their first run.
+- **An update really installed.** `unattended-upgrades` has not fetched or installed anything
+  here, and the virtual machine could not reach Debian's archive at all. A kernel update
+  followed by a restart with Secure Boot on has not been tried; the boot-loader update was
+  made to run by hand.
+- **The clock.** No time server could be reached, so the clock was never set from the network
+  and the agent kept its readings waiting, as it is meant to. The moment it starts to trust the
+  clock has not been watched on this image.
+- **Parts of the example `user-data`.** Tried: parts 1 to 4, the proxy for the base station,
+  the restart line and the enterprise line. Not tried: the proxy for Debian's updates, the
+  organisation's own time servers, a fixed address, the two lines that apply them at once, and
+  the line that stops the file being read again. Applying a changed `user-data` a second time
+  (the name in `meta-data`) has not been tried either.
+- **The screen and a keyboard.** The virtual machine had no screen; only the serial console
+  was watched. The log shows a login prompt was started for the screen as well.
+- **The `CIDATA` partition opened on Windows or macOS.** It is plain FAT, which both read; no
+  one has done it.
+- **A program that writes disk images** (`dd`, or any other).
+- **A long run, a power cut, a full disk.** Each start in the test lasted minutes.
+- **The image built by the automatic build.** See the next section: that has never run.
+
+### What the start test showed about the package
+
+Nothing in the package had to be changed for the image: the service started under a real
+systemd on a real kernel with every limit in its service file, and the agent's log has no line
+about a refusal. This was the first time the service's device list met USB at all (the
+package's own tests ran on a kernel without USB): `DeviceAllow=char-usb_device` and
+`char-ttyUSB` do what they are for, and the package's udev rule and driver block list were
+applied by a real udev to a (pretend) device for the first time.
+
+Four things worth knowing, none of them a fault in the service:
+
+1. **`deb/build-deb.sh` stopped when the person running it had tight file permissions set**
+   (a `umask` of 027 or 077): `dpkg-deb` refused the folder. Since 18 November it sets
+   `umask 022` itself, and `test/deb.sh` builds it a third time under `umask 077` to show it.
+2. **The agent names the dashboard as `http://<name>.local/`** in its log. That is RPi ALERT's
+   own wording, right for a Pi; on the image, and on most computers the package is installed
+   on, that name does not work.
+3. **With the enterprise profile chosen in `user-data`, the standard profile runs first for a
+   few seconds** (above). A build option that installs the package with the enterprise profile
+   from the start — the package already allows it — would close that gap. Not built.
+4. **On a network with no time server in reach the agent sends nothing**, by design: in the
+   test about 190 readings were waiting for the clock after a few minutes. An organisation
+   that blocks the public time servers must name its own (part 5 of `user-data`).
+
+### The disk image: choices made here
+
+- **One tool from Debian (`mmdebstrap`) and a plain script**, not an image-building framework:
+  a reviewer can read every step, and the only programs that run are Debian's.
+- **Debian's smallest base and no "recommended" packages.** What a person looking after the
+  computer needs is named in the list (`less`, `nano`, `curl`, `lsusb`, `ping`).
+- **Processor microcode and Realtek network firmware are in by default**, as Debian's own
+  installer has put them on PCs since Debian 12: fixes for processor faults are security
+  fixes. They are the only packages without source. `--no-firmware` leaves them out.
+- **UEFI only.** No support for PCs that start the older way (BIOS); none has Secure Boot.
+- **No swap, no disk encryption, no LVM.** One ext4 partition that grows. Encryption needs a
+  password at every start or a set-up with the computer's security chip: an organisation's
+  own choice, and not one a base station that must come back by itself after a power cut can
+  make lightly.
+- **`cloud-init` for the first set-up**, not a script of this project's own: IT teams know it.
+  Its own search for a disk labelled `CIDATA` is switched off (`fs_label: null`), because it
+  takes any disk with that label and tries removable ones first; a short script of the
+  image's own hands it the two files from this disk's second partition instead. cloud-init also
+  takes a hint from the kernel's start-up line and from the firmware's serial-number field: the
+  first comes only from this disk's own boot menu, which is closed (a USB stick's menu is never
+  taken, see [Secure Boot](#secure-boot)), and the second is set only by whoever controls the
+  firmware (or a virtual machine's host).
+- **`CIDATA` is a partition of the same disk**, so one disk is all a person handles, as with a
+  Raspberry Pi's SD card. The price is that the file stays on the disk.
+- **The network is `systemd-networkd`**, which is part of systemd, rather than one more
+  package. No Wi-Fi: a base station inside an organisation's network is on a cable.
+- **The firewall is a table of its own** that loads at every start and leaves the enterprise
+  profile's lock alone. It lets in port 80 and not 8080: 8080 is the enterprise profile's port,
+  where the dashboard is for the computer itself only, so this table says so too. (The agent
+  also goes to 8080 when it may not have 80; under the standard profile that does not happen,
+  since the profile gives it the capability for 80. A person who moves the dashboard to another
+  port for the local network adds that port here.)
+- **The boot menu has an owner with no password**, rather than a password: that closes its
+  editor and command line and keeps to the rule that no password is stored on the image. Every
+  entry that starts Linux is marked to start by itself. Debian's own menu script (`10_linux`)
+  is run by the image's script, which marks its entries, and is itself switched off so that
+  they are not written twice; a GRUB update that switches it on again is undone the next time
+  the menu is made. If Debian's script cannot be run, the image's script fails and the menu
+  maker leaves the old menu in place, so a computer is never left with a menu that asks for a
+  password nobody has.
+- **The boot files are put in place by the build with `mtools`**, in the places and under the
+  names Debian's own installer uses, and Debian's package is told to keep the copy that a
+  never-seen disk starts from up to date. The test checks that Debian's own installer, run
+  afterwards, writes the very same files.
+- **SSH host keys are made by a small unit of the image's own**, because Debian's unit for it
+  does not run on a computer started from an image with an empty identifier file.
+- **The image is 3 GB**, so that it fits a 4 GB disk and leaves room before it has grown.
+- **The image starts with the standard profile**, as the design asks, and the enterprise
+  profile is one line of `user-data`.
+- **The pretend radio stick** in the test is the kernel's own USB test driver (`dummy_hcd`),
+  which Debian's kernel carries. It was chosen over passing a real USB device through because
+  the test computer, like GitHub's, has none.
+
+## After the two reviews (18 November 2026)
+
+Two automated reviews read everything in this folder and tried it: one for security, one for
+correctness. Between them they raised 25 points: 2 that should hold back a release, 11 that
+should be put right, 12 small ones. Each is below with what was done. The sections above
+describe the result; the test counts are under each form's "what has been tested".
+
+| | What was found | What was done |
+|---|---|---|
+| 1 | **The disk image took its first set-up from any disk labelled `CIDATA`**, a USB stick first: anybody who could reach a USB port and cause a restart could set the computer up as administrator | Put right. cloud-init no longer searches by label; the image's own service hands it the files from this disk's own partition. The start test keeps an "intruder's" stick plugged in through every start and checks nothing of it was applied. Not changed: the file is still read at each start (whoever can change that partition can change the main one too). A later check found the same attacker could still get in another way, with a stick that is a whole copy of the image: see A below |
+| 2 | **The enterprise profile's lock could be missing while the agent ran**, the dashboard then open to the network: a slip in the rules file, Debian's own firewall service started after it, no nftables | Put right: no lock, no agent. The agent is tied to the lock's service, the lock is kept in place by a keeper, a missing rules file is a failure, and the image's own firewall no longer lets port 8080 in. Tried every way the review found, under a real systemd and in the image |
+| 3 | **Root decided the lock and the low-port capability from a settings file the agent's user can write** | Put right: from the profile root put in force. Settings that ask for less are kept to the profile, said loudly, and end `sync` with status 4 |
+| 4 | **The boot menu was open**: from its command line, at the keyboard or a serial port, the computer could be started as administrator with no account | Put right: the menu has an owner with no password; its entries start by themselves. Tried over the serial port. The Secure Boot section now says what Secure Boot does not cover. The closed menu held only while the menu came from this disk: see A below |
+| 5 | The proxy start-up file took its library from the agent's own data folder first | Put right: from the system's folders only. Tried with a look-alike library |
+| 6 | A proxy setting that could not be used was passed over and the agent called out directly, while the log said nothing was sent | Put right: such calls are refused; an address without `http://` is taken as `http://` |
+| 7 | A proxy that drops connections made the agent open thousands of connections a second | Put right where the start-up file is used (every Node.js the package is made for). **Not on Node.js 22.21 or newer**, which handles the proxy itself: measured, and written down in the proxy section |
+| 8 | The workflow could publish from any branch, over a tag already in use, and the container before the release | Put right: `main` only, a tag in use anywhere stops the run, and the order is the two per-architecture containers (`<tag>-amd64`, `<tag>-arm64`), the draft release, the joined container (`<tag>`), the public release; the jobs name an environment the owner can lock down. Not tried on GitHub |
+| 9 | The release-tag check passed a value of two lines | Put right; tried |
+| 10 | The published container's exact base image was not recorded | Put right: looked up once per release, in the labels and the release notes |
+| 11 | `build-image.sh --deb` took a package without checking its agent, and said it matched | Put right: checked against the signed release, both ways |
+| 12 | The serial drivers were loaded only from the next start, and built-in serial ports were refused without a word | Put right: the install loads them; both READMEs and the service file say how to open a built-in port |
+| 13 | The release check read the release file by name several times between checking and unpacking | Put right: everything is done on a private copy |
+| 14 | A settings file root put there stayed root's, and the agent ran on its built-in settings, without the token | Put right: handed to the agent's user, on the opened file; a link is left alone; a file that cannot be used stops `sync` and `profile` |
+| 15 | The package's installed size came from the build disk's blocks, so two builds could differ | Put right: from the files' lengths. Built a third time on a memory disk and compared |
+| 16 | A second release run under the same tag overwrote the published container | Put right (see 8) |
+| 17 | The checks under a real systemd could be skipped in the workflow with the job still green | Put right: required on x86-64, a warning on ARM |
+| 18 | `OPEN_ALERT_BASE_PROFILE` was ignored when settings were already there, as after a remove and reinstall | Put right: applied, and said; tried with and without systemd |
+| 19 | The container was published without waiting for the ARM image's build | Put right |
+| 20 | `build-deb.sh` failed under a tight file mask | Put right |
+| 21 | Test counts and a paragraph marked "INTERIM" on this page were out of date | Put right: this page was rewritten from the runs of 18 November |
+| 22 | `sha256sum -c SHA256SUMS` failed for anybody who downloaded only some of a release's files | Put right: `--ignore-missing`, in the release notes and here |
+| 23 | The first container published is private, and nothing said so or how to pull it | Written down (the release paragraph below). **The owner's step remains** |
+| 24 | RPi ALERT's own uninstall leaves its `alert` account and two groups behind | The refusal message and `audit` now say so, with the commands |
+| 25 | Ubuntu 24.04's Node.js 18 is past its makers' end of life and comes from *universe* | Written down, under Installing it |
+
+Running the checks on the result found three more faults, put right before the runs described
+on this page:
+
+- **On Debian 12's older `undici` (5.15) the guard of point 7 was not put in place**, and the
+  check of a proxy that drops every connection never ended (Node.js kept busy by the very
+  storm the guard is for). That library makes its connection to the proxy itself, with no way
+  to hand it a factory; the start-up file now puts the same guard on that connection once it
+  is made. Both check scripts now also give each such case two minutes at most, and say so as
+  a failure rather than wait for ever.
+- **The lock's service could give up for good.** A few starts in quick succession (as the test
+  makes, and as a person putting the rules file right might) reached systemd's start limit, and
+  after that it no longer tried every 15 seconds: the agent stayed stopped once the lock could
+  hold again. The limit is now off for that one service.
+- **Two checks killed a service by the number systemd gave for it**, and when the service was
+  not running that number was 0, which ends the check script itself. They now check the number
+  first.
+
+### A check of the result (18 November 2026, later)
+
+A third, independent check then tried the result. It found one point that should hold back a
+release, two that should be put right and three small ones:
+
+| | What was found | What was done |
+|---|---|---|
+| A | **A USB stick that is a whole copy of the image could supply the boot menu at a restart**, Secure Boot on: the small file beside GRUB took the first disk carrying the main partition's identifier, and the stick's menu (with no owner) started Linux with a shell as administrator. Points 1 and 4 above were closed only for `CIDATA`, the keyboard and the serial port | Put right: GRUB takes its menu from the disk it was started from, and its entries Linux from the same place; the image's own small file is put back after every GRUB or shim update; the start-up file system refuses to go on while two disks carry the main partition, and checks and mounts the computer's own disk before a USB one; `panic=30`, so that no failed start offers a prompt. Tried with that very stick in part 12 of the test. One narrow case is left (a stick seen before the computer's own disk): see [Secure Boot](#secure-boot) |
+| B | This page said a USB stick could not affect the start, which A disproved | Rewritten with A |
+| C | The checks under a real systemd would likely fail on GitHub's computers for a reason outside the package: Docker's AppArmor profile there forbids the mounts a service's sandbox is made of, and the package job, which every publishing job needs, would be red | Docker's AppArmor profile is left off that one test container; it is still not privileged. Not tried on GitHub (this computer has no AppArmor) |
+| D | The lock's keeper took a rules file that throws the dashboard's packets away (`drop`) instead of refusing them for no lock at all, and kept the agent stopped for good, saying the table was not loaded | It now takes a dashboard rule that ends in `reject` or in `drop` for the lock (a table whose rules were emptied is still none), and its message says what is missing. Tried under a real systemd with `drop` |
+| E | The package from the earlier snapshot and the new one carried the same version, `0.23.1+oa1` | The layer's revision is now 2 (`0.23.1+oa2`); `oa1` was never released |
+| F | Smaller slips on this page and in the package's own README: when the workflow's checks run, which container run was cited, the order of a release's steps, and what `audit` does on a fault | Put right |
+
+## How it is built and checked automatically
+
+**`.github/workflows/firmware.yml` has never run.** It was written and read on a computer that
+cannot run it; its first push to GitHub is its first run, and it should be expected to need
+fixes. What was checked without running it, on 14 November 2026:
+
+- it is well-formed (a YAML reader takes it), and every option it gives a script exists in
+  that script. No checker made for such files (`actionlint`, for one) was run on it;
+- each action's commit was looked up on GitHub (`git ls-remote`) and is the one its version
+  tag names;
+- these of its steps were run by hand on the test computer, with the commands the file gives
+  them, on x86-64 only: shellcheck on the 18 scripts; the rule for a release tag; the download
+  of the pinned release from GitHub and its check; the package built with lintian and checked
+  with `test/deb.sh --deb` on Debian 13 (280 checks passed, none failed, 1 skipped); the container built under the name it
+  would be published by, and that very image checked (95 checks passed; nothing was pushed);
+  the disk image built and started (above); the benchmark's quick test (11 checks passed);
+  and the step that puts a release together — the package's bill of materials, the checksums,
+  the notes.
+
+And again on 18 November 2026, after the changes the two reviews led to (the publishing order,
+the checks before a release, `--require-systemd`): a YAML reader takes it, and every `needs`
+names a job that exists; shellcheck has nothing to report on any of its 37 `run:` blocks (each
+taken out of the file, with GitHub's `${{ … }}` parts replaced by a word); the release-tag step
+turns away a tag with a `+`, an empty one, one that starts with `-` and a value of two lines,
+and takes `firmware-0.23.1-oa1` (as the tag was then); the main-branch step turns away a run on another branch; the
+command that looks up the base image's digest gives the digest from Docker Hub; and the step
+that puts a release together was run on the files built that day (its `SHA256SUMS` checks, and
+`sha256sum -c --ignore-missing` passes with the package alone). `actionlint` was again not run
+(downloading it was not allowed on that computer). The step that looks for a tag already in use,
+the `release` environment and everything that publishes can only be tried on GitHub.
+
+Trying the steps by hand found one fault in the file as it first stood, since put right: it
+handed the release's two files to the scripts through the variables `OA_AGENT_TARBALL` and
+`OA_AGENT_SIG`, and with those set `test/deb.sh` fails one check (the one that gives the
+release check a tarball *without* its signature and expects to be turned away: the variable
+supplies the signature behind its back). The file now hands the two files over by option.
+
+Not tried, because only GitHub can: the actions themselves, the ARM computers, KVM, and
+publishing.
+
+*GitHub Actions* is GitHub's service that runs a repository's builds and checks on GitHub's own
+computers. This file tells it to build and check everything in this folder.
+
+**What starts it**: a push that changes anything under `firmware/` or the file itself, and a
+person pressing *Run workflow* (Actions → firmware). Nothing else: not a push elsewhere in the
+repository, not a tag, not a pull request, not a timer. A newer push stops an older run that
+is still going.
+
+| Job | On | What it does |
+|---|---|---|
+| Scripts | x86-64 | shellcheck on every shell script under `firmware/`; for a release, the checks that it may be made (below) |
+| Package | x86-64 and ARM | Downloads and checks the pinned release, builds the package, runs `test/deb.sh` (Debian 13, Ubuntu 24.04, Debian 12). On x86-64 with `--require-systemd`: the part under a real systemd may not be skipped |
+| Package is the same file | x86-64 | Compares the two packages just built: one from a PC, one from an ARM computer. They must be the same file, byte for byte |
+| Container | x86-64 and ARM | Builds the container and runs `test/container.sh` |
+| Disk image for PCs | x86-64 | Builds the amd64 image and runs `test/image.sh`, with KVM where GitHub's computer has it |
+| Disk image for ARM | ARM | Builds the arm64 image and tries `test/image.sh --arch arm64`. A failed start test is reported and does not fail the run, because nobody has seen it pass; such an image is never published |
+| Benchmark | x86-64 and ARM | `bench/test.sh`, the benchmark's quick test |
+
+"ARM" is GitHub's own 64-bit ARM computers (`ubuntu-24.04-arm`), which are free for a public
+repository, as this one is.
+
+**A release.** When a person starts it by hand and fills in *release tag* (for example
+`firmware-0.23.1-oa2`), and only then. The first job's checks run alongside the builds, and
+nothing is published unless they pass: they stop the release unless the tag is a plain name on
+one line, the run is on the `main` branch, and the tag is in use nowhere — not as a git tag,
+not as a release (published or draft), not as a container under `<tag>`, `<tag>-amd64` or
+`<tag>-arm64`. Nothing published before is ever written over. The first job also looks up,
+once, the exact version (the digest) that `debian:trixie-slim` names at that moment, and both
+kinds of computer build the container on that one base. Then, only after every job
+above has passed in the same run (the ARM image's build included; its start test may fail and
+the image is then left out), and each step only after the one before it:
+
+1. each kind of computer builds the container again on that base, checks that very image, and
+   pushes it under a name of its own (`<tag>-amd64`, `<tag>-arm64`);
+2. the GitHub release is made as a **draft**, which nobody but the owner sees, holding the
+   package, the disk image for PCs (and the one for ARM if its start test passed) with their
+   checksums, a bill of materials for the package and for each image, a `SHA256SUMS` file, and
+   build provenance for each file; the names of the files on it are checked;
+3. the two containers are joined as `ghcr.io/cdomotor-g/open-alert-base:<tag>`, for both kinds
+   of processor, with *build provenance* — GitHub's signed record of which run, from which
+   commit, made it;
+4. the draft is made public, and the git tag is made then, at the commit the run was started on.
+
+A run that stops half-way leaves no public release and no container under `<tag>` (the two
+`-amd64` and `-arm64` ones may be there, and a draft for the owner to look at and delete). The
+release notes name the base image by its digest and give the `docker pull` line; the
+container's own labels name it too (`org.opencontainers.image.base.name` and `.base.digest`).
+
+The publishing jobs name a GitHub *environment*, `release`. GitHub makes it at the first run,
+with no rules. **For the owner, once:** Settings → Environments → `release` → limit it to the
+`main` branch, and add a required reviewer if every release should wait for a person's
+approval (each of the four publishing jobs then asks). A changed copy of the workflow file on
+another branch cannot get round those rules, as it could get round the check in the file.
+
+**For the owner, after the first release:** a container that a workflow pushes to ghcr.io for
+the first time is **private**. To let anybody pull it: on GitHub, the account's (or
+organisation's) *Packages* → `open-alert-base` → *Package settings* → *Change visibility* →
+*Public*. Then:
+
+```
+docker pull ghcr.io/cdomotor-g/open-alert-base:firmware-0.23.1-oa2
+OA_IMAGE=ghcr.io/cdomotor-g/open-alert-base:firmware-0.23.1-oa2 docker compose -f firmware/container/compose.yaml up -d
+```
+
+The release is marked "pre-release" unless the box is unticked. Leave it ticked until an image
+has started a real computer and heard a real stick.
+
+To check downloaded files against the release's checksums and against the record of where they
+were built (`--ignore-missing` passes over the files of the release you did not download):
+
+```
+sha256sum -c --ignore-missing SHA256SUMS
+gh attestation verify open-alert-base_0.23.1+oa2_all.deb --repo cdomotor-g/open-ALERT
+```
+
+**What a reviewer will ask about the file itself:**
+
+- **Permissions.** The file as a whole grants nothing. Each job asks for what it needs: to
+  read the repository, and nothing else, for every build and check (the first job may also
+  read the container registry, to see whether a release's tag is taken). Only the four jobs
+  that publish may write, and only where they publish: the container registry, the release,
+  and GitHub's record of provenance.
+- **Other people's code.** The only actions used are GitHub's own (`actions/checkout`,
+  `upload-artifact`, `download-artifact`, `attest-build-provenance`), each pinned to one exact
+  commit with its version beside it. Signing in to the container registry is one `docker
+  login` line with the run's own short-lived token. No secret is stored in the repository's
+  settings for any of it.
+- **What it downloads**: Debian's and Ubuntu's packages, the three container base images the
+  tests use, and the pinned RPi ALERT release, which is checked by hash and signature before
+  anything else is done with it.
+- **What the tests send out.** Nothing to Flood-Net: the agents under test have no token, and
+  are given stand-ins for Flood-Net or for a proxy. One virtual machine of the image's start
+  test is let out to the internet, to ask Debian's archive for its lists (a check that cannot
+  be made on the test computer here); in its first seconds, before its set-up file has given
+  it the stand-in proxy, its agent may fetch Flood-Net's public list of stations, as any new
+  base station does. The other virtual machines can reach nothing outside themselves.
+
+What only the first runs will show: whether `test/deb.sh`'s part under a real systemd starts on
+GitHub's computers (on x86-64 the job is run with `--require-systemd`, so a skip there fails the
+job and the first run settles it; on ARM a skip is a warning on the run, until a first run has
+shown it starts); whether GitHub's x86-64 computer
+offers KVM to the image test; whether the ARM image builds and starts at all; whether the two
+packages really are the same file; and the publishing steps, which cannot be tried without
+publishing.

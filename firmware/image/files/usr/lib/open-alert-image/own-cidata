@@ -1,0 +1,71 @@
+#!/bin/bash
+# open-ALERT base station image: hand the first set-up files to cloud-init,
+# from this disk's own CIDATA partition and from nowhere else.
+#
+# cloud-init, left to itself, takes "user-data" from any disk it can find
+# whose file system is labelled CIDATA, and looks at removable disks first:
+# anybody with a USB stick and a way to restart the computer could then set
+# it up as they liked. On this image cloud-init is told not to look for a
+# label at all (/etc/cloud/cloud.cfg.d/90-open-alert-image.cfg), and reads
+# only its own folder on the main partition (/var/lib/cloud/seed/nocloud).
+# This script, run early at every start, before cloud-init, fills that
+# folder with two files: "user-data" and "meta-data" from partition 2 of
+# the disk that holds the main partition.
+#
+# The partition is found through the disk, never by a label or an identifier,
+# which another disk could carry too: the kernel is asked which disk the
+# mounted main partition belongs to, and that disk's second partition is the
+# one read. It is mounted read-only, and nothing on it is run.
+#
+# When the partition cannot be read, or lacks one of the two files, the copies
+# from the last good start are left as they are, and this says why.
+set -euo pipefail
+
+SEED=/var/lib/cloud/seed/nocloud
+MNT=/run/open-alert-image/cidata
+MAX_BYTES=1048576      # a set-up file is a few kilobytes; a megabyte is the most that is copied
+
+say() { echo "open-alert-image: $*"; }
+leave() { say "$* — the first set-up files are left as they were"; exit 0; }
+
+# The main partition, as the kernel knows it (its device numbers), and from
+# there the disk it is a partition of.
+numbers=$(mountpoint -d / 2>/dev/null || true)
+if [ -z "$numbers" ] || [ ! -e "/sys/dev/block/$numbers/partition" ]; then leave "the main partition is not a partition of a disk the kernel knows"; fi
+part_dir=$(readlink -f "/sys/dev/block/$numbers")
+disk_dir=$(dirname "$part_dir")
+name=''
+for p in "$disk_dir"/*/partition; do
+  [ -e "$p" ] || continue
+  if [ "$(cat "$p")" = 2 ]; then name=$(basename "$(dirname "$p")"); break; fi
+done
+[ -n "$name" ] || leave "the disk $(basename "$disk_dir") has no second partition"
+dev=/dev/$name
+[ -b "$dev" ] || leave "$dev is not there"
+# It must be what the image put there: a FAT file system labelled CIDATA.
+type=$(blkid -o value -s TYPE "$dev" 2>/dev/null || true)
+label=$(blkid -o value -s LABEL "$dev" 2>/dev/null || true)
+[ "$type" = vfat ] || leave "$dev is not a FAT partition (it is \"${type:-unknown}\")"
+case "$label" in [Cc][Ii][Dd][Aa][Tt][Aa]) ;; *) leave "$dev is not labelled CIDATA (its label is \"$label\")" ;; esac
+
+mkdir -p "$MNT"
+cleanup() { if mountpoint -q "$MNT"; then umount "$MNT" || umount -l "$MNT" || true; fi; rmdir "$MNT" 2>/dev/null || true; }
+trap cleanup EXIT
+mount -t vfat -o ro,nosuid,nodev,noexec "$dev" "$MNT" || leave "$dev could not be read"
+
+for f in user-data meta-data; do
+  if [ ! -f "$MNT/$f" ] || [ -L "$MNT/$f" ]; then leave "$dev holds no file called \"$f\""; fi
+  [ "$(stat -c %s "$MNT/$f")" -le "$MAX_BYTES" ] || leave "\"$f\" on $dev is larger than a megabyte"
+done
+if [ -f "$SEED/user-data" ] && [ -f "$SEED/meta-data" ] && cmp -s "$MNT/user-data" "$SEED/user-data" && cmp -s "$MNT/meta-data" "$SEED/meta-data"; then
+  say "the first set-up files on this disk's own CIDATA partition ($dev) are the ones already here"
+  exit 0
+fi
+# A new copy is made beside the old one and put in its place in one step.
+new="$SEED.new"
+rm -rf "$new"
+install -d -m 0700 -o root -g root "$(dirname "$SEED")" "$new"
+for f in user-data meta-data; do install -m 0600 -o root -g root "$MNT/$f" "$new/$f"; done
+rm -rf "$SEED"
+mv "$new" "$SEED"
+say "the first set-up files were taken from this disk's own CIDATA partition ($dev); no other disk is looked at"
