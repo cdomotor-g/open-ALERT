@@ -58,13 +58,18 @@ from the computer itself only, and a web-proxy and private-certificate route.
 ## Limits, said plainly
 
 - **Nothing has yet been run with a real radio stick on a computer that is not a Raspberry
-  Pi.** As at 13 November 2026 the package's own checks pass on Debian 13 and Ubuntu 24.04 with
-  stand-ins for the radio, on one test computer that has no USB. No ARM computer has run it.
+  Pi.** As at 19 November 2026 the package's own checks pass on Debian 13 and Ubuntu 24.04 with
+  stand-ins for the radio, on a test computer that has no USB and on GitHub's PC and ARM
+  computers. No real ARM computer has run it: only GitHub's, and an emulator for the disk image.
   The firmware is still being worked on: `firmware/README.md`, "What has been tested, and
   where", is always the current word.
-- **There is no release of the package yet** (<https://github.com/cdomotor-g/open-ALERT/releases>
-  has none), so there is no signed package, no published bill of materials file and no package
-  repository to patch from. Where a control depends on those, it says "not yet".
+- **The first release is a pre-release**:
+  [`firmware-0.24.0-oa1`](https://github.com/cdomotor-g/open-ALERT/releases/tag/firmware-0.24.0-oa1),
+  19 November 2026, for trying, not yet recommended for a base station in service. It carries
+  the package, the disk images, a machine-readable bill of materials for each, `SHA256SUMS` and
+  GitHub's signed record of where each file was built (its build provenance). The package is
+  not signed with a key of the project's own, and there is no package repository to patch
+  from. Where a control depends on those, it says "not yet".
 - **No outside assessor has reviewed this.** The statements are the project's own, checked
   against the code and the tests.
 - This pack is not legal advice and does not claim the base station meets any named standard or

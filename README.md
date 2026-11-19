@@ -142,8 +142,9 @@ The same review, written out for reading on GitHub:
 
 **What is not yet known:** nothing has been run with a real radio stick on a computer that is
 not a Raspberry Pi; no Pi 4 has run the benchmark, so every speed figure is a stand-in; prices
-need a person to check them in a browser; no ARM computer has run the package; nobody has
-checked that the package installs on Moxa's Secure system; the firmware has no release yet.
+need a person to check them in a browser; no real ARM computer has run the package (only
+GitHub's ARM computers and an emulator); nobody has checked that the package installs on Moxa's
+Secure system. The firmware's first release is a pre-release, for trying only (below).
 
 ## The firmware: a base station on another computer
 
@@ -155,14 +156,27 @@ images. Two profiles: **standard** (like a Pi base station on a small network) a
 **enterprise** (no hotspot, no remote changes from Flood-Net, no self-reboots, dashboard
 reachable from the computer itself only, web-proxy and private-certificate support).
 
-As at 13 November 2026: the package is built, and its own checks pass on Debian 13 and Ubuntu
-24.04 with stand-ins for the radio, on one test computer that has no USB; the container has
-been tried with stand-ins for the radio on one PC only (never on Torizon OS, on an ARM computer or
-with a real stick); the disk images are still being written; nothing is released; and nothing has
-been tried with a real radio stick off a Raspberry Pi. The firmware is still being worked on,
-so [`firmware/README.md`](firmware/README.md) is always the current word on what has been
-tested where. Releases will appear at <https://github.com/cdomotor-g/open-ALERT/releases> (none
-on that date). `firmware/bench` is a benchmark for how many channels a computer will carry.
+**The first release** is
+[`firmware-0.24.0-oa1`](https://github.com/cdomotor-g/open-ALERT/releases/tag/firmware-0.24.0-oa1),
+published on 19 November 2026 as a *pre-release*: for trying, not yet recommended for a base
+station in service. It carries RPi ALERT 0.24.0, unchanged: the package (`.deb`), the two disk
+images (`.img.xz`, one for PCs and one for 64-bit ARM), a bill of materials for each (`.spdx.json`,
+`.packages.tsv`), `SHA256SUMS`, and GitHub's signed record of where each file was built; and the
+container, `ghcr.io/cdomotor-g/open-alert-base:firmware-0.24.0-oa1`, one name for both kinds of
+computer. Anyone can pull it, with no GitHub sign-in: `docker pull
+ghcr.io/cdomotor-g/open-alert-base:firmware-0.24.0-oa1` (checked 19 November 2026). Every
+release is at <https://github.com/cdomotor-g/open-ALERT/releases>.
+
+As at 19 November 2026, after the automatic build's second run on GitHub: the package's own
+checks pass on Debian 13 and Ubuntu 24.04 with stand-ins for the radio, on a test computer with
+no USB and on GitHub's PC and ARM computers, the part under a real systemd included; the
+container has been tried with stand-ins for the radio on PCs and on GitHub's ARM computers, never
+on Torizon OS or with a real stick; both disk images have been built and started only in a
+virtual machine with Secure Boot on (the PC one on GitHub's PC, the ARM one on an emulated ARM
+processor, the first time it started), never on a real computer; and nothing has been tried
+with a real radio stick off a Raspberry Pi. The firmware is still being worked on, so
+[`firmware/README.md`](firmware/README.md) is always the current word on what has been tested
+where. `firmware/bench` is a benchmark for how many channels a computer will carry.
 
 ## The catalogue
 

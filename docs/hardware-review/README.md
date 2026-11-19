@@ -30,9 +30,11 @@ something is a stand-in, a guess or not yet tested, this review says so.
    what it assumed, one part does not fit, the speed figure was never measured, and its software
    recipe is the hardest kind to get approved.
 4. **No rewrite is needed.** RPi ALERT's agent runs unchanged off a Raspberry Pi; open-ALERT's
-   [`firmware/`](../../firmware/) wraps its signed release as a package. A container is built
-   but has only been tried with stand-ins on one PC, and disk images are still being written. **Nothing has yet been run with a real
-   radio stick on a computer that is not a Raspberry Pi.**
+   [`firmware/`](../../firmware/) wraps its signed release as a package, a container and disk
+   images. Since then (19 November 2026) all three are in a first release, published for trying
+   as a pre-release; the container has been tried only with stand-ins for the radio, and the disk
+   images have started only in a virtual machine. **Nothing has yet been run with a real radio
+   stick on a computer that is not a Raspberry Pi.**
 5. **Speed is a rule, not a hope:** at least four cores, each at least 2.5 times a Raspberry Pi
    4 core, if ALERT2 is to grow. Every speed figure here is a stand-in until the benchmark has
    been run on the real computer.
@@ -297,9 +299,9 @@ itself only, web-proxy and private-certificate support).
 
 **Which computer takes which:**
 
-- Every x86 PC, the CompuLab box included, takes the **package** (and the disk image, when
-  there is one). The Moxa should take it, but nobody has checked that Moxa's Secure system lets
-  you install what the package needs: ask Moxa.
+- Every x86 PC, the CompuLab box included, takes the **package** (and, since 19 November 2026,
+  the disk image for PCs). The Moxa should take it, but nobody has checked that Moxa's Secure
+  system lets you install what the package needs: ask Moxa.
 - The Beagle boards take the package on BeagleBoard.org's own Debian.
 - A Verdin takes the **container** on Torizon.
 
@@ -310,24 +312,42 @@ the full table. What it said on that date:
 - The package builds, installs and starts on **Debian 13 and Ubuntu 24.04** (and Debian 12, which
   is not a target) in containers on one virtual machine with an ordinary PC processor and **no
   USB at all**. The last whole run of its checks reported 760 passed, none failed, 2 skipped.
-  It is a first version: not reviewed by a second person, and not released.
+  It is a first version: not reviewed by a second person, and not released. *Since then: see
+  below.*
 - **Nothing has been run with a real radio stick on a computer that is not a Raspberry Pi.**
   Not natively, not in a container. The device rules and the service's device list have never
   met a real stick.
 - Not tested: the device rules on a real computer, serial receivers, the clock on a real
   computer, any ARM computer, a real computer start-up, a real web proxy and inspecting network,
-  an update from an older package, Flood-Net itself, RPi ALERT 0.24.
+  an update from an older package, Flood-Net itself, RPi ALERT 0.24. *Since then the firmware
+  has moved to RPi ALERT 0.24.0, and GitHub's ARM computers have run its checks.*
 - The container (`firmware/container/`) is built, and its own checks pass on one PC with
   stand-ins for the radio stick and for Flood-Net. It has not been tried on Torizon OS, on an ARM
   computer or with a real stick. The disk images (`firmware/image/`) are still being written.
-  Nothing is released. The package is the main form.
+  Nothing is released. The package is the main form. *Since then: see below.*
 - **Releases** of the firmware will appear at
-  <https://github.com/cdomotor-g/open-ALERT/releases>; there were none on that date.
+  <https://github.com/cdomotor-g/open-ALERT/releases>; there were none on that date. *Since
+  then: the first, a pre-release, on 19 November 2026 (below).*
 
-An unfinished, unreviewed change to RPi ALERT that adds the settings a managed network needs
-(listen address, accepted host names, behind-a-proxy, login for everything, a log line per
-login) is kept in [`wip/rpi-alert-0.24-managed-network.patch`](wip/rpi-alert-0.24-managed-network.patch).
-It is not applied anywhere.
+**Since then, as at 19 November 2026.** The firmware ships RPi ALERT 0.24.0, unchanged, and its
+automatic build has run on GitHub's own computers, an ordinary PC and a 64-bit ARM one. Its
+second run there passed everything: the package's checks on Debian 13, Ubuntu 24.04 and Debian
+12, the part under a real systemd included (1,305 passed, none failed, 4 skipped on each kind of
+computer), with the same package file from both; the container's checks on both (110 passed, 1
+skipped); and both disk images, built and then started in a virtual machine with Secure Boot on
+(257 checks passed each: the PC one in about 4 minutes, the ARM one on an emulated processor in
+about 28, the first time it started). All of it with stand-ins for the radio. The first release,
+[`firmware-0.24.0-oa1`](https://github.com/cdomotor-g/open-ALERT/releases/tag/firmware-0.24.0-oa1),
+was published on 19 November 2026 as a **pre-release**: for trying, not yet recommended for a
+base station in service. Still not done: a real radio stick on a computer that is not a
+Raspberry Pi, a real ARM computer, Torizon OS, a disk image started on a real computer, a real
+web proxy or reverse proxy.
+
+When this review was written, an unfinished change to RPi ALERT that adds the settings a
+managed network needs (listen address, accepted host names, behind-a-proxy, login for
+everything, a log line per login) was kept here as a patch. Since then it has been finished and
+released as RPi ALERT 0.24.0 (19 November 2026); the firmware uses those settings, and the patch
+is no longer kept here.
 
 ## A board of our own, later
 
@@ -368,11 +388,13 @@ stick a base station uses.
 - **Prices need a human's check in a browser.** Several shops refuse automated reading; a
   number marked "check with the seller" is one nobody could read. The owner asked that links
   matter more than figures.
-- **ARM is untested.** The package holds no compiled code, so no difference is expected, but
-  no ARM computer has run it.
-- **The firmware release is not cut** (`firmware/README.md`: "not released"; no releases at the
-  address above on 13 November 2026). The container has not been tried on Torizon OS or on an
-  ARM computer, and the disk images are still being written.
+- **No real ARM computer has run it.** The package holds no compiled code, so no difference is
+  expected. Since then (19 November 2026) GitHub's ARM computers have run its checks, and the ARM
+  disk image has started in an emulator, but no ARM board of anybody's own.
+- **The firmware's first release is a pre-release only**:
+  [`firmware-0.24.0-oa1`](https://github.com/cdomotor-g/open-ALERT/releases/tag/firmware-0.24.0-oa1),
+  19 November 2026, for trying. The container has not been tried on Torizon OS, and the disk
+  images have started only in a virtual machine, never on a real computer.
 - **Nobody has checked that the package installs on Moxa's Secure system**, or on Ubuntu 26.04,
   the Ubuntu that Lenovo's sheet for the ThinkEdge names.
 - **The ThinkEdge's Ubuntu and Red Hat certification is Lenovo's statement.** Canonical's public

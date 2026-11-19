@@ -39,8 +39,12 @@ weeks, a published advisory when a fix is out, and credit if you want it.
 
 ## What is supported
 
-The latest release of the package and the one before it, for security fixes, once there is a
-release. There is no release yet. The support period is in [docs/security/support.md](docs/security/support.md).
+Proposed, and not yet confirmed by the owner: the latest release of the package, and the one
+before it for security fixes ([docs/security/support.md](docs/security/support.md), which also
+proposes the support period). The first release,
+[`firmware-0.24.0-oa1`](https://github.com/cdomotor-g/open-ALERT/releases/tag/firmware-0.24.0-oa1),
+published on 19 November 2026, is a pre-release: for trying, not yet recommended for a base
+station in service.
 
 ## A note for the repository's owner
 

@@ -31,12 +31,12 @@ draft of what it could say.
 
 | Needed | State today |
 |---|---|
-| A first release of the package | **Not yet.** No release exists (<https://github.com/cdomotor-g/open-ALERT/releases>) |
-| A place the package is downloaded from and its signature | **Not yet** |
+| A first release of the package | **A pre-release only**: [`firmware-0.24.0-oa1`](https://github.com/cdomotor-g/open-ALERT/releases/tag/firmware-0.24.0-oa1), 19 November 2026, published for trying and not yet recommended for a base station in service. No release has yet been made that the project recommends for service |
+| A place the package is downloaded from and its signature | **Partly.** The releases page (<https://github.com/cdomotor-g/open-ALERT/releases>), with `SHA256SUMS` and GitHub's signed record of where each file was built. The package is not signed with a key of the project's own |
 | A package repository, so that `apt` brings updates | **Not yet.** Updates would be a download and an install |
 | Private flaw reporting switched on in the repository | **Not yet**, until the owner switches it on in the repository's settings ([SECURITY.md](../../SECURITY.md)) |
 | Someone to read reports and build fixes within the days above | **The owner to confirm** who and how many hours. The project is small; the proposed days may be too short |
-| A real radio stick run on a computer that is not a Raspberry Pi, and an ARM computer run | **Not yet** ([firmware/README.md](../../firmware/README.md)) |
+| A real radio stick run on a computer that is not a Raspberry Pi, and an ARM computer run | **Not yet**: the ARM runs so far are on GitHub's ARM computers and in an emulator ([firmware/README.md](../../firmware/README.md)) |
 | RPi ALERT's own support period | Not stated by RPi ALERT either (none was found); the two should be stated together |
 
 ## The computers' own support periods (for comparison, from the review)

@@ -2,12 +2,16 @@
 
 **First version, 11 November 2026. Tested with stand-ins for the radio sticks only — see
 [What has been tested, and where](#what-has-been-tested-and-where). Not reviewed by a second
-person, and not released.** Two automated reviews (one for security, one for correctness) read
-it and tried it on 18 November 2026; what they found, and what was done about each point, is in
+person. Published on 19 November 2026 as a pre-release,
+[`firmware-0.24.0-oa1`](https://github.com/cdomotor-g/open-ALERT/releases/tag/firmware-0.24.0-oa1):
+for trying, not yet recommended for a base station in service.** Two automated reviews (one for
+security, one for correctness) read it and tried it on 18 November 2026; what they found, and
+what was done about each point, is in
 [After the two reviews](#after-the-two-reviews-18-november-2026). The automatic build first ran
 on GitHub on 19 November 2026 ([what it found](#the-first-run-on-github-19-november-2026)), and
 the same day the pin moved to RPi ALERT 0.24.0
-([what that changed](#moving-to-rpi-alert-0240-19-november-2026)).
+([what that changed](#moving-to-rpi-alert-0240-19-november-2026)); the build's second run
+passed everything on 0.24.0, and its third made the release.
 
 [RPi ALERT](https://github.com/cdomotor-g/RPi_ALERT) is the program a base station runs: it
 listens to ALERT and ALERT2 flood-warning radio telemetry on RTL-SDR USB sticks, decodes it, and
@@ -590,6 +594,16 @@ passed. In order:
 
 ## What has been tested, and where
 
+**19 November 2026, on GitHub: [run 2](https://github.com/cdomotor-g/open-ALERT/actions/runs/44447802781)
+of the automatic build**, on RPi ALERT 0.24.0 (`0.24.0+oa1`, commit `cb8041d`), on GitHub's
+x86-64 and ARM computers: every job passed.
+`firmware/test/deb.sh`, the part under a real systemd included, **1,305 passed, none failed, 4
+skipped** on each kind of computer; the package the same file from both; the container 110
+passed, 1 skipped, on each; both disk images started in a virtual machine with Secure Boot on,
+257 passed each, the ARM one for the first time. Each job's findings are under
+[The first run on GitHub](#the-first-run-on-github-19-november-2026). The runs on the test
+computer described next came first.
+
 **19 November 2026, on RPi ALERT 0.24.0 (`0.24.0+oa1`), after the check of the move** (see
 [A check of the move](#a-check-of-the-move-19-november-2026)). On the same kind of computer as
 below (x86-64, Ubuntu 24.04.5, Docker 29.9, no USB, no KVM, shared with other work), from the
@@ -742,8 +756,9 @@ results are under [The disk image](#the-disk-image-what-has-been-tested-where).*
 - **Any ARM computer.** The package holds no compiled code, so there is no reason to expect a
   difference, but it has not been run on one. *Since then (19 November 2026): the automatic
   build ran these checks on GitHub's ARM computers, the part under a real systemd included, and
-  none failed (RPi ALERT 0.23.1; see [the first run](#the-first-run-on-github-19-november-2026)).
-  Still not on an ARM computer outside GitHub's, and not with a stick.*
+  none failed (RPi ALERT 0.23.1, and again in run 2 on 0.24.0; see
+  [the first run](#the-first-run-on-github-19-november-2026)); the ARM disk image started in an
+  emulator. Still not on an ARM computer outside GitHub's, and not with a stick.*
 - **A real computer start-up.** The systemd checks ran in containers. Nothing has been
   restarted to see the service, the firewall lock and the two serial drivers come up by
   themselves, and the firewall lock has not been tried beside another firewall (`ufw`,
@@ -773,8 +788,8 @@ results are under [The disk image](#the-disk-image-what-has-been-tested-where).*
   been run on the one computer described above. Its real-systemd part depends on how the test
   computer keeps its groups of processes (cgroups); on a computer where systemd will not start
   in a container it skips that part and says so, and that path has not been seen. *Since then
-  (19 November 2026): GitHub's x86-64 and ARM computers ran it, and the part under a real
-  systemd started on both.*
+  (19 November 2026): GitHub's x86-64 and ARM computers ran it, twice, and the part under a
+  real systemd started on both.*
 
 ## Choices made here
 
@@ -841,9 +856,11 @@ Where the design left something open, this is what was chosen and why.
 
 ## The container
 
-**Tested on 13 November 2026 on one x86-64 computer (Ubuntu 24.04, Docker 29, Docker Compose 5),
-with stand-ins for the radio stick and for Flood-Net. No real stick, no ARM computer, no
-Torizon, no second person's review. See [what is not yet proved](#the-container-what-is-not-yet-proved).**
+**Tested from 13 November 2026 on one x86-64 computer (Ubuntu 24.04, Docker 29, Docker Compose 5),
+and on 19 November on GitHub's x86-64 and ARM computers, with stand-ins for the radio stick and
+for Flood-Net. Published with the pre-release `firmware-0.24.0-oa1`. No real stick, no ARM
+computer outside GitHub's, no Torizon, no second person's review. See
+[what is not yet proved](#the-container-what-is-not-yet-proved).**
 
 A *container* is a program run inside a box of its own: it sees only the files, devices and
 network it is given. The same agent as the package, from the same checked release, in a box that
@@ -866,7 +883,8 @@ containers (Docker, or Podman with a compose file).
 - Debian 13 (`debian:trixie-slim`) with the system's own Node.js 20, `rtl-sdr` (the program that
   reads a stick), `ca-certificates` and `node-undici` (what the web-proxy start-up file needs on
   Node.js 20). 269 MB on disk, about 67 MB to download. It builds for `linux/amd64` and
-  `linux/arm64` from the same file; only the amd64 one has been built.
+  `linux/arm64` from the same file; both have been built, the arm64 one on GitHub's ARM
+  computers.
 - The agent is the release's, file for file (the check compares every file), in the same folder
   as the package puts it. The agent's own tests are **not** in the image (the package carries
   them so a buyer can run them; an image has no use for them).
@@ -979,7 +997,10 @@ the check of the move (19 November, started 02:45 UTC, 3 minutes 19 seconds): **
 failed, none skipped**. These last three runs built the image on
 `debian:trixie-slim` by name, so their check of the digest label only noted that none was
 given; a run on an image built with `--base-image` and a digest, as the automatic build makes
-the published one, is described under the table.
+the published one, is described under the table. On GitHub, in the automatic build's second
+run (19 November, 0.24.0): **110 passed, none failed, 1 skipped** on x86-64 and on ARM alike;
+the skip is the USB device rule's row below, because GitHub's computer would not make a device
+file to try it on.
 
 | What | Result |
 |---|---|
@@ -1024,7 +1045,8 @@ Numbers, measured there (a stand-in stick, so not what a real station will use):
 - **ARM.** The recipe has no compiled code of its own. The automatic build's first run (19
   November 2026) built the image and ran `test/container.sh` on GitHub's ARM computers as well
   as its PCs; one check failed on both, for a reason in the check, since put right (see
-  [the first run](#the-first-run-on-github-19-november-2026)). Not on an ARM board of anybody's
+  [the first run](#the-first-run-on-github-19-november-2026)), and in the second run every check
+  passed on both but the USB device rule's, which was skipped. Not on an ARM board of anybody's
   own.
 - **Podman.** The compose file is written for Docker; it has not been tried with Podman.
 - **A real web proxy and inspecting network**, as for the package.
@@ -1053,10 +1075,11 @@ Numbers, measured there (a stand-in stick, so not what a real station will use):
 **Built and started on 14 November 2026, and again on 18 November after the two reviews, on one
 x86-64 computer (Ubuntu 24.04, QEMU 8.2.2), in a virtual machine only; on 19 November the
 automatic build built the PC image on GitHub's computers and its whole start test passed there,
-with Secure Boot on, under KVM. It has never been written to a real disk or started a real
-computer, and no real radio stick has been near it. The image for ARM computers has been built
-(on GitHub, 19 November) and has not yet started. Not reviewed by a second person. See
-[what is not yet proved](#the-disk-image-what-is-not-yet-proved).**
+with Secure Boot on, under KVM. In the automatic build's second run the same day the image for
+ARM computers started too, in a virtual machine whose ARM processor was emulated, with Secure
+Boot on. Both are in the pre-release `firmware-0.24.0-oa1`. Neither has ever been written to a
+real disk or started a real computer, and no real radio stick has been near them. Not reviewed
+by a second person. See [what is not yet proved](#the-disk-image-what-is-not-yet-proved).**
 
 A *disk image* is one file that holds a whole disk, byte for byte. Written to an SSD or a USB
 stick ("flashed"), it makes that disk start a computer as a base station and nothing else: what
@@ -1145,10 +1168,11 @@ The results, in `dist/`:
 `--arch arm64` builds the image for 64-bit ARM computers that start the way a PC does (UEFI
 firmware: ARM servers and "SystemReady" boards). The build does not cross over: it must be run
 on an ARM computer. The automatic build first ran it on 19 November 2026: the image built, and
-did not start in its virtual machine (QEMU found no start-up program for the network card;
-`test/image.sh` now starts the card without one, untried on GitHub as yet). A board that
-starts from its maker's own boot loader (most small ARM boards) needs its maker's image, and
-takes the package or the container.
+did not start in its virtual machine (QEMU found no start-up program for the network card).
+`test/image.sh` now starts the card without one, and in the second run that day the image
+started, on an emulated ARM processor with Secure Boot on, and passed its whole start test. A
+board that starts from its maker's own boot loader (most small ARM boards) needs its maker's
+image, and takes the package or the container.
 
 `--deb FILE` builds the image with a package already made instead of building one. Such a
 package was not checked here, so the build fetches and checks the pinned release all the same
@@ -1362,6 +1386,14 @@ Logs go to `dist/test-logs/image/`. In order:
 
 ### The disk image: what has been tested, where
 
+**19 November 2026, on GitHub, both images** (the automatic build's second run, `0.24.0+oa1`):
+each was built and then passed its whole start test, **257 checks, none failed, none skipped**,
+in QEMU 8.2.2 with UEFI firmware, Secure Boot on and Microsoft's keys. The PC image (OVMF) ran
+under KVM, in about 4 minutes. The ARM image (AAVMF) ran with its processor emulated in
+software, as GitHub's ARM computer offers no KVM, in about 28 minutes; the kernel said it was
+started with Secure Boot on. It was the first time the ARM image started. Both, once more, in a
+virtual machine only.
+
 **18 November 2026, after the two reviews.** The image built from the files as they are in
 this folder (20:46 UTC, 3 minutes 45 seconds, 287 MB packed), then a whole run of
 `firmware/test/image.sh` on it, alone on the computer (started 21:14 UTC, 13 minutes): **223
@@ -1435,10 +1467,12 @@ Numbers, measured there. **The times are on an emulated processor**; a real PC w
   hardware.
 - **A real serial receiver.** The adapter was QEMU's emulated one (an FTDI type), fed by the
   test. A real Quansheng radio, an ERT-A2 or a GPS has not been plugged in.
-- **The ARM image.** `build-image.sh --arch arm64` ran on GitHub's ARM computer on 19 November
-  2026 and built the image; `image.sh --arch arm64` could not start it (no `efi-virtio.rom` for
-  the network card in that QEMU). The change that starts the card without that file has not
-  run on GitHub yet, so the ARM image has never been seen to start.
+- **The ARM image on a real ARM computer.** `build-image.sh --arch arm64` ran on GitHub's ARM
+  computer on 19 November 2026; in the first run `image.sh --arch arm64` could not start the
+  image (no `efi-virtio.rom` for the network card in that QEMU), and in the second it started
+  and passed, on an emulated processor with Secure Boot on. It has started only in that
+  emulator, never on a real ARM computer: whether a real one's UEFI firmware finds the disk,
+  holds Microsoft's key and drives its network port is not known.
 - **An update really installed.** `unattended-upgrades` has not fetched or installed anything
   here, and the virtual machine could not reach Debian's archive at all. A kernel update
   followed by a restart with Secure Boot on has not been tried; the boot-loader update was
@@ -1457,8 +1491,9 @@ Numbers, measured there. **The times are on an emulated processor**; a real PC w
   one has done it.
 - **A program that writes disk images** (`dd`, or any other).
 - **A long run, a power cut, a full disk.** Each start in the test lasted minutes.
-- **The image built by the automatic build** has not been written to a disk or started outside
-  a virtual machine either. Its start test passed on GitHub's PC (see the next section).
+- **The images built by the automatic build**, the ones in the pre-release, have not been
+  written to a disk or started outside a virtual machine either. Their start tests passed on
+  GitHub's computers (see [the runs there](#the-first-run-on-github-19-november-2026)).
 
 ### What the start test showed about the package
 
@@ -1568,7 +1603,7 @@ describe the result; the test counts are under each form's "what has been tested
 | 20 | `build-deb.sh` failed under a tight file mask | Put right |
 | 21 | Test counts and a paragraph marked "INTERIM" on this page were out of date | Put right: this page was rewritten from the runs of 18 November |
 | 22 | `sha256sum -c SHA256SUMS` failed for anybody who downloaded only some of a release's files | Put right: `--ignore-missing`, in the release notes and here |
-| 23 | The first container published is private, and nothing said so or how to pull it | Written down (the release paragraph below). **The owner's step remains** |
+| 23 | The first container published is private, and nothing said so or how to pull it | Written down (the release paragraph below). No step was needed in the end: this repository's first container was public once published (19 November 2026) |
 | 24 | RPi ALERT's own uninstall leaves its `alert` account and two groups behind | The refusal message and `audit` now say so, with the commands |
 | 25 | Ubuntu 24.04's Node.js 18 is past its makers' end of life and comes from *universe* | Written down, under Installing it |
 
@@ -1646,7 +1681,43 @@ What was put right after it, before the next run:
 4. `test/container.sh`: run as root, the check becomes `nobody`; run as an ordinary user, it
    runs as itself.
 
-Then the pin moved to RPi ALERT 0.24.0 (above). The next run is the first on `0.24.0+oa1`.
+Then the pin moved to RPi ALERT 0.24.0 (above), and run 2 was the first on `0.24.0+oa1`.
+
+**Run 2** ([44447802781](https://github.com/cdomotor-g/open-ALERT/actions/runs/44447802781)), with the
+push of commit `cb8041d`, 02:55 to 03:26 UTC: **all 10 jobs passed.**
+
+| Job | What it showed |
+|---|---|
+| Scripts | shellcheck: nothing to report |
+| Package, x86-64 and ARM | Debian 13, Ubuntu 24.04 and Debian 12, the part under a real systemd included: **1,305 passed, none failed, 4 skipped** on each kind of computer. The four skips: the kernel's device list for the service, on each of the three systems (a cgroup-v2 system keeps it where it cannot be listed), and Debian 12's udev, which has no checker. RPi ALERT's self-test on every system: 281 tests, 277 passed, none failed, 4 skipped (two test files and three tests by name are left out on purpose: they test RPi ALERT's root helper, its updater and its Raspberry Pi installer; one more test needs nginx and skips itself). On x86-64, on Ubuntu 24.04, one of RPi ALERT's own test files (`test/channels.test.js`) failed in the self-test's full run and passed when run again alone; `test/deb.sh` counted it as passed, with a note — the change made after run 1, working as meant |
+| Package is the same file | Passed: the package built on the PC and the one built on the ARM computer are the same file (2,467,260 bytes, SHA-256 `a8049af3…`, the same as the builds on the test computer) |
+| Container, x86-64 and ARM | **110 passed, none failed, 1 skipped** on each. The skip: the USB device rule, because GitHub's computer would not make a device file to try it on |
+| Disk image for PCs | Built, then started in QEMU with KVM, UEFI and Secure Boot on with Microsoft's keys: **257 passed, none failed, none skipped**, in about 4 minutes |
+| Disk image for ARM | Built, and **this time it started** (run 1's missing `efi-virtio.rom` is put right): QEMU emulating the processor in software (no KVM), the UEFI firmware AAVMF with Secure Boot on and Microsoft's keys; the kernel reported Secure Boot on. **257 passed, none failed, none skipped**, in about 28 minutes. The first time the ARM image has started — and only in an emulator, never on a real ARM computer |
+| Benchmark, x86-64 and ARM | The quick test passed on both |
+
+**Run 3, the release** ([44451491968](https://github.com/cdomotor-g/open-ALERT/actions/runs/44451491968)),
+started by hand at 03:26 UTC from `main` (`cb8041d`), with *release tag* `firmware-0.24.0-oa1`
+and *pre-release* ticked. It builds and checks everything once more, and only if all of it
+passes does it publish, in the order given under *A release* below. **All 15 of its jobs
+passed**: the 10 that build and check, with the same figures as run 2 — the package 1,305
+passed, none failed, 4 skipped on each kind of computer (this time no test file failed in the
+full run), the same file from both (`a8049af3…`), the containers 110 passed, none failed,
+1 skipped, the PC image 257 passed, none failed, none skipped — and the ARM image passed its
+start test again (257 passed, none failed, none skipped, 03:30 to 03:59 UTC: about 29 minutes,
+under AAVMF with no KVM and Secure Boot on); then the five that publish, the last of which made
+the release public at 04:04 UTC. It published the firmware's first release, on 19 November
+2026: [`firmware-0.24.0-oa1`](https://github.com/cdomotor-g/open-ALERT/releases/tag/firmware-0.24.0-oa1),
+a **pre-release** — published for trying, not yet recommended for a base station in service.
+Its git tag is at `cb8041d`. It holds the package (`.deb`), the two disk images (`.img.xz`;
+the ARM one goes into a release only if its start test passes in that same run, as it did in
+run 3), the bills of materials (`.spdx.json`, `.packages.tsv`), `SHA256SUMS` and GitHub's signed
+record of where each file was built; and the container,
+`ghcr.io/cdomotor-g/open-alert-base:firmware-0.24.0-oa1`, one name for both kinds of computer.
+The release's notes are written by the release job in `firmware.yml`. The container came out
+public: anyone can pull it, with no GitHub sign-in (checked on 19 November 2026: ghcr.io gave
+an anonymous token for it, and with that token the container's list for both kinds of computer
+came back, as did its `-amd64` and `-arm64` tags; for a name that does not exist it refused one).
 
 ### Before the first run
 
@@ -1702,7 +1773,7 @@ is still going.
 | Package is the same file | x86-64 | Compares the two packages just built: one from a PC, one from an ARM computer. They must be the same file, byte for byte |
 | Container | x86-64 and ARM | Builds the container and runs `test/container.sh` |
 | Disk image for PCs | x86-64 | Builds the amd64 image and runs `test/image.sh`, with KVM where GitHub's computer has it |
-| Disk image for ARM | ARM | Builds the arm64 image and tries `test/image.sh --arch arm64`. A failed start test is reported and does not fail the run, because nobody has seen it pass; such an image is never published |
+| Disk image for ARM | ARM | Builds the arm64 image and tries `test/image.sh --arch arm64`. A failed start test is reported and does not fail the run, because until run 2 nobody had seen it pass (it could now be made a failure); such an image is never published |
 | Benchmark | x86-64 and ARM | `bench/test.sh`, the benchmark's quick test |
 
 "ARM" is GitHub's own 64-bit ARM computers (`ubuntu-24.04-arm`), which are free for a public
@@ -1741,10 +1812,12 @@ with no rules. **For the owner, once:** Settings → Environments → `release` 
 approval (each of the four publishing jobs then asks). A changed copy of the workflow file on
 another branch cannot get round those rules, as it could get round the check in the file.
 
-**For the owner, after the first release:** a container that a workflow pushes to ghcr.io for
-the first time is **private**. To let anybody pull it: on GitHub, the account's (or
-organisation's) *Packages* → `open-alert-base` → *Package settings* → *Change visibility* →
-*Public*. Then:
+**For the owner, after a release, a check:** GitHub may make a container that a workflow
+pushes to ghcr.io for the first time **private**; this one, `firmware-0.24.0-oa1`'s, was public
+at once (19 November 2026). If a later one is not — the `docker pull` below asks for a sign-in
+on a computer that has none — make it public: on GitHub, the account's (or organisation's)
+*Packages* → `open-alert-base` → *Package settings* → *Change visibility* → *Public*. Anybody
+can then:
 
 ```
 docker pull ghcr.io/cdomotor-g/open-alert-base:firmware-0.24.0-oa1
@@ -1787,6 +1860,8 @@ gh attestation verify open-alert-base_0.24.0+oa1_all.deb --repo cdomotor-g/open-
 What the first run settled: `test/deb.sh`'s part under a real systemd starts on GitHub's
 computers, x86-64 and ARM (on ARM a skip is still only a warning; it could now be made a
 failure, as on x86-64); GitHub's x86-64 computer offers KVM to the image test; the ARM image
-builds. What it did not: whether the ARM image starts (the fix has not run there yet), and the
-publishing steps, which cannot be tried without publishing. Whether the two packages are the
-same file is not among what is recorded of that run here.
+builds. What it did not: whether the ARM image starts, and the publishing steps, which cannot be
+tried without publishing. Whether the two packages are the same file is not among what is
+recorded of that run here. Run 2 settled the first and the last: the ARM image starts, in an
+emulator with Secure Boot on, and the package from the PC and the one from the ARM computer are
+the same file. Run 3 was the first to run the publishing steps.

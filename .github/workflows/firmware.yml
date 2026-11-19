@@ -373,12 +373,13 @@ jobs:
           retention-days: 14
 
   # The ARM image is built on an ARM computer (the build does not cross over).
-  # Its start test has not passed yet: in the first run (19 November 2026) the
-  # image built, and QEMU could not start it because it found no start-up
-  # program for the network card (efi-virtio.rom); test/image.sh now starts
-  # the card without one. Until a run shows it starting, a failed start test
-  # does not fail the whole run — but an ARM image whose start test did not
-  # pass is not published.
+  # In the first run (19 November 2026) the image built and QEMU could not
+  # start it: it found no start-up program for the network card
+  # (efi-virtio.rom), and test/image.sh now starts the card without one. Runs
+  # 2 and 3 started it, emulated, with Secure Boot on. It has still never
+  # started on a real ARM computer, so a failed start test here does not fail
+  # the whole run — but an ARM image whose start test did not pass is not
+  # published.
   image-arm64:
     name: Disk image for 64-bit ARM (arm64) — build, then try to start it
     runs-on: ubuntu-24.04-arm
@@ -695,4 +696,4 @@ jobs:
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
           url=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url)
           echo "Released: $url" >> "$GITHUB_STEP_SUMMARY"
-          echo "If this is the first container this repository has published, it is private until its owner makes it public: see \"A release\" in firmware/README.md." >> "$GITHUB_STEP_SUMMARY"
+          echo "Check that the container can be pulled without a GitHub sign-in; if it cannot, its owner makes it public: see \"A release\" in firmware/README.md." >> "$GITHUB_STEP_SUMMARY"

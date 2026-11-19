@@ -260,11 +260,14 @@ test('the page no longer carries what the review overturned', () => {
     assert.ok(!/MegaNet/.test(s.replace(/github\.com\/cdomotor-g\/MegaNet/g, '')), `${name}: says MegaNet`);
   }
   assert.ok(!/two thirds of the cheaper|a third of the Quad/.test(html), 'the stale decoder claims');
-  // the firmware's status is dated, points at its own notes, and does not say the container or the images exist
+  // the firmware's status is dated, points at its own notes, names its release for what it is, and
+  // claims no more for the container and the disk images than has been tried
   assert.match(html, /As at \d+ \w+ 20\d\d/);
   assert.match(html, /blob\/main\/firmware\/README\.md/);
   assert.match(html, /the container has only been tried with stand-ins for the radio/);
-  assert.match(html, /the disk images are still being written/);
+  assert.match(html, /the disk images have only been started in a virtual machine, never on a real computer/);
+  assert.match(html, /releases\/tag\/firmware-\d+\.\d+\.\d+-oa\d+/, 'the release is linked by its own page');
+  assert.match(html, /pre-release/, 'the release is called a pre-release while it is one');
   assert.ok(!/tests are unfinished/.test(html + js), 'the stale status');
   // the two figures for a full ALERT2 channel are told apart
   assert.match(html, /1\.1–1\.3 Pi 4 cores of work for its messages alone, and 1\.2–1\.8/);

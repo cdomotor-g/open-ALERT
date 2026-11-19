@@ -293,7 +293,18 @@ test('the software section is dated, points at the firmware\'s own notes, and sa
   // 1. no real radio stick off a Raspberry Pi: the first thing in the "not tested" list, in bold
   assert.match(T.not[0], /^\*\*A real radio stick on a computer that is not a Raspberry Pi\.\*\*/, 'the "not tested" list must open with the radio stick');
   assert.match(T.where, /no radio stick/i, 'the page must say no radio stick was involved in the tests');
-  assert.match(T.state, /not reviewed by a second person, and not released/i);
+  // ... and the state says the tests had stand-ins for the radio, that no second person has
+  // reviewed it, and names the release for what it is: while there is a release, the state and
+  // the releases text both call it a pre-release (when the owner unticks pre-release, this is
+  // changed on purpose); while there is none, the state says so
+  assert.match(T.state, /stand-ins for the radio[^.]* only/i, 'the state must say the firmware was tested with stand-ins for the radio only');
+  assert.match(T.state, /not reviewed by a second person/i, 'the state must say no second person has reviewed the firmware');
+  if (X.releases.first || /\bfirmware-\d+\.\d+\.\d+-oa\d+\b/.test(T.state)) {
+    assert.match(T.state, /\bpre-release\b/i, 'the state names a release: it must say it is a pre-release');
+    assert.match(X.releases.text, /\bpre-release\b/i, 'the releases text names a release: it must say it is a pre-release');
+  } else {
+    assert.match(T.state, /not released/i, 'with no release, the state must say it is not released');
+  }
   // 2. a date
   assert.match(T.asof, /^\d{1,2} (January|February|March|April|May|June|July|August|September|October|November|December) 20\d\d$/, 'the table needs a plain "as at" date');
   // 3. the firmware's own notes, linked as the place that is always current
@@ -310,6 +321,11 @@ test('the software section is dated, points at the firmware\'s own notes, and sa
   // 5. releases: the address, and nothing claimed about what is there without a date
   assert.match(X.releases.url, /^https:\/\/github\.com\/cdomotor-g\/open-ALERT\/releases$/);
   assert.match(X.releases.text, /20\d\d/, 'what the page says about releases needs its date');
+  if (X.releases.first) {
+    assert.match(X.releases.first.tag, /^firmware-\d+\.\d+\.\d+-oa\d+$/, 'a firmware release tag');
+    assert.equal(X.releases.first.url, `${X.releases.url}/tag/${X.releases.first.tag}`, 'the link goes to that release\'s own page');
+    assert.ok(X.releases.text.includes(X.releases.first.tag), 'the words name the release the link goes to');
+  }
   // the benchmark the page tells people to run is the file the firmware folder holds
   assert.ok(fs.existsSync(path.join(ROOT, 'firmware', 'bench', 'open-alert-bench.js')), 'firmware/bench/open-alert-bench.js');
   for (const s of R.speed.bench.steps) assert.match(s.code, /open-alert-bench\.js|open-alert-base bench/, `not the benchmark's own command: ${s.code}`);

@@ -461,10 +461,14 @@
   function renderFlow() { const el = $('#rv-flow'); if (el) el.innerHTML = flowSvg(flowNarrow()); }
   function renderSoftware() {
     const X = R.software, T = X.tested, P = X.profiles;
+    // The key to the diagram's colours: only the states some form is in.
+    const KEY = [['ok', 'lg-ok', 'proved on a real computer with a real radio stick'], ['warn', 'lg-warn', 'built, and tested without a real radio'], ['off', 'lg-off', 'being written: not finished, not released']];
+    const key = KEY.filter(([cls]) => X.forms.some(f => f.cls === cls)).map(([, lg, words]) => `<span><i class="${lg}"></i>${esc(words)}</span>`).join('');
+    const first = X.releases.first;
     const tbl = (cols, rows, cls, marks) => `<div class="table-wrap"><table class="tbl rv-stack ${cls || ''}"><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr><th scope="row">${rich(r[0])}</th>${r.slice(1).map((v, i) => `<td data-l="${esc(cols[i + 1])}">${marks && /^(Passed|Yes|Nothing to report|\d+ of \d+)$/.test(v) ? `<span class="ok">${esc(v)}</span>` : marks && /^No\b/.test(v) ? `<span class="bad">${esc(v)}</span>` : marks && /^Skipped/.test(v) ? `<span class="warn">${esc(v)}</span>` : esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
     $('#out-software').innerHTML = `<p class="lead">${rich(X.lead)}</p>
       <figure class="diagram rv-dia rv-flow" id="rv-flow" aria-label="RPi ALERT's signed release, taken unchanged, becomes three forms: ${esc(X.forms.map(f => `${f.name} (${f.status}; ${f.takes})`).join('; '))}"></figure>
-      <div class="legend small"><span><i class="lg-warn"></i>built, and tested without a real radio</span><span><i class="lg-off"></i>being written: not finished, not released</span><span>${esc(X.pi)}</span></div>
+      <div class="legend small">${key}<span>${esc(X.pi)}</span></div>
       <h3>Standard against enterprise</h3>
       <p>${rich(X.profilesLead)}</p>
       ${tbl(P.cols, P.rows, 'rv-prof')}
@@ -475,11 +479,11 @@
       <div class="rv-costs">${X.container.map(k => `<div class="kpi k-${k.kind}"><span class="k-l">${esc(k.what)}</span><span class="rv-kv">${esc(k.cost)}</span></div>`).join('')}</div>
       <h3>What has been tested, and where</h3>
       <div class="note"><b>As at ${esc(T.asof)}.</b> ${esc(T.current)} ${ext('The firmware\'s own notes (firmware/README.md)', T.source)}.</div>
-      <p>${esc(T.state)} ${esc(T.where)} ${esc(T.run)}</p>
+      <p>${rich(T.state)} ${rich(T.where)} ${rich(T.run)}</p>
       ${tbl(T.cols, T.rows, 'rv-inline rv-tested', true)}
       ${ul(T.also, 'small')}
       <div class="note bad"><b>Not tested yet:</b>${ul(T.not)}</div>
-      <p class="small">${ext('The firmware\'s own notes, with every check', T.source)} · ${ext('Where releases will appear', X.releases.url)}: ${esc(X.releases.text)}</p>
+      <p class="small">${ext('The firmware\'s own notes, with every check', T.source)} · ${first ? `${ext(`The release ${first.tag}`, first.url)} · ${ext('All the firmware\'s releases', X.releases.url)}` : ext('Where releases will appear', X.releases.url)}: ${rich(X.releases.text)}</p>
       <p class="small dim">From reports ${reps(X.reports)}.</p>`;
     renderFlow();
   }

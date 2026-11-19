@@ -121,6 +121,7 @@ when that exists, then the installed package's agent.
 | `test.sh` (quick mode, as the user `nobody`, no network) | Shared 4-core virtual machine, Intel Xeon 2.1 GHz, Ubuntu 24.04, Node 22.23, agent 0.23.1 | 11 checks passed, 2026-11-11 |
 | Full run | The same machine | 12 channels comfortably, 24 at the very most; about 4.8 Pi 4 cores per core (see [results/](results/)) |
 | `test.sh`, in the automatic build's first run on GitHub | GitHub's x86-64 and ARM computers (`ubuntu-24.04`, `ubuntu-24.04-arm`), agent 0.23.1 | Passed on both, 2026-11-19 |
+| `test.sh`, in the automatic build's second run on GitHub | The same, agent 0.24.0 | Passed on both, 2026-11-19 |
 | A full run on any ARM computer, any Raspberry Pi, Node 18 or 20 | Not run | Not run |
 | Any real radio stick on non-Pi hardware | Not run | Not run |
 
