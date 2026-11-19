@@ -2,7 +2,8 @@
 
 **Draft, 11 November 2026.** Facts are from [`firmware/README.md`](../../firmware/README.md) and
 [`U1-rpi-alert-portability.md`](../hardware-review/research/U1-rpi-alert-portability.md)
-sections 6 and 7 (RPi ALERT 0.23.1, the release the firmware is pinned to).
+sections 6 and 7 (written from RPi ALERT 0.23.1; the firmware is pinned to 0.24.0 since 19
+November 2026, and where 0.24.0 differs it is said).
 
 ## What it is
 
@@ -22,7 +23,7 @@ plain files inside one folder, and the version inside), and stops if a check fai
 |---|---|---|
 | Gauge readings | Rainfall and river levels, with a gauge's number and the time. Public data that flood warnings are made from | Public. Integrity matters more than secrecy: a false reading could mislead a flood warning |
 | Every frame heard | What the radio heard, kept briefly and sent so that the quality of reception can be shown | Public in nature; no personal data |
-| The base station's own status | Its name, where it is, its host name and board, receiver settings, version, queue length. The check-in can also carry network addresses and operating-system and Node.js versions (RPi ALERT 0.23.1; [U1](../hardware-review/research/U1-rpi-alert-portability.md) 6.3) | Business-internal. The check-in can be switched off: `rpi-alert remote off` |
+| The base station's own status | Its name, where it is, its host name and board, receiver settings, version, queue length. The check-in can also carry network addresses and operating-system and Node.js versions (RPi ALERT 0.23.1, unchanged in 0.24.0; [U1](../hardware-review/research/U1-rpi-alert-portability.md) 6.3) | Business-internal. The check-in can be switched off: `rpi-alert remote off` |
 | The ingest token | A secret that lets this base station post readings to Flood-Net. Kept in `/etc/rpi-alert/config.json`, mode 0600, owned by the service's user. RPi ALERT's own words: "a credential for the whole network's write access" | **Secret.** Not encrypted at rest; no TPM use ([U1](../hardware-review/research/U1-rpi-alert-portability.md) 6.10) |
 | The dashboard password | A hash (scrypt) in the same file | Secret |
 
@@ -56,18 +57,22 @@ computer itself only.
 
 | Listener | Standard profile | Enterprise profile |
 |---|---|---|
-| The dashboard (the base station's own web page, plain HTTP) | TCP 80, from the local network | TCP 8080, **this computer only**: `web.bind` = `127.0.0.1`, **and** a firewall lock (an nftables table of its own) that refuses the port to everything but the computer itself |
+| The dashboard (the base station's own web page, plain HTTP) | TCP 80, from the local network | TCP 8080, **this computer only**: the agent listens on `127.0.0.1` alone (`web.bind`), **and** a firewall lock (an nftables table of its own) refuses the port to everything but the computer itself |
 | SSH | Not installed or changed by the package. The operating system's own | Same |
 | Wi-Fi hotspot | Off | Off |
 | mDNS (`avahi-daemon`) | Not installed by the package | Not installed by the package |
 | Flood-Net remote management | Nothing listens; the base station calls out | Same |
 
-Two honest notes. RPi ALERT 0.23.1 does not itself know the setting `web.bind` and opens its
-dashboard on every address; today it is the firewall lock that keeps other computers out. The
-setting takes effect on its own when the package moves to RPi ALERT 0.24 (not yet released).
-And anybody logged in on the computer itself can read and change the agent's settings through
-`http://127.0.0.1:8080/` without a password: RPi ALERT treats callers from the computer itself
-as administrator. The audit says so.
+Two honest notes. Until 19 November 2026 the firmware shipped RPi ALERT 0.23.1, which did not
+know the setting `web.bind` and opened its dashboard on every address, and the firewall lock
+alone kept other computers out; with 0.24.0 the agent keeps to `127.0.0.1` itself, and the lock
+is the second guard. And anybody logged in on the computer itself can read and change the
+agent's settings through `http://127.0.0.1:8080/` without a password: RPi ALERT treats callers
+from the computer itself as administrator — from 0.24, with `web.behindProxy` on (both
+profiles), only those that ask for `127.0.0.1` or `localhost` by name, so that a reverse proxy's
+caller, or a web page from another site in a browser on the computer, is not. Any program on the
+computer still is, and so is a web page that the computer itself serves under those names, on
+any port. The audit says so.
 
 ## What calls out
 
@@ -77,7 +82,7 @@ as administrator. The audit says so.
 | `https://floodwarning.net/stations.json`, then a fallback | Station names for the dashboard | Daily | |
 | The operating system's package servers | Operating-system and package updates | As the organisation sets | The organisation's own, not the agent's |
 | The organisation's time server | The clock | Continuous | The agent holds readings back until it trusts the clock |
-| The agent's outage check: TCP to 1.1.1.1, 8.8.8.8 and 9.9.9.9 on 443 | "Is the internet there?" Nothing is sent | Not at all with either profile here, because self-recovery is off. With recovery on (a Raspberry Pi install): only while Flood-Net has not answered for two minutes, every 30 s | RPi ALERT 0.23.1 does not know about proxies for this check ([U1](../hardware-review/research/U1-rpi-alert-portability.md) 6.4). With self-recovery off (both profiles) this check does not run at all: in RPi ALERT 0.23.1 the part that makes it stops before any probe when recovery is off (`agent/lib/keeper.js`, read in the source; not watched on a running computer) |
+| The agent's outage check: TCP to 1.1.1.1, 8.8.8.8 and 9.9.9.9 on 443 | "Is the internet there?" Nothing is sent | Not at all with either profile here, because self-recovery is off. With recovery on (a Raspberry Pi install): only while Flood-Net has not answered for two minutes, every 30 s | RPi ALERT 0.23.1 does not know about proxies for this check (nor 0.24.0: the check is unchanged) ([U1](../hardware-review/research/U1-rpi-alert-portability.md) 6.4). With self-recovery off (both profiles) this check does not run at all: in RPi ALERT 0.23.1 and 0.24.0 the part that makes it stops before any probe when recovery is off (`agent/lib/keeper.js`, read in the source; not watched on a running computer) |
 
 What the package does **not** have: an updater that calls GitHub (there is no root helper to
 run one), a key fetch from GitHub or Flood-Net, a hotspot, a kiosk, a reboot timer.

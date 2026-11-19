@@ -1,3 +1,39 @@
+open-alert-base (0.24.0+oa1) unstable; urgency=medium
+
+  * The agent moves to RPi ALERT v0.24.0, unchanged from its signed
+    release. 0.24 adds four dashboard settings for a managed network:
+    web.bind (the address it listens on), web.hosts (more names it answers
+    to), web.behindProxy (a reverse proxy's callers, and a web page from
+    another site in a browser on the same computer, are never taken for
+    the computer itself; a page the computer itself serves, on any port,
+    still is) and web.requireLogin "all" (nothing is shown without the
+    password).
+  * Enterprise profile: the agent itself now listens on 127.0.0.1 only
+    (web.bind, which 0.23 ignored); a reverse proxy's callers must log in
+    before they see anything. The firewall lock stays, as the second
+    guard: no lock, no agent.
+  * Standard profile: web.behindProxy on. It changes nothing another
+    computer sees; a web page from another site, in a browser on this
+    computer, is no longer taken for the computer itself.
+  * The profile holds these three settings where it asks for the closed
+    value: each time the agent starts, the start command first puts back
+    whatever the settings file, which the agent's own user can write, has
+    looser. One loosened while the agent runs (rpi-alert config set) lasts
+    until the next start; status, audit and sync name it, and sync
+    restarts the service to put it back.
+  * audit reports web.bind, web.behindProxy, web.requireLogin and
+    web.hosts, and /etc/rpi-alert.conf if it is there (this package does
+    not apply it).
+  * sync, status and audit name the port the agent really opens: one
+    below 1024 that the service has no privilege for is 8080, where the
+    agent falls back. sync no longer asks for the firewall lock to be
+    moved to a port the agent cannot open.
+  * selftest leaves out the tests of RPi ALERT's updater and three that
+    read its Raspberry Pi installer's own files, which are not installed.
+  * 0.23.1+oa1 and 0.23.1+oa2 were built and tested, and never released.
+
+ -- open-ALERT <cdomotor-g@users.noreply.github.com>  Thu, 19 Nov 2026 00:00:00 +0000
+
 open-alert-base (0.23.1+oa2) unstable; urgency=medium
 
   * The same agent, RPi ALERT v0.23.1, unchanged; the layer around it

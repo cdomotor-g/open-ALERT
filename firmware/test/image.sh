@@ -573,12 +573,16 @@ inside_enterprise() {
   oa_is "the running agent holds no privilege at all, and can get none" "0000000000000000 0000000000000000 0000000000000000" \
     "$(oa_proc_status "$pid" CapEff) $(oa_proc_status "$pid" CapBnd) $(oa_proc_status "$pid" CapAmb)"
   oa_is "the only port the agent's user listens on" "8080" "$(oa_listening rpi-alert | awk '{print $1}' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  oa_is "… on this computer's own address only (web.bind 127.0.0.1, which the profile holds)" "8080 0100007F" "$(oa_listening rpi-alert | sort -u | tr '\n' ' ' | sed 's/ $//')"
   oa_is "the profile's firewall lock is on, and set to load at every start" "active enabled" "$(systemctl is-active "$FW_UNIT" 2>&1) $(systemctl is-enabled "$FW_UNIT" 2>&1)"
   oa_check "its rules are loaded beside the image's own (two tables)" sh -c 'nft list table inet open_alert_base >/dev/null && nft list table inet open_alert_image >/dev/null'
   oa_is "what Flood-Net may do (remote.mode)" "report" "$(g_status 'd.remote && d.remote.mode' 2>/dev/null || true)"
   g_score_check enterprise
   open-alert-base audit > "$G_OUT/audit-enterprise.txt" 2>&1 || true
   oa_has "audit: the firewall lock is on" "$G_OUT/audit-enterprise.txt" 'firewall lock +on '
+  oa_has "audit: both guards — the lock, and the agent itself on this computer's own address" "$G_OUT/audit-enterprise.txt" "dashboard reach +this computer only — the firewall lock is on, and the agent itself listens on this computer's own address only"
+  oa_has "audit: nothing is shown without the password (web.requireLogin all)" "$G_OUT/audit-enterprise.txt" 'web\.requireLogin +all — '
+  oa_has "audit: the profile holds the dashboard's three settings" "$G_OUT/audit-enterprise.txt" 'held by the profile +web\.bind web\.behindProxy web\.requireLogin — '
   oa_has "audit: no privilege in use" "$G_OUT/audit-enterprise.txt" 'privileges in use +none'
   got=$(systemctl show -p BindsTo --value "$UNIT" | tr ' ' '\n' | grep -x "$FW_UNIT" || true)
   oa_is "the agent's service is tied to the lock's: it runs only while the lock's service does" "$FW_UNIT" "$got"
@@ -635,7 +639,8 @@ inside_after_restart() {
   if oa_wait 60 oa_http_ok http://127.0.0.1:8080/; then oa_ok "the dashboard answers on port 8080 on the computer itself"; else oa_fail "the dashboard does not answer on 127.0.0.1:8080"; fi
   pid=$(g_pid)
   oa_is "the agent holds no privilege" "0000000000000000 0000000000000000" "$(oa_proc_status "$pid" CapEff) $(oa_proc_status "$pid" CapBnd)"
-  oa_is "the only TCP ports open to other computers" "22 8080 " "$(ss -Hltn | awk '{ a = $4; p = a; sub(/.*:/, "", p); sub(/:[^:]*$/, "", a); if (a !~ /^127\./ && a != "[::1]") print p }' | sort -un | tr '\n' ' ')"
+  oa_is "the agent listens on this computer's own address only" "8080 0100007F" "$(oa_listening rpi-alert | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  oa_is "the only TCP port open to other computers is SSH's: the agent itself listens on 127.0.0.1 only (web.bind), and its lock and the image's firewall stand behind it" "22 " "$(ss -Hltn | awk '{ a = $4; p = a; sub(/.*:/, "", p); sub(/:[^:]*$/, "", a); if (a !~ /^127\./ && a != "[::1]") print p }' | sort -un | tr '\n' ' ')"
   if [ -c /dev/ttyUSB0 ]; then
     if oa_wait 120 sh -c "node -e 'fetch(\"http://127.0.0.1:8080/api/status\").then(r => r.json()).then(d => process.exit(d.devices.ports.some(p => p.rx > 0 && p.state === \"running\") ? 0 : 1)).catch(() => process.exit(1))'"; then
       oa_ok "the agent reads the USB serial receiver again, with no privilege at all"
@@ -668,10 +673,11 @@ inside_enterprise_first() {
     "$(oa_proc_status "$pid" CapEff) $(oa_proc_status "$pid" CapBnd) $(oa_proc_status "$pid" CapAmb)"
   oa_check_not "the file that gave the standard profile its one privilege is gone" test -e "$OA_DROPIN_DIR/10-low-port.conf"
   oa_is "the only port the agent's user listens on" "8080" "$(oa_listening rpi-alert | awk '{print $1}' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  oa_is "… on this computer's own address only (web.bind 127.0.0.1, which the profile holds)" "8080 0100007F" "$(oa_listening rpi-alert | sort -u | tr '\n' ' ' | sed 's/ $//')"
   oa_is "the profile's firewall lock is on, and set to load at every start" "active enabled" "$(systemctl is-active "$FW_UNIT" 2>&1) $(systemctl is-enabled "$FW_UNIT" 2>&1)"
   oa_check "its rules are loaded beside the image's own (two tables)" sh -c 'nft list table inet open_alert_base >/dev/null && nft list table inet open_alert_image >/dev/null'
   oa_is "what Flood-Net may do (remote.mode)" "report" "$(g_status 'd.remote && d.remote.mode' 2>/dev/null || true)"
-  oa_is "the only TCP ports open to other computers" "22 8080 " "$(ss -Hltn | awk '{ a = $4; p = a; sub(/.*:/, "", p); sub(/:[^:]*$/, "", a); if (a !~ /^127\./ && a != "[::1]") print p }' | sort -un | tr '\n' ' ')"
+  oa_is "the only TCP port open to other computers is SSH's: the agent itself listens on 127.0.0.1 only (web.bind), and its lock and the image's firewall stand behind it" "22 " "$(ss -Hltn | awk '{ a = $4; p = a; sub(/.*:/, "", p); sub(/:[^:]*$/, "", a); if (a !~ /^127\./ && a != "[::1]") print p }' | sort -un | tr '\n' ' ')"
   g_score_check "enterprise (chosen in user-data)"
   open-alert-base audit > "$G_OUT/audit-enterprise-copy.txt" 2>&1 || true
   oa_has "audit: the firewall lock is on" "$G_OUT/audit-enterprise-copy.txt" 'firewall lock +on '
@@ -852,7 +858,10 @@ vm_base() {
   if [ "$KVM" = 1 ]; then VM_ARGS+=(-accel kvm -cpu host); else VM_ARGS+=(-accel "tcg,thread=multi" -cpu max); fi
 }
 # The network card: an Intel one on a PC, QEMU's own on ARM.
-if [ "$ARCH" = amd64 ]; then NIC=e1000e; else NIC=virtio-net-pci; fi
+# On ARM, without the card's own start-up program (romfile= empty): the ARM
+# UEFI firmware brings its own driver for it, and Ubuntu's QEMU for ARM does
+# not always come with the file (efi-virtio.rom, in ipxe-qemu).
+if [ "$ARCH" = amd64 ]; then NIC=e1000e; else NIC=virtio-net-pci,romfile=; fi
 
 # QEMU with an emulated processor has been seen to crash by itself early in
 # a start: a "segmentation fault" in the emulator (QEMU 8.2.2, once in the
@@ -1244,7 +1253,7 @@ if [ "$DO_RESTART" = 1 ]; then
   in_vm "$LOGDIR/inside-enterprise.log" enterprise
   oa_section "From outside: the enterprise profile keeps the dashboard to the computer itself"
   got=$(http_code "http://127.0.0.1:$WEB2_PORT/")
-  if [ "$got" = 000 ]; then oa_ok "another computer asking for the dashboard on port 8080 gets nothing (the image's firewall does not let the port in, and the profile's lock refuses it)"
+  if [ "$got" = 000 ]; then oa_ok "another computer asking for the dashboard on port 8080 gets nothing (the agent listens on 127.0.0.1 only; the image's firewall does not let the port in, and the profile's lock refuses it)"
   else oa_fail "another computer got HTTP $got from the dashboard on port 8080"; fi
   got=$(http_code "http://127.0.0.1:$WEB_PORT/")
   if [ "$got" = 000 ]; then oa_ok "… and nothing answers on port 80 any more"; else oa_fail "something still answers on port 80: HTTP $got"; fi

@@ -6,8 +6,9 @@ so on are R4's), which gathers them from the Commonwealth's Information Security
 critical-infrastructure rules and the buyer's guidance it read. Each is answered here **for the
 `open-alert-base` package in its enterprise profile, on Debian 13 or Ubuntu 24.04**. The answers
 come from [`firmware/README.md`](../../firmware/README.md) and
-[U1](../hardware-review/research/U1-rpi-alert-portability.md) section 6 (RPi ALERT 0.23.1), and
-are the project's own statements: no outside assessor has checked them.
+[U1](../hardware-review/research/U1-rpi-alert-portability.md) section 6 (written from RPi ALERT
+0.23.1; the firmware ships 0.24.0 since 19 November 2026, and its changes to the dashboard are in
+the answers below), and are the project's own statements: no outside assessor has checked them.
 
 **Status words**
 
@@ -65,7 +66,7 @@ those limits.
 | A4 | Where do we report a flaw, and how fast do you answer? A `security.txt`? | [SECURITY.md](../../SECURITY.md): GitHub's private reporting, once the owner has switched it on. Response times are a proposal in [support.md](support.md). A `security.txt` for the project's web pages: **not yet** | Partly |
 | A5 | What does it connect to, on which ports, with which TLS? | The table in [overview.md](overview.md): HTTPS (443) out to Flood-Net and a station list, nothing else in normal operation. Node.js's own TLS defaults apply; the project has not separately specified or tested versions and ciphers | Partly |
 | A6 | Does it accept commands from the cloud service? Can it be turned off? Logged? | In the enterprise profile Flood-Net's mode is `report`: it is told how the base station is, and **every request is refused**. `rpi-alert remote off` stops even the check-in. Only the computer itself can change that setting. Flood-Net requests are logged | Done |
-| A7 | A local web page or API? Who reaches it, with what sign-in? | The dashboard, on 8080, **this computer only**: by the firewall lock today, and by `web.bind` once the package moves to RPi ALERT 0.24. It is plain HTTP. It has a password, but anybody logged in on the computer itself is treated as the administrator, and a few read-only pages (status without location or addresses, recent readings) answer without a login in 0.23.1. `web.requireLogin` (everything behind a password) arrives with 0.24. **Dashboard logins are not logged** | Partly |
+| A7 | A local web page or API? Who reaches it, with what sign-in? | The dashboard, on 8080, **this computer only**: the agent listens on `127.0.0.1` alone (`web.bind`, RPi ALERT 0.24), and the firewall lock keeps other computers out as well. It is plain HTTP; HTTPS needs a reverse proxy on the computer, which the profile is ready for (`web.behindProxy` on: a proxy's callers are visitors, never the computer itself, as long as the proxy adds `X-Forwarded-For` to every request; RPi ALERT's `docs/configuration.md` gives the check to make). Nothing is shown without the password to anything that comes through such a proxy (`web.requireLogin` `all`). Anybody logged in on the computer itself, and any program on it, is still treated as the administrator, when they ask for `127.0.0.1` or `localhost` by name; so is a web page that the computer itself serves under those names, on any port. A web page from another site is a visitor. The profile holds these settings: they are put back each time the agent starts. While it runs, somebody on the computer itself can loosen them (`rpi-alert config set`); `status`, `audit` and `sync` name what is looser, and `sync` restarts the agent, which puts it back. **Every login attempt is logged**, accepted or refused, with the caller's address (RPi ALERT 0.24) | Partly |
 | A8 | What secrets are stored, how, what can a thief do with one? | The ingest token and the dashboard password hash, in `/etc/rpi-alert/config.json`, mode 0600, owned by `rpi-alert`. The token is plain text; **there is no encryption at rest and no use of the TPM**. A stolen token lets someone post readings as that base station ("a credential for the whole network's write access", in RPi ALERT's own words) until Flood-Net revokes it | Partly |
 | A9 | Independent security review or penetration test? A threat model? | **Not yet.** RPi ALERT's code cites an earlier internal "2026-10 security appraisal" by finding number and shows the fixes; the appraisal itself was not found in the repositories read. No outside party has tested the package, and there is no written threat model | Not yet |
 | A10 | What happens when the link is down? | The agent queues readings and sends them when it can (the queue is part of its status). It also holds readings back until it trusts the clock. How the queue behaves through a long outage has not been tested in this repository | Partly |
@@ -120,7 +121,7 @@ three requirements are nonetheless the floor a buyer now expects, so here they a
    made at the first start on each computer, at random (ten characters), and kept in
    `/var/lib/rpi-alert/web-password.txt` (mode 0600), shown only to someone on the computer
    itself, until somebody sets their own; the shortest password the dashboard accepts is six
-   characters (RPi ALERT 0.23.1). A fresh machine therefore never shares a password with
+   characters (RPi ALERT 0.24.0, as 0.23.1). A fresh machine therefore never shares a password with
    another. **Honest limit:** the first password sits in a file in plain text until it is
    changed, and in the enterprise profile the dashboard is reached from the computer itself,
    where any local user is already treated as administrator.

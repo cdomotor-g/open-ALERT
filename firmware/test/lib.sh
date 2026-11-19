@@ -208,7 +208,11 @@ oa_caps_for_setpriv() {
 #
 #   oa_run_as_unit LOGFILE [NAME=value …]     extra environment, for the stand-ins
 # The agent runs in the background; its process number is left in OA_AGENT_PID.
+# With OA_EXEC_START set, that command runs in place of the service file's
+# ExecStart (everything else as the service has it): for the one check that
+# needs the agent itself started without the start command in front of it.
 OA_AGENT_PID=''
+OA_EXEC_START=''
 oa_run_as_unit() {
   local log=$1; shift
   local user group uid gid gids='' g envs=() line f mask dir cmd caps_amb caps_bnd nnp=()
@@ -239,11 +243,14 @@ oa_run_as_unit() {
   if [ "$(oa_unit_values NoNewPrivileges | tail -n 1)" = yes ]; then nnp=(--no-new-privs); fi
   mask=$(oa_unit_values UMask | tail -n 1); dir=$(oa_unit_values WorkingDirectory | tail -n 1)
   cmd=$(oa_unit_values ExecStart | tail -n 1)
+  local run=("$cmd")
+  # shellcheck disable=SC2206  # a command and its arguments, split on spaces on purpose
+  if [ -n "$OA_EXEC_START" ]; then run=($OA_EXEC_START); fi
   (
     cd "${dir:-/}" && umask "${mask:-0022}" &&
     exec setpriv --reuid "$uid" --regid "$gid" --groups "${gids:-$gid}" \
       --inh-caps "$caps_amb" --ambient-caps "$caps_amb" --bounding-set "$caps_bnd" "${nnp[@]}" \
-      env -i "${envs[@]}" "$cmd"
+      env -i "${envs[@]}" "${run[@]}"
   ) > "$log" 2>&1 &
   OA_AGENT_PID=$!
 }

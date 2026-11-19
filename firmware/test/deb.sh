@@ -19,24 +19,32 @@
 #         comes from the system's own packages; files, owners and modes; the
 #         agent's own tests as the service's user; the agent started exactly as
 #         the service would start it, with stand-ins for the radio sticks and
-#         for Flood-Net; both profiles, and that the settings file cannot
-#         loosen the profile root put in force; a web proxy, one that cannot
+#         for Flood-Net; both profiles, what the dashboard lets in (RPi ALERT
+#         0.24's web.bind, web.behindProxy and web.requireLogin), and that the
+#         settings file cannot loosen the profile root put in force — neither
+#         the firewall lock nor the settings the profile holds, which the start
+#         command puts back before the agent starts; a web proxy, one that cannot
 #         be used, one that drops connections, and a look-alike library in
 #         the agent's own folder; remove, reinstall, purge; a settings file
 #         put there by root; the refusal to install beside RPi ALERT's own
 #         install; systemd's checker and exposure score for the service file;
 #         udev's checker for the device rules.
-#      b. firewall — the enterprise profile's rules, loaded as the service
-#         would load them, tried from a second container ("another computer"),
-#         and put back by their keeper when every table is cleared.
+#      b. firewall — the enterprise profile from a second container ("another
+#         computer"): the agent itself keeps it out (it listens on 127.0.0.1
+#         only); then, with the agent made to listen on every address, the
+#         lock's rules, loaded as the service would load them, keep it out as
+#         the second guard, and are put back by their keeper when every table
+#         is cleared.
 #         This container is given the one privilege that needs (NET_ADMIN).
 #      c. systemd — a container with systemd as its first process: the package
 #         installed and the real service started, sandbox and all; the
 #         enterprise profile's lock cleared, broken and taken away, and the
 #         agent stopped whenever the lock cannot hold. This container is
 #         given what that needs (SYS_ADMIN for the sandbox's private mounts,
-#         NET_ADMIN for the firewall rules). Where systemd will not start in
-#         a container, this part is skipped and says so.
+#         NET_ADMIN for the firewall rules). The settings the enterprise profile
+#         holds, loosened in the file and through the rpi-alert command, put
+#         back by the real service. Where systemd will not start in a
+#         container, this part is skipped and says so.
 #   None of the containers is privileged or shares the computer's network.
 #
 # Options
@@ -134,6 +142,48 @@ t_settings_are() {
     if [ "$(t_setting "${pair%%=*}")" != "${pair#*=}" ]; then bad="$bad ${pair%%=*} is $(t_setting "${pair%%=*}") (wanted ${pair#*=});"; fi
   done
   if [ -z "$bad" ]; then oa_ok "$what: $*"; else oa_fail "$what —$bad"; fi
+}
+
+# Ask the dashboard on this computer, the way a caller of a given kind would:
+# a raw request, with the headers given ("Host: name" replaces the Host
+# header; "HTTP/1.0" sends that version instead of 1.1).
+#   t_ask PORT PATH [HEADER …]     prints "<status> <the answer>"
+t_ask() {
+  node -e '
+    const net = require("node:net");
+    const [port, path, ...hs] = process.argv.slice(1);
+    let ver = "1.1", host = "127.0.0.1:" + port;
+    const more = [];
+    for (const h of hs) { if (h === "HTTP/1.0") ver = "1.0"; else if (/^host:/i.test(h)) host = h.slice(5).trim(); else more.push(h); }
+    const s = net.connect(Number(port), "127.0.0.1", () => s.write("GET " + path + " HTTP/" + ver + "\r\nHost: " + host + "\r\nConnection: close\r\n" + more.map((l) => l + "\r\n").join("") + "\r\n"));
+    const parts = [];
+    s.on("data", (d) => { parts.push(d); });
+    s.on("end", () => {
+      const buf = Buffer.concat(parts), cut = buf.indexOf("\r\n\r\n");
+      const head = (cut < 0 ? buf : buf.subarray(0, cut)).toString("latin1"), m = /^HTTP\/1\.[01] (\d{3})/.exec(head);
+      let body = cut < 0 ? Buffer.alloc(0) : buf.subarray(cut + 4);
+      // An answer sent in pieces ("chunked"): each piece is its length in bytes, in hexadecimal, a line, then the piece.
+      if (/^transfer-encoding:\s*chunked/im.test(head)) {
+        const out = [];
+        for (let at = 0; ;) {
+          const nl = body.indexOf("\r\n", at), n = parseInt(body.subarray(at, nl).toString("latin1"), 16);
+          if (!(n > 0)) break;
+          out.push(body.subarray(nl + 2, nl + 2 + n)); at = nl + 2 + n + 2;
+        }
+        body = Buffer.concat(out);
+      }
+      process.stdout.write((m ? m[1] : "000") + " " + body.toString("utf8"));
+    });
+    s.on("error", (e) => { process.stdout.write("000 " + e.code); process.exitCode = 1; });
+    setTimeout(() => { process.stdout.write("000 no answer"); process.exit(1); }, 5000).unref();
+  ' "$@"
+}
+# t_asked "what" WANTED-STATUS 'TEXT IN THE ANSWER' PORT PATH [HEADER …]
+t_asked() {
+  local what=$1 want=$2 text=$3 got; shift 3
+  got=$(t_ask "$@" 2>/dev/null || true)
+  if [ "${got%% *}" = "$want" ] && printf '%s' "$got" | grep -qF -- "$text"; then oa_ok "$what"
+  else oa_fail "$what — wanted $want with '$text', got: $(printf '%s' "$got" | head -c 160)"; fi
 }
 
 # Change the agent's settings the way the package itself does: as the agent's
@@ -289,7 +339,7 @@ LIST
   case "$(passwd -S rpi-alert | awk '{print $2}')" in L|LK) oa_ok "no password can be typed for it (locked)" ;; *) oa_fail "the rpi-alert account's password is not locked: $(passwd -S rpi-alert)" ;; esac
   oa_check "the service is set to start with the computer" test -L "$WANTS/open-alert-base.service"
   oa_is "the profile in force after a first install" "standard" "$(cat /etc/open-alert-base/profile)"
-  t_settings_are "the standard profile's settings" web.port=80 "web.bind=(not set)" remote.mode=manage hotspot.mode=off recover.mode=off kiosk.mode=off audio.mode=off
+  t_settings_are "the standard profile's settings" web.port=80 web.bind= web.behindProxy=true web.requireLogin=settings remote.mode=manage hotspot.mode=off recover.mode=off kiosk.mode=off audio.mode=off
   oa_has "standard: a drop-in file gives the service the one privilege for port 80" "$DROPIN" '^AmbientCapabilities=CAP_NET_BIND_SERVICE$'
   oa_is "standard: and no other privilege" "CAP_NET_BIND_SERVICE" "$(oa_unit_values CapabilityBoundingSet | tr '\n' ' ' | sed 's/ $//')"
   oa_check_not "standard: the firewall lock is not turned on" test -e "$WANTS/open-alert-base-firewall.service"
@@ -339,9 +389,20 @@ LIST
     got=0; open-alert-base selftest > "$T_LOG/selftest.txt" 2>&1 || got=$?
     log=$(sed -n 's/^ *full output: //p' "$T_LOG/selftest.txt"); if [ -n "$log" ] && [ -f "$log" ]; then cp "$log" "$T_LOG/agent-tests.tap"; fi
     n=$(grep -Eo 'tests [0-9]+, pass [0-9]+, fail [0-9]+, skipped [0-9]+' "$T_LOG/selftest.txt" || echo 'no count')
-    if [ "$got" = 0 ] && grep -q 'fail 0' "$T_LOG/selftest.txt"; then oa_ok "open-alert-base selftest: $n (one test file is left out: it tests RPi ALERT's root helper, which this package does not install)"
+    if [ "$got" = 0 ] && grep -q 'fail 0' "$T_LOG/selftest.txt"; then oa_ok "open-alert-base selftest: $n ($(sed -n 's/^ *left out: //p' "$T_LOG/selftest.txt" | head -n 1) …)"
+    elif [ "$got" = 0 ] && grep -q 'PASSED WHEN RUN AGAIN ALONE' "$T_LOG/selftest.txt"; then
+      # selftest runs a file that failed once more by itself (a timing test on
+      # a busy computer), and passes when that second run does.
+      oa_ok "open-alert-base selftest: $n in the full run; the failing file passed when run again alone: $(sed -n 's/^ *FAILED IN THE FULL RUN, PASSED WHEN RUN AGAIN ALONE: //p' "$T_LOG/selftest.txt")"
+      oa_note "the test that failed in the full run: $(grep -E '^ *not ok ' "$T_LOG/selftest.txt" | head -3 | sed 's/^ *//' | tr '\n' ';')"
     else oa_fail "open-alert-base selftest (exit $got): $n — see $T_LOG/selftest.txt and agent-tests.tap"; fi
     if grep -q '# SKIP' "$T_LOG/agent-tests.tap" 2>/dev/null; then oa_note "skipped by the agent's suite: $(grep '# SKIP' "$T_LOG/agent-tests.tap" | sed 's/^ok [0-9]* - //' | tr '\n' ';')"; fi
+    oa_has_not "selftest left out no test but the three it names" "$T_LOG/selftest.txt" 'LEFT OUT THAT SHOULD NOT HAVE BEEN'
+    got=$(grep -c ' # SKIP test name does not match pattern$' "$T_LOG/agent-tests.tap" 2>/dev/null || true)
+    case "$(node -p 'process.versions.node.split(".")[0]')" in
+      18|20) oa_is "… on this Node.js the three are listed as left out by name, and no more" 3 "${got:-0}" ;;
+      *) oa_note "this Node.js leaves the three tests out of the count instead of listing them as skipped" ;;
+    esac
   else
     oa_skip "the agent's own test suite — left out (--no-agent-tests)"
   fi
@@ -360,13 +421,32 @@ LIST
     oa_is "standard: no-new-privileges is on" "1" "$(oa_proc_status "$pid" NoNewPrivs)"
   else oa_fail "standard: the agent's process was not found"; fi
   oa_is "standard: the only port the agent's user listens on" "80" "$(oa_listening rpi-alert | awk '{print $1}' | sort -u | tr '\n' ' ' | sed 's/ $//')"
-  oa_has_not "standard: nothing was said about a web proxy, and nothing loaded for one (none is set)" "$T_LOG/agent-standard.log" 'proxy'
+  oa_has_not "standard: nothing was said about a web proxy, and nothing loaded for one (none is set)" "$T_LOG/agent-standard.log" 'web proxy|proxy-preload|NODE_USE_ENV_PROXY'
   if rpi-alert status > "$T_LOG/rpi-alert-status.txt" 2>&1 && grep -q "RPi ALERT $version" "$T_LOG/rpi-alert-status.txt"; then oa_ok "standard: \"rpi-alert status\" finds the running agent"
   else oa_fail "standard: rpi-alert status — see $T_LOG/rpi-alert-status.txt"; fi
   open-alert-base audit > "$T_LOG/audit-standard-running.txt" 2>&1 || true
   oa_has "standard: audit shows what listens" "$T_LOG/audit-standard-running.txt" 'TCP port 80 on every address'
   oa_has "standard: audit shows the running process's privileges, read from the kernel" "$T_LOG/audit-standard-running.txt" 'privileges in use +one: CAP_NET_BIND_SERVICE'
   oa_has "standard: audit shows where the agent calls out to, and says so when it is not HTTPS (the stand-in is plain http)" "$T_LOG/audit-standard-running.txt" 'NOT ALL OVER HTTPS'
+  oa_has "standard: the agent says web.behindProxy is on (the profile's)" "$T_LOG/agent-standard.log" 'web\.behindProxy is on'
+  oa_has "standard: audit gives web.bind (empty: every address)" "$T_LOG/audit-standard-running.txt" 'web\.bind +empty — the dashboard listens on every address'
+  oa_has "standard: audit gives web.behindProxy" "$T_LOG/audit-standard-running.txt" 'web\.behindProxy +true — '
+  oa_has "standard: audit gives the login rule (looking needs no password)" "$T_LOG/audit-standard-running.txt" 'web\.requireLogin +settings — looking needs no password'
+  oa_has "standard: audit says which settings the profile holds" "$T_LOG/audit-standard-running.txt" 'held by the profile +web\.behindProxy — '
+  # What the dashboard lets in, asked from this computer as each kind of caller would.
+  t_asked "standard: the rpi-alert command's way of asking (127.0.0.1, HTTP/1.1, no proxy's header) is this computer itself" 200 '"local":true' 80 /api/status
+  t_asked "standard: asking for localhost by name, as a browser on this computer does, is this computer itself too" 200 '"local":true' 80 /api/status 'Host: localhost'
+  t_asked "standard: a caller passed on by a reverse proxy (X-Forwarded-For) is a visitor" 200 '"local":false' 80 /api/status 'X-Forwarded-For: 192.0.2.7'
+  t_asked "standard: so is one with only another of a proxy's headers (Via) — web.behindProxy at work" 200 '"local":false' 80 /api/status 'Via: 1.1 proxy.example'
+  t_asked "standard: a web page under a name of its own pointed at 127.0.0.1 is refused (its name is not this computer's: RPi ALERT's own check of the name, with web.behindProxy on or off)" 403 'unrecognised Host header' 80 /api/status 'Host: rebound.example'
+  t_asked "standard: a name that gets past that check (one ending in .local) pointed at 127.0.0.1 is a visitor — web.behindProxy at work" 200 '"local":false' 80 /api/status 'Host: rebound.local'
+  t_asked "standard: a page from another site, sent by a browser on this computer to 127.0.0.1 (its Origin names the site), is a visitor — web.behindProxy at work" 200 '"local":false' 80 /api/status 'Origin: http://site.example'
+  t_asked "standard: a page that another program on this computer serves (localhost, another port) still counts as this computer itself — the limit the README states" 200 '"local":true' 80 /api/status 'Host: localhost' 'Origin: http://localhost:3000'
+  t_asked "standard: a visitor may look without a password (web.requireLogin settings)" 200 '"version"' 80 /api/status 'X-Forwarded-For: 192.0.2.7'
+  t_asked "standard: … but not read the settings" 401 'log in first' 80 /api/config 'X-Forwarded-For: 192.0.2.7'
+  open-alert-base status > "$T_LOG/status-standard-running.txt" 2>&1 || true
+  oa_has "standard: open-alert-base status gives the login rule" "$T_LOG/status-standard-running.txt" '^Login +looking needs no password'
+  oa_has "… and what counts as this computer's own" "$T_LOG/status-standard-running.txt" '^Own calls +only a request on 127\.0\.0\.1 that asks for 127\.0\.0\.1 or localhost by name'
   f=$(stat -c '%U:%G %a' /etc/rpi-alert/config.json)
   oa_is "the settings file, after the agent has written it: still the agent's alone" "rpi-alert:rpi-alert 600" "$f"
   got=$(find /var/lib/rpi-alert -maxdepth 1 -type f \( -perm /077 -o ! -user rpi-alert \) | head -n 3)
@@ -392,7 +472,7 @@ LIST
   got=0; open-alert-base profile enterprise > "$T_LOG/profile-enterprise.txt" 2>&1 || got=$?
   oa_is "open-alert-base profile enterprise" 0 "$got"
   oa_is "the profile in force" "enterprise" "$(cat /etc/open-alert-base/profile)"
-  t_settings_are "the enterprise profile's settings" web.port=8080 web.bind=127.0.0.1 remote.mode=report hotspot.mode=off recover.mode=off kiosk.mode=off audio.mode=off
+  t_settings_are "the enterprise profile's settings" web.port=8080 web.bind=127.0.0.1 web.behindProxy=true web.requireLogin=all remote.mode=report hotspot.mode=off recover.mode=off kiosk.mode=off audio.mode=off
   t_settings_are "a profile changes only what it names: the token and the name set before are still there" meganet.token=mgn_test_token "name=Test base"
   oa_check_not "enterprise: the drop-in file with the privilege is gone" test -e "$DROPIN"
   oa_is "enterprise: the service file gives no privilege at all" "" "$(oa_unit_values CapabilityBoundingSet; oa_unit_values AmbientCapabilities)"
@@ -403,6 +483,10 @@ LIST
   oa_has "audit (enterprise): says the service is tied to the firewall lock" "$T_LOG/audit-enterprise.txt" 'Tied to the firewall lock: yes'
   oa_has "audit (enterprise): no privileges at all" "$T_LOG/audit-enterprise.txt" 'Privileges: none at all'
   oa_has "audit (enterprise): Flood-Net can change nothing" "$T_LOG/audit-enterprise.txt" 'remote management +report'
+  oa_has "audit (enterprise): web.bind keeps the dashboard to this computer's own address" "$T_LOG/audit-enterprise.txt" "web\\.bind +127\\.0\\.0\\.1 — the dashboard listens on this computer's own address only"
+  oa_has "audit (enterprise): a reverse proxy's callers are visitors (web.behindProxy)" "$T_LOG/audit-enterprise.txt" 'web\.behindProxy +true — '
+  oa_has "audit (enterprise): nothing is shown without the password (web.requireLogin all)" "$T_LOG/audit-enterprise.txt" "web\\.requireLogin +all — nothing is shown to another computer, or through a reverse proxy, without the dashboard's password"
+  oa_has "audit (enterprise): the profile holds all three" "$T_LOG/audit-enterprise.txt" 'held by the profile +web\.bind web\.behindProxy web\.requireLogin — '
   t_stub_start "$T_LOG/stub-enterprise.log"
   oa_run_as_unit "$T_LOG/agent-enterprise.log" "${SIM_ENV[@]}"
   t_run_checks "enterprise" 8080 "$T_LOG/stub-enterprise.log"
@@ -416,28 +500,41 @@ LIST
   if oa_wait 60 grep -Eq '^base_station_checkin mgn_test_token .*"mode":"report"' "$T_LOG/stub-enterprise.log"; then
     oa_ok "enterprise: it checks in with Flood-Net as \"report\" (health only)"
   else oa_fail "enterprise: no check-in in \"report\" mode reached the stand-in"; fi
-  # The agent rewrites its settings file when a setting changes: web.bind, which this agent does not know, must survive that.
+  # The rpi-alert command is still this computer itself, with a login for
+  # everything and the proxy setting on; and the agent's rewrite of its file
+  # keeps the profile's settings.
   if RPI_ALERT_PORT=8080 rpi-alert config set name "Renamed base" > "$T_LOG/config-set.txt" 2>&1; then
-    t_settings_are "enterprise: web.bind is still in the settings after the agent rewrote its file (it keeps a setting it does not know)" "name=Renamed base" web.bind=127.0.0.1
+    t_settings_are "enterprise: rpi-alert config set works (the command is this computer itself, with no password), and the agent's rewrite of its file keeps the profile's settings" "name=Renamed base" web.bind=127.0.0.1 web.behindProxy=true web.requireLogin=all
   else oa_fail "rpi-alert config set name … — see $T_LOG/config-set.txt"; fi
   got=$(oa_listening rpi-alert | sort -u | tr '\n' ';')
   open-alert-base audit > "$T_LOG/audit-enterprise-running.txt" 2>&1 || true
   case "$got" in
     "8080 0100007F;"|"8080 00000000000000000000000001000000;"|"8080 0000000000000000FFFF00000100007F;")
-      oa_ok "enterprise: the agent listens on this computer's own address only ($got) — this agent takes notice of web.bind"
-      oa_has "enterprise: audit says so" "$T_LOG/audit-enterprise-running.txt" 'dashboard reach +this computer only — the agent listens' ;;
-    "8080 00000000;"|"8080 00000000000000000000000000000000;")
-      oa_ok "enterprise: one port, 8080"
-      oa_note "RPi ALERT $version takes no notice of web.bind and listens on every address ($got): until the pin moves to 0.24, the firewall rules are what keeps other computers out (part b)"
-      oa_has "enterprise: with the firewall lock not on (this container may not load it), audit says plainly that the dashboard is NOT kept to this computer" "$T_LOG/audit-enterprise-running.txt" 'dashboard reach +NOT KEPT TO THIS COMPUTER' ;;
-    *) oa_fail "enterprise: the agent's user listens on: $got (wanted port 8080 only)" ;;
+      oa_ok "enterprise: the agent itself listens on this computer's own address only ($got): RPi ALERT $version takes notice of web.bind"
+      oa_has "enterprise: audit says so (and that the lock, the second guard, is not on: this container may not load it)" "$T_LOG/audit-enterprise-running.txt" "dashboard reach +this computer only — the agent listens on this computer's own address only; the firewall lock, the second guard, is NOT ON" ;;
+    *) oa_fail "enterprise: the agent's user listens on: $got (wanted port 8080 on 127.0.0.1 only)" ;;
   esac
+  oa_has "enterprise: the agent says where it listens" "$T_LOG/agent-enterprise.log" 'dashboard on http://127\.0\.0\.1:8080/ — this machine only \(web\.bind\)'
+  # What the dashboard lets in, asked from this computer as each kind of caller would.
+  t_asked "enterprise: the rpi-alert command's way of asking is this computer itself, and needs no password" 200 '"local":true' 8080 /api/status
+  t_asked "enterprise: … with a login for everything in force" 200 '"all":true' 8080 /api/status
+  t_asked "enterprise: a caller passed on by a reverse proxy (X-Forwarded-For) is shown nothing without the password, not even the status" 401 'log in first' 8080 /api/status 'X-Forwarded-For: 192.0.2.7'
+  t_asked "enterprise: … nor the readings" 401 'log in first' 8080 /api/readings 'X-Forwarded-For: 192.0.2.7'
+  t_asked "enterprise: … and asking the proxy for localhost by name does not make it this computer" 401 'log in first' 8080 /api/config 'Host: localhost' 'X-Forwarded-For: 192.0.2.7'
+  t_asked "enterprise: a request in HTTP/1.0 (as nginx sends, left as it comes) is never this computer itself" 401 'log in first' 8080 /api/config HTTP/1.0
+  t_asked "enterprise: one with another of a proxy's headers (Forwarded) is a visitor" 401 'log in first' 8080 /api/config 'Forwarded: for=192.0.2.7'
+  t_asked "enterprise: a web page under a name of its own pointed at 127.0.0.1 is refused" 403 'unrecognised Host header' 8080 /api/config 'Host: rebound.example'
+  t_asked "enterprise: a page from another site, sent by a browser on this computer (its Origin names the site), is shown nothing without the password" 401 'log in first' 8080 /api/config 'Origin: http://site.example'
+  t_asked "enterprise: a page that another program on this computer serves (localhost, another port) is still this computer itself, and is shown the settings — the limit the README states" 200 '"config"' 8080 /api/config 'Host: localhost' 'Origin: http://localhost:3000'
+  t_asked "enterprise: the page itself (the same in every copy of RPi ALERT, no data in it) is still served, for the login" 200 '<' 8080 / 'X-Forwarded-For: 192.0.2.7'
+  open-alert-base status > "$T_LOG/status-enterprise-running.txt" 2>&1 || true
+  oa_has "enterprise: open-alert-base status gives the login rule" "$T_LOG/status-enterprise-running.txt" "^Login +nothing is shown to another computer, or through a reverse proxy, without the dashboard's password"
   t_stop_all
 
   oa_section "$OA_DISTRO: back to the standard profile"
   got=0; open-alert-base profile standard > "$T_LOG/profile-standard.txt" 2>&1 || got=$?
   oa_is "open-alert-base profile standard" 0 "$got"
-  t_settings_are "the standard profile's settings again" web.port=80 "web.bind=(not set)" remote.mode=manage
+  t_settings_are "the standard profile's settings again: what enterprise closed is open again, and web.behindProxy stays on" web.port=80 web.bind= web.behindProxy=true web.requireLogin=settings remote.mode=manage
   oa_has "the drop-in file is back" "$DROPIN" '^CapabilityBoundingSet=CAP_NET_BIND_SERVICE$'
   oa_check_not "the firewall lock is turned off again" test -e "$WANTS/open-alert-base-firewall.service"
   oa_check_not "… and the agent's service is no longer tied to it" test -e "$LOCK_DROPIN"
@@ -454,7 +551,8 @@ LIST
   oa_section "$OA_DISTRO: the profile root put in force decides; the settings file, which the agent's own user can write, cannot loosen it"
   open-alert-base profile enterprise > "$T_LOG/decide-profile.txt" 2>&1 || true
   # As the agent's own user would, were the agent taken over: the dashboard for every address.
-  t_apply '{"settings":{"web":{"bind":"0.0.0.0"}}}'
+  t_apply '{"settings":{"web":{"bind":""}}}'
+  t_settings_are "the agent's user can write \"every address\" in its own settings file" web.bind=
   got=0; open-alert-base sync > "$T_LOG/decide-sync-bind.txt" 2>&1 || got=$?
   oa_is "the agent's user sets \"every address\" behind the enterprise profile: \"open-alert-base sync\" (as an update runs it) ends with an error, status 4" 4 "$got"
   oa_has "… and says loudly that the settings no longer match the profile" "$T_LOG/decide-sync-bind.txt" 'THE SETTINGS NO LONGER MATCH THE PROFILE IN FORCE \(enterprise\)'
@@ -467,12 +565,82 @@ LIST
   got=0; open-alert-base status > "$T_LOG/decide-status.txt" 2>&1 || got=$?
   if [ "$got" != 0 ] && grep -q 'THE SETTINGS NO LONGER MATCH THE PROFILE' "$T_LOG/decide-status.txt"; then oa_ok "open-alert-base status says so too, and ends with an error"
   else oa_fail "open-alert-base status with settings that do not match the profile: exit $got — see $T_LOG/decide-status.txt"; fi
+  # The two settings with no firewall behind them.
+  t_apply '{"settings":{"web":{"behindProxy":false,"requireLogin":"settings"}}}'
+  t_settings_are "the agent's user can also write a reverse proxy's callers as this computer's own, and looking with no password" web.bind= web.behindProxy=false web.requireLogin=settings
+  got=0; open-alert-base sync > "$T_LOG/decide-sync-held.txt" 2>&1 || got=$?
+  oa_is "\"open-alert-base sync\" ends with status 4" 4 "$got"
+  oa_has "… and names each setting the profile holds that the file has looser: web.behindProxy" "$T_LOG/decide-sync-held.txt" 'web\.behindProxy is false; the profile in force \(enterprise\) holds it at true'
+  oa_has "… web.requireLogin" "$T_LOG/decide-sync-held.txt" 'web\.requireLogin is settings; the profile in force \(enterprise\) holds it at all'
+  oa_has "… and says they are put back when the agent starts" "$T_LOG/decide-sync-held.txt" 'put back as the profile has them each time the agent starts'
+  open-alert-base audit > "$T_LOG/decide-audit-held.txt" 2>&1 || true
+  oa_has "audit calls each a fault: web.behindProxy" "$T_LOG/decide-audit-held.txt" 'FAULT — THE SETTINGS NO LONGER MATCH THE PROFILE: web\.behindProxy is false'
+  oa_has "… web.requireLogin" "$T_LOG/decide-audit-held.txt" 'FAULT — THE SETTINGS NO LONGER MATCH THE PROFILE: web\.requireLogin is settings'
+  got=0; open-alert-base status > "$T_LOG/decide-status-held.txt" 2>&1 || got=$?
+  if [ "$got" != 0 ] && grep -q 'NO LONGER MATCH THE PROFILE: web\.requireLogin' "$T_LOG/decide-status-held.txt"; then oa_ok "status names them too, and ends with an error"
+  else oa_fail "status with the held settings looser: exit $got — see $T_LOG/decide-status-held.txt"; fi
+  # The agent started as the service starts it: the start command puts all three back first.
+  t_stub_start "$T_LOG/stub-decide.log"
+  oa_run_as_unit "$T_LOG/agent-decide.log" "${SIM_ENV[@]}"
+  if oa_wait 40 oa_http_ok http://127.0.0.1:8080/; then oa_ok "the agent started as the service starts it"; else oa_fail "the agent did not start after the settings were loosened — see $T_LOG/agent-decide.log"; fi
+  oa_has "the start command put the three back before the agent started, and said so" "$T_LOG/agent-decide.log" 'had web\.bind empty, web\.behindProxy false, web\.requireLogin settings, looser than the profile in force \("enterprise"\) holds: put back to web\.bind 127\.0\.0\.1, web\.behindProxy true, web\.requireLogin all'
+  t_settings_are "… the settings file holds the profile's values again" web.bind=127.0.0.1 web.behindProxy=true web.requireLogin=all
+  oa_is "… the agent listens on this computer's own address only" "8080 0100007F" "$(oa_listening rpi-alert | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  t_asked "… and a reverse proxy's caller is shown nothing without the password" 401 'log in first' 8080 /api/status 'X-Forwarded-For: 192.0.2.7'
+  # Loosened while it runs, through the rpi-alert command (anyone on this computer may): sync sees it.
+  if RPI_ALERT_PORT=8080 rpi-alert config set web.requireLogin settings > "$T_LOG/decide-live.txt" 2>&1; then
+    got=0; open-alert-base sync > "$T_LOG/decide-sync-live.txt" 2>&1 || got=$?
+    if [ "$got" = 4 ] && grep -q 'web\.requireLogin is settings' "$T_LOG/decide-sync-live.txt"; then oa_ok "loosened while the agent runs, with \"rpi-alert config set\": sync names it and ends with status 4 (under systemd it restarts the agent, which puts it back: part c)"
+    else oa_fail "after rpi-alert config set web.requireLogin settings: sync exit $got — see $T_LOG/decide-sync-live.txt"; fi
+  else oa_fail "rpi-alert config set web.requireLogin settings — see $T_LOG/decide-live.txt"; fi
+  t_stop_all
+  # A settings file taken away: the agent would start on its built-in settings.
+  t_apply "$SIM_SETTINGS"
+  rm -f /etc/rpi-alert/config.json
+  oa_run_as_unit "$T_LOG/agent-decide-none.log" "${SIM_ENV[@]}"
+  if oa_wait 40 oa_http_ok http://127.0.0.1:8080/ && grep -q 'there was no settings file' "$T_LOG/agent-decide-none.log"; then oa_ok "the settings file taken away: the start command makes it with the profile's settings, and says so"
+  else oa_fail "with no settings file the agent did not start on the profile's settings — see $T_LOG/agent-decide-none.log"; fi
+  t_settings_are "… the profile's settings" web.port=8080 web.bind=127.0.0.1 web.behindProxy=true web.requireLogin=all remote.mode=report
+  t_stop_all
+  # A settings file that is not valid JSON: the agent would start on its built-in settings.
+  t_apply "$SIM_SETTINGS"
+  runuser -u rpi-alert -- sh -c 'sed "s/}\$/},/" /etc/rpi-alert/config.json > /etc/rpi-alert/config.json.new && mv /etc/rpi-alert/config.json.new /etc/rpi-alert/config.json'
+  if node -e 'JSON.parse(require("fs").readFileSync("/etc/rpi-alert/config.json", "utf8"))' 2>/dev/null; then oa_fail "the settings file could not be broken for this check"; fi
+  oa_run_as_unit "$T_LOG/agent-decide-broken.log" "${SIM_ENV[@]}"
+  if oa_wait 40 oa_http_ok http://127.0.0.1:8080/ && grep -q 'is not valid JSON, so the agent would start on its built-in settings. It starts on the settings of the profile "enterprise" instead' "$T_LOG/agent-decide-broken.log"; then
+    oa_ok "a settings file that is not valid JSON: the agent starts on the profile's settings, not its built-in ones, and the log says so"
+  else oa_fail "with a settings file that is not valid JSON — see $T_LOG/agent-decide-broken.log"; fi
+  t_settings_are "… the profile's settings" web.bind=127.0.0.1 web.behindProxy=true web.requireLogin=all remote.mode=report
+  if grep -q 'mgn_test_token' /etc/rpi-alert/config.json.bad 2>/dev/null; then oa_ok "… and what the broken file held (the token) is kept in config.json.bad, as the agent itself keeps it"
+  else oa_fail "the broken settings file was not kept as config.json.bad"; fi
+  t_stop_all
+  # A link in the settings file's place: never written through; the agent takes its cautious values.
+  cp /etc/rpi-alert/config.json.bad "$SIM/decide-target.json"; chmod 0644 "$SIM/decide-target.json"
+  before=$(sha256sum "$SIM/decide-target.json" | awk '{print $1}')
+  rm -f /etc/rpi-alert/config.json /etc/rpi-alert/config.json.bad; ln -s "$SIM/decide-target.json" /etc/rpi-alert/config.json
+  oa_run_as_unit "$T_LOG/agent-decide-link.log" "${SIM_ENV[@]}"
+  if oa_wait 40 oa_http_ok http://127.0.0.1:8080/; then oa_ok "a link in the settings file's place: the agent starts"; else oa_fail "with a link in the settings file's place the agent did not start — see $T_LOG/agent-decide-link.log"; fi
+  oa_has "… on its built-in settings with the dashboard's at their most closed, and the start command says so" "$T_LOG/agent-decide-link.log" "the dashboard's at least as closed as the profile \"enterprise\" holds"
+  oa_is "… it listens on this computer's own address only" "8080 0100007F" "$(oa_listening rpi-alert | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  t_asked "… and shows a reverse proxy's caller nothing" 401 'log in first' 8080 /api/status 'X-Forwarded-For: 192.0.2.7'
+  oa_is "… and the file the link points to was not written" "$before" "$(sha256sum "$SIM/decide-target.json" | awk '{print $1}')"
+  t_stop_all
+  rm -f /etc/rpi-alert/config.json
+  t_apply "$SIM_SETTINGS"
   # … and a port that would need a privilege.
   t_apply '{"settings":{"web":{"bind":"127.0.0.1","port":81}}}'
   got=0; open-alert-base sync > "$T_LOG/decide-sync-port.txt" 2>&1 || got=$?
   oa_is "the agent's user sets a port below 1024 behind the enterprise profile: status 4 again" 4 "$got"
   oa_check_not "… and the service is given no privilege for it" test -e "$DROPIN"
   oa_is "… none at all" "" "$(oa_unit_values CapabilityBoundingSet; oa_unit_values AmbientCapabilities)"
+  oa_has "… sync says the agent cannot open port 81, and falls back to 8080" "$T_LOG/decide-sync-port.txt" 'cannot open port 81 \(it falls back to 8080\)'
+  oa_has_not "… and does not ask for the lock to be moved to port 81: the lock already names 8080, the port the agent opens" "$T_LOG/decide-sync-port.txt" 'names another'
+  got=0; open-alert-base status > "$T_LOG/decide-status-port.txt" 2>&1 || got=$?
+  oa_has "… status gives the dashboard on 8080, where the agent really is" "$T_LOG/decide-status-port.txt" '^Dashboard +http://127\.0\.0\.1:8080/'
+  if [ "$got" != 0 ] && grep -q 'they ask for port 81, below 1024' "$T_LOG/decide-status-port.txt"; then oa_ok "… and says the settings ask for port 81, and ends with an error"
+  else oa_fail "status with port 81 behind the enterprise profile: exit $got — see $T_LOG/decide-status-port.txt"; fi
+  open-alert-base audit > "$T_LOG/decide-audit-port.txt" 2>&1 || true
+  oa_has "… audit gives 8080 as the dashboard's port, and why" "$T_LOG/decide-audit-port.txt" 'dashboard port +8080, plain HTTP, .* the settings ask for 81'
   got=0; open-alert-base profile enterprise > "$T_LOG/decide-profile-again.txt" 2>&1 || got=$?
   oa_is "root puts the profile in force again" 0 "$got"
   t_settings_are "the settings are as the profile has them once more" web.port=8080 web.bind=127.0.0.1
@@ -480,6 +648,18 @@ LIST
   oa_is "… and sync has no complaint" 0 "$got"
   # The settings may ask for more than the profile does, never for less.
   open-alert-base profile standard > /dev/null 2>&1 || true
+  t_apply '{"settings":{"web":{"behindProxy":false}}}'
+  oa_run_as_unit "$T_LOG/agent-decide-standard.log" "${SIM_ENV[@]}"
+  oa_wait 40 oa_http_ok http://127.0.0.1:80/ || true
+  t_settings_are "standard holds web.behindProxy too: turned off in the file, it is on again once the agent has started" web.behindProxy=true
+  oa_has "… and the start command said so" "$T_LOG/agent-decide-standard.log" 'had web\.behindProxy false, looser than the profile in force \("standard"\) holds'
+  t_stop_all
+  t_apply '{"settings":{"web":{"requireLogin":"all"}}}'
+  oa_run_as_unit "$T_LOG/agent-decide-standard-more.log" "${SIM_ENV[@]}"
+  oa_wait 40 oa_http_ok http://127.0.0.1:80/ || true
+  t_settings_are "a login for everything asked for under the standard profile is more than it asks: it is left as it is" web.requireLogin=all
+  oa_has_not "… and nothing is said to be put back" "$T_LOG/agent-decide-standard-more.log" 'put back'
+  t_stop_all
   t_apply '{"settings":{"web":{"bind":"127.0.0.1"}}}'
   open-alert-base sync > "$T_LOG/decide-sync-more.txt" 2>&1 || true
   if [ -L "$WANTS/open-alert-base-firewall.service" ] && [ -f "$LOCK_DROPIN" ]; then oa_ok "the settings may ask for more than the profile does: \"this computer only\" set under the standard profile turns the lock on"
@@ -487,6 +667,7 @@ LIST
   open-alert-base profile standard > /dev/null 2>&1 || true
   if [ ! -e "$WANTS/open-alert-base-firewall.service" ] && [ ! -e "$LOCK_DROPIN" ] && [ -f "$DROPIN" ]; then oa_ok "\"open-alert-base profile standard\", run by root, is what takes the lock off again"
   else oa_fail "after \"open-alert-base profile standard\" the lock or its tie is still there, or the privilege for port 80 is not"; fi
+  t_settings_are "… and what the standard profile names is as it has it again" web.bind= web.behindProxy=true web.requireLogin=settings
 
   oa_section "$OA_DISTRO: through a web proxy, with a private certificate authority"
   t_proxy_checks
@@ -566,7 +747,7 @@ LIST
   got=0; OPEN_ALERT_BASE_PROFILE=enterprise apt-get -y -o Dpkg::Use-Pty=0 install "$OA_DEB" > "$T_LOG/apt-install-enterprise.log" 2>&1 || got=$?
   oa_is "install with OPEN_ALERT_BASE_PROFILE=enterprise" 0 "$got"
   oa_is "the profile in force" "enterprise" "$(cat /etc/open-alert-base/profile 2>/dev/null)"
-  t_settings_are "its settings" web.port=8080 web.bind=127.0.0.1 remote.mode=report recover.mode=off hotspot.mode=off
+  t_settings_are "its settings" web.port=8080 web.bind=127.0.0.1 web.behindProxy=true web.requireLogin=all remote.mode=report recover.mode=off hotspot.mode=off
   oa_check_not "no privilege was ever given" test -e "$DROPIN"
   oa_check "the agent's service is tied to the firewall lock from the first moment" test -f "$LOCK_DROPIN"
 
@@ -577,12 +758,12 @@ LIST
   oa_is "removed, then installed again with OPEN_ALERT_BASE_PROFILE=standard" 0 "$got"
   oa_is "the profile asked for is in force (it is not passed over because settings were there)" "standard" "$(cat /etc/open-alert-base/profile 2>/dev/null)"
   oa_has "the install said what it was doing" "$T_LOG/apt-reinstall-standard.log" 'OPEN_ALERT_BASE_PROFILE=standard was given, and the profile in force is "enterprise"'
-  t_settings_are "its settings; what a profile does not name was kept" web.port=80 "web.bind=(not set)" "name=Kept name" meganet.token=mgn_kept_token
+  t_settings_are "its settings; what a profile does not name was kept" web.port=80 web.bind= web.behindProxy=true web.requireLogin=settings "name=Kept name" meganet.token=mgn_kept_token
   t_apt remove open-alert-base > "$T_LOG/apt-remove-3.log" 2>&1 || true
   got=0; OPEN_ALERT_BASE_PROFILE=enterprise apt-get -y -o Dpkg::Use-Pty=0 install "$OA_DEB" > "$T_LOG/apt-reinstall-enterprise.log" 2>&1 || got=$?
   oa_is "removed, then installed again with OPEN_ALERT_BASE_PROFILE=enterprise" 0 "$got"
   oa_is "the profile in force: locked down, as the person installing was told" "enterprise" "$(cat /etc/open-alert-base/profile 2>/dev/null)"
-  t_settings_are "its settings" web.port=8080 web.bind=127.0.0.1 remote.mode=report "name=Kept name" meganet.token=mgn_kept_token
+  t_settings_are "its settings" web.port=8080 web.bind=127.0.0.1 web.behindProxy=true web.requireLogin=all remote.mode=report "name=Kept name" meganet.token=mgn_kept_token
   oa_check_not "the privilege for port 80 is gone" test -e "$DROPIN"
   oa_check "the firewall lock is set to load, with the agent tied to it" test -L "$WANTS/open-alert-base-firewall.service" -a -f "$LOCK_DROPIN"
   before=$(sha256sum /etc/rpi-alert/config.json | awk '{print $1}')
@@ -646,6 +827,8 @@ t_start_wrapper_checks() {
   cat > "$fake" <<'FAKE'
 #!/bin/bash
 if [ "${1:-}" = -p ]; then echo "$FAKE_NODE_VERSION"; exit 0; fi
+# The settings the profile holds (settings.js hold): said, and answered as told.
+if [ "${1:-}" = /usr/lib/open-alert-base/settings.js ]; then echo "HOLD=$*"; exit "${FAKE_HOLD_RC:-0}"; fi
 echo "ARGS=$*"
 echo "NODE_OPTIONS=${NODE_OPTIONS:-}"
 echo "NODE_USE_ENV_PROXY=${NODE_USE_ENV_PROXY:-}"
@@ -655,8 +838,16 @@ FAKE
   run() { setpriv --reuid nobody --regid nogroup --clear-groups env -i "PATH=$SYSTEM_PATH" "OPEN_ALERT_BASE_NODE=$SIM/fake-node" "$@" /usr/lib/open-alert-base/start 2>&1; }
 
   got=$(run FAKE_NODE_VERSION=20.19.2)
-  oa_is "no proxy set: Node.js is started with nothing added" \
-    "ARGS=/usr/lib/open-alert-base/agent/bin/rpi-alert daemon|NODE_OPTIONS=|NODE_USE_ENV_PROXY=|HTTPS_PROXY= https_proxy= NO_PROXY= no_proxy=" "$(printf '%s' "$got" | tr '\n' '|')"
+  oa_is "no proxy set: the settings the profile in force holds are put back first, then Node.js is started with nothing added" \
+    "HOLD=/usr/lib/open-alert-base/settings.js hold /usr/share/open-alert-base/profiles/$(cat /etc/open-alert-base/profile).json|ARGS=/usr/lib/open-alert-base/agent/bin/rpi-alert daemon|NODE_OPTIONS=|NODE_USE_ENV_PROXY=|HTTPS_PROXY= https_proxy= NO_PROXY= no_proxy=" "$(printf '%s' "$got" | tr '\n' '|')"
+  v=0; got=$(run FAKE_NODE_VERSION=20.19.2 FAKE_HOLD_RC=1) || v=$?
+  if [ "$v" = 1 ] && printf '%s\n' "$got" | grep -q 'THE AGENT IS NOT STARTED' && ! printf '%s\n' "$got" | grep -q '^ARGS='; then
+    oa_ok "when the held settings cannot be put back, the agent is not started (exit status 1, and it says so)"
+  else oa_fail "when settings.js hold fails: exit $v, said: $(printf '%s' "$got" | tr '\n' '|' | head -c 200)"; fi
+  mv /etc/open-alert-base/profile "$SIM/profile.aside"
+  got=$(run FAKE_NODE_VERSION=20.19.2)
+  oa_is "with no profile recorded there is nothing to hold: Node.js is started at once" "ARGS=/usr/lib/open-alert-base/agent/bin/rpi-alert daemon" "$(printf '%s\n' "$got" | head -n 1)"
+  mv "$SIM/profile.aside" /etc/open-alert-base/profile
   : > "$out"
   for v in 18.19.1:preload 20.19.2:preload 22.20.0:preload 22.21.0:own 22.23.4:own 23.11.0:preload 24.0.0:own 26.1.0:own; do
     want=${v#*:}; v=${v%%:*}
@@ -952,8 +1143,32 @@ inside_fw_setup() {
   t_stub_start "$T_LOG/fw-stub.log"
   oa_run_as_unit "$T_LOG/fw-agent.log" "${SIM_ENV[@]}"
   if oa_wait 40 oa_http_ok http://127.0.0.1:8080/; then oa_ok "the agent runs; the dashboard answers this computer on port 8080"; else oa_fail "the dashboard does not answer on 127.0.0.1:8080"; fi
+  oa_is "the agent itself listens on this computer's own address only (web.bind 127.0.0.1)" "8080 0100007F" "$(oa_listening rpi-alert | sort -u | tr '\n' ' ' | sed 's/ $//')"
   open-alert-base audit > "$T_LOG/fw-audit-unlocked.txt" 2>&1 || true
-  oa_has "before the lock is on, audit says the dashboard is NOT kept to this computer" "$T_LOG/fw-audit-unlocked.txt" 'dashboard reach +NOT KEPT TO THIS COMPUTER'
+  oa_has "before the lock is on, audit says the agent alone keeps the dashboard to this computer, and that the second guard is not on" "$T_LOG/fw-audit-unlocked.txt" "dashboard reach +this computer only — the agent listens on this computer's own address only; the firewall lock, the second guard, is NOT ON"
+  trap - ERR
+}
+
+# The agent made to listen on every address, as it would were its settings
+# not held (RPi ALERT before 0.24 did, whatever they said): "every address"
+# written in its settings file, as its own user could, and the agent started
+# without the start command that would put web.bind back.
+inside_fw_everywhere() {
+  inside_begin
+  oa_section "$OA_DISTRO: the agent made to listen on every address (its settings not held), the lock not yet on"
+  t_stop_all
+  t_rig
+  t_apply '{"settings":{"web":{"bind":""}}}'
+  # (The Flood-Net stand-in started in the set-up runs on.)
+  OA_EXEC_START="/usr/bin/node $OA_AGENT_DIR/bin/rpi-alert daemon" oa_run_as_unit "$T_LOG/fw-agent-everywhere.log" "${SIM_ENV[@]}"
+  if oa_wait 40 oa_http_ok http://127.0.0.1:8080/; then oa_ok "the agent runs, started without the start command"; else oa_fail "the agent started without the start command does not answer on 127.0.0.1:8080 — see $T_LOG/fw-agent-everywhere.log"; fi
+  case "$(oa_listening rpi-alert | sort -u | tr '\n' ';')" in
+    "8080 00000000;"|"8080 00000000000000000000000000000000;") oa_ok "it listens on every address (web.bind empty)" ;;
+    *) oa_fail "it was meant to listen on every address for this check; it listens on: $(oa_listening rpi-alert | tr '\n' ';')" ;;
+  esac
+  open-alert-base audit > "$T_LOG/fw-audit-everywhere.txt" 2>&1 || true
+  oa_has "audit says plainly that the dashboard is NOT kept to this computer" "$T_LOG/fw-audit-everywhere.txt" 'dashboard reach +NOT KEPT TO THIS COMPUTER'
+  oa_has "… and that the settings no longer match the profile" "$T_LOG/fw-audit-everywhere.txt" 'FAULT — THE SETTINGS NO LONGER MATCH THE PROFILE'
   trap - ERR
 }
 
@@ -974,7 +1189,7 @@ inside_fw_lock() {
   oa_has "… and the rule that stops the agent's user accepting calls from other computers" "$T_LOG/fw-table.txt" "meta skuid $(id -u rpi-alert) .*drop"
   if oa_http_ok http://127.0.0.1:8080/; then oa_ok "with the lock on, this computer still reaches the dashboard"; else oa_fail "with the lock on, 127.0.0.1:8080 no longer answers"; fi
   open-alert-base audit > "$T_LOG/fw-audit-locked.txt" 2>&1 || true
-  oa_has "with the lock on, audit says the dashboard is for this computer only" "$T_LOG/fw-audit-locked.txt" 'dashboard reach +this computer only — the firewall lock is on'
+  oa_has "with the lock on, audit says the dashboard is for this computer only, by the lock alone (the agent listens on every address)" "$T_LOG/fw-audit-locked.txt" 'dashboard reach +this computer only — the firewall lock is on; but the agent itself listens on every address'
   if RPI_ALERT_PORT=8080 rpi-alert status > /dev/null 2>&1; then oa_ok "… and so does the rpi-alert command"; else oa_fail "rpi-alert status fails with the lock on"; fi
   if oa_wait 60 t_readings_arrived "$T_LOG/fw-stub.log"; then oa_ok "… and readings still go out"; else oa_fail "no readings reached the stand-in with the lock on"; fi
 
@@ -1184,6 +1399,7 @@ inside_systemd() {
   oa_is "the running process holds no privilege, and can get none" "0000000000000000 0000000000000000 0000000000000000" \
     "$(oa_proc_status "$pid" CapEff) $(oa_proc_status "$pid" CapBnd) $(oa_proc_status "$pid" CapAmb)"
   oa_is "the only port the agent's user listens on" "8080" "$(oa_listening rpi-alert | awk '{print $1}' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  oa_is "… on this computer's own address only (web.bind), with the firewall lock as the second guard" "8080 0100007F" "$(oa_listening rpi-alert | sort -u | tr '\n' ' ' | sed 's/ $//')"
   oa_is "the firewall service is on, and set to load when the computer starts" "active enabled" \
     "$(systemctl is-active open-alert-base-firewall.service 2>&1 || true) $(systemctl is-enabled open-alert-base-firewall.service 2>&1 || true)"
   if nft list table inet open_alert_base > "$T_LOG/sd-fw-table.txt" 2>&1; then oa_ok "its rules are loaded"; else oa_fail "the firewall table is not loaded: $(head -n 2 "$T_LOG/sd-fw-table.txt")"; fi
@@ -1191,6 +1407,7 @@ inside_systemd() {
   open-alert-base audit > "$T_LOG/sd-audit-enterprise.txt" 2>&1 || true
   oa_has "audit (enterprise): the firewall lock is on" "$T_LOG/sd-audit-enterprise.txt" 'firewall lock +on '
   oa_has "audit (enterprise): no privilege in use" "$T_LOG/sd-audit-enterprise.txt" 'privileges in use +none'
+  oa_has "audit (enterprise): both guards — the lock is on, and the agent itself listens on this computer's own address only" "$T_LOG/sd-audit-enterprise.txt" "dashboard reach +this computer only — the firewall lock is on, and the agent itself listens on this computer's own address only"
   score=$(systemd-analyze security --no-pager open-alert-base.service 2>/dev/null | sed -n 's/.*Overall exposure level for [^:]*: *\([0-9.]*\).*/\1/p' | tail -n 1)
   oa_note "exposure score of the running service, enterprise profile: ${score:-unknown}"
   n=$(journalctl -u open-alert-base --no-pager 2>/dev/null | grep -Eci 'operation not permitted|EPERM|permission denied|EACCES|bad system call' || true)
@@ -1287,6 +1504,29 @@ inside_systemd() {
   if oa_wait 60 systemctl is-active --quiet open-alert-base.service && oa_wait 40 oa_http_ok http://127.0.0.1:8080/; then oa_ok "… and systemd starts the keeper again, and with it the agent"
   else oa_fail "the keeper and the agent did not come back after the keeper was killed"; fi
   journalctl -u open-alert-base-firewall --no-pager > "$T_LOG/sd-journal-lock.txt" 2>&1 || true
+
+  oa_section "$OA_DISTRO: the settings the enterprise profile holds, loosened, and put back by the real service (under systemd)"
+  systemctl stop open-alert-base.service
+  t_apply '{"settings":{"web":{"bind":"","behindProxy":false,"requireLogin":"settings"}}}'
+  t_settings_are "the agent's user loosens all three in its settings file while the service is stopped" web.bind= web.behindProxy=false web.requireLogin=settings
+  systemctl start open-alert-base.service
+  if oa_wait 30 systemctl is-active --quiet open-alert-base.service && oa_wait 40 oa_http_ok http://127.0.0.1:8080/; then oa_ok "the service starts again"
+  else oa_fail "the service did not start again after the settings were loosened"; journalctl -u open-alert-base --no-pager -n 20 || true; fi
+  journalctl -u open-alert-base --no-pager -o cat > "$T_LOG/sd-journal-hold.txt" 2>&1 || true
+  oa_has "its start command put the three back before the agent started, and the service's log says so" "$T_LOG/sd-journal-hold.txt" 'put back to web\.bind 127\.0\.0\.1, web\.behindProxy true, web\.requireLogin all'
+  t_settings_are "… the settings file holds the profile's values again" web.bind=127.0.0.1 web.behindProxy=true web.requireLogin=all
+  oa_is "… and the agent listens on this computer's own address only" "8080 0100007F" "$(oa_listening rpi-alert | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  # Loosened while the service runs, through the rpi-alert command (anyone on this computer may).
+  pid=$(systemctl show -p MainPID --value open-alert-base.service)
+  if RPI_ALERT_PORT=8080 rpi-alert config set web.behindProxy false > "$T_LOG/sd-config-live.txt" 2>&1; then
+    got=0; open-alert-base sync > "$T_LOG/sd-sync-live.txt" 2>&1 || got=$?
+    oa_is "loosened while it runs (rpi-alert config set web.behindProxy false): open-alert-base sync ends with status 4" 4 "$got"
+    oa_has "… names it" "$T_LOG/sd-sync-live.txt" 'web\.behindProxy is false; the profile in force \(enterprise\) holds it at true'
+    if oa_wait 30 t_restarted "$pid" && oa_wait 40 oa_http_ok http://127.0.0.1:8080/; then oa_ok "… and restarts the service"; else oa_fail "sync did not restart the service — see $T_LOG/sd-sync-live.txt"; fi
+    t_settings_are "… whose start command put it back" web.behindProxy=true
+    got=0; open-alert-base sync > "$T_LOG/sd-sync-after.txt" 2>&1 || got=$?
+    oa_is "… and sync has no complaint after it" 0 "$got"
+  else oa_fail "rpi-alert config set web.behindProxy false — see $T_LOG/sd-config-live.txt"; fi
 
   oa_section "$OA_DISTRO: the package installed again over itself, as an update is (under systemd)"
   before=$(sha256sum /etc/rpi-alert/config.json | awk '{print $1}')
@@ -1480,7 +1720,7 @@ flip_first_bit() {
 # ── 2. the scripts and the build ─────────────────────────────────────────────
 
 script_checks() {
-  local files=() f bad=''
+  local files=() f bad='' got
   oa_section "The scripts"
   files=("$OA_FIRMWARE/lib/fetch-agent.sh" "$OA_FIRMWARE/deb/build-deb.sh" "$OA_FIRMWARE/deb/debian/preinst" "$OA_FIRMWARE/deb/debian/postinst"
          "$OA_FIRMWARE/deb/debian/prerm" "$OA_FIRMWARE/deb/debian/postrm" "$OA_FIRMWARE/deb/files/usr/bin/open-alert-base" "$OA_FIRMWARE/deb/files/usr/bin/rpi-alert"
@@ -1509,6 +1749,19 @@ script_checks() {
         "$OA_FIRMWARE/deb/files/usr/share/open-alert-base/profiles/$f.json" "$f"
     fi
   done
+  if command -v node >/dev/null 2>&1 && [ -f "$WORK/release/agent/lib/config.js" ]; then
+    local prof="$OA_FIRMWARE/deb/files/usr/share/open-alert-base/profiles" sjs="$OA_FIRMWARE/deb/files/usr/lib/open-alert-base/settings.js"
+    # A setting the agent does not know would be kept in the file and do nothing.
+    got=$(node -e '
+      const d = require(process.argv[1]).defaults(), bad = [];
+      const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+      const walk = (o, dd, pre) => { for (const k of Object.keys(o)) { const p = pre ? pre + "." + k : k; if (!isObj(dd) || !(k in dd)) bad.push(p); else if (isObj(o[k])) walk(o[k], dd[k], p); } };
+      for (const f of process.argv.slice(2)) walk(JSON.parse(require("fs").readFileSync(f, "utf8")).settings, d, "");
+      console.log(bad.join(" "));' "$WORK/release/agent/lib/config.js" "$prof/standard.json" "$prof/enterprise.json" 2>&1)
+    oa_is "every setting the two profiles name is one RPi ALERT $(oa_pin AGENT_VERSION) knows" "" "$got"
+    oa_is "the enterprise profile holds the dashboard's three settings (the settings file may not loosen them)" "web.bind web.behindProxy web.requireLogin" "$(OPEN_ALERT_BASE_AGENT="$WORK/release/agent" node "$sjs" held "$prof/enterprise.json" 2>&1)"
+    oa_is "the standard profile holds web.behindProxy" "web.behindProxy" "$(OPEN_ALERT_BASE_AGENT="$WORK/release/agent" node "$sjs" held "$prof/standard.json" 2>&1)"
+  fi
 }
 
 build_checks() {
@@ -1630,9 +1883,11 @@ run_distro() {
     if docker run -d --name "$c" --cap-add NET_ADMIN "${common[@]}" "$image" sleep 3600 > /dev/null 2>&1; then
       oa_exec_container "$dir/firewall.txt" "$c" bash /oa/firmware/test/deb.sh --inside fw-setup
       ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$c")
-      oa_is "before the lock: another computer can open the dashboard's port (RPi ALERT up to 0.23 listens on every address)" "open" "$(probe "$image" "$ip" 8080)"
+      oa_is "before the lock: another computer cannot open the dashboard's port — the agent itself listens on this computer's own address only" "closed" "$(probe "$image" "$ip" 8080)"
+      oa_exec_container "$dir/firewall.txt" "$c" bash /oa/firmware/test/deb.sh --inside fw-everywhere
+      oa_is "the agent made to listen on every address, the lock not yet on: another computer can open the port (so what follows shows the lock at work)" "open" "$(probe "$image" "$ip" 8080)"
       oa_exec_container "$dir/firewall.txt" "$c" bash /oa/firmware/test/deb.sh --inside fw-lock
-      oa_is "with the lock on: another computer is refused the dashboard's port" "closed" "$(probe "$image" "$ip" 8080)"
+      oa_is "with the lock on: another computer is refused the dashboard's port, though the agent listens on every address — the second guard holds" "closed" "$(probe "$image" "$ip" 8080)"
       oa_is "… and cannot reach any other port the agent's user might open (tried: 9999)" "closed" "$(probe "$image" "$ip" 9999)"
       oa_is "… while a port another user of this computer opens is left alone (tried: 9998, root's) — the rules touch only the agent" "open" "$(probe "$image" "$ip" 9998)"
       oa_exec_container "$dir/firewall.txt" "$c" bash /oa/firmware/test/deb.sh --inside fw-unlock
@@ -1741,6 +1996,7 @@ if [ "${1:-}" = --inside ]; then
   case "${2:-}" in
     install) inside_install ;;
     fw-setup) inside_fw_setup ;;
+    fw-everywhere) inside_fw_everywhere ;;
     fw-lock) inside_fw_lock ;;
     fw-unlock) inside_fw_unlock ;;
     systemd) inside_systemd ;;

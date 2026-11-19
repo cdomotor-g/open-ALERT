@@ -7,11 +7,11 @@
 # To take it off, on purpose:   sudo open-alert-base profile standard
 # (Stopping the service does not take it off.)
 #
-# Why it is here: RPi ALERT up to 0.23 opens its dashboard on every network
-# address of the computer and has no setting for that. These rules are what
-# keeps other computers out. From 0.24 the agent has a setting of its own
-# (web.bind, which the enterprise profile already sets), and these rules stay
-# as a second lock.
+# Why it is here: the agent itself keeps its dashboard to this computer (its
+# setting web.bind = 127.0.0.1, which the enterprise profile sets and holds).
+# These rules are the second guard: they keep other computers out even if the
+# agent listened on every address — RPi ALERT before 0.24 had no such setting
+# and did, and so would an agent started on other settings than the profile's.
 #
 # No lock, no agent. While a profile asks for this lock, the agent runs only
 # while open-alert-base-firewall.service does. If this file does not load (a

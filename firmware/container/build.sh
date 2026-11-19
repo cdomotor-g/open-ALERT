@@ -10,7 +10,7 @@
 #
 # Options
 #   --tag NAME[:TAG]      what to call the image (default: open-alert-base, i.e. :latest; "<version>" is
-#                         also added when the name has no tag, e.g. open-alert-base:0.23.1-oa2)
+#                         also added when the name has no tag, e.g. open-alert-base:0.24.0-oa1)
 #   --platform LIST       e.g. linux/amd64 or linux/amd64,linux/arm64. One platform is loaded into
 #                         this computer's Docker. Several need --push (Docker cannot hold a
 #                         several-platform image locally with the classic image store).

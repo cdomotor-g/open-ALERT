@@ -48,7 +48,9 @@ from the computer itself only, and a web-proxy and private-certificate route.
   service's limits, the profiles, the tests and what has not been tested.
 - [`U1-rpi-alert-portability.md`](../hardware-review/research/U1-rpi-alert-portability.md),
   section 6: RPi ALERT's security posture as an assessor would list it (every listening socket,
-  everything that runs as root, every outbound connection), written from RPi ALERT 0.23.1.
+  everything that runs as root, every outbound connection), written from RPi ALERT 0.23.1. The
+  firmware ships 0.24.0 since 19 November 2026; what that changed is in `firmware/README.md`
+  ("Moving to RPi ALERT 0.24.0"), and the pages here say where it matters.
 - [`R4-au-gov-it-security.md`](../hardware-review/research/R4-au-gov-it-security.md) and its
   [re-check](../hardware-review/research/R4-au-gov-it-security.verify.md): what Australian
   government IT security asks, and where the questions below come from.

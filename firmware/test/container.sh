@@ -62,7 +62,10 @@ cleanup() {
   for c in $(docker network ls -q --filter "name=$P" 2>/dev/null); do docker network rm "$c" > /dev/null 2>&1 || true; done
   for c in $(docker volume ls -q --filter "name=$P" 2>/dev/null); do docker volume rm -f "$c" > /dev/null 2>&1 || true; done
   if [ -n "$WORK" ]; then rm -rf "$WORK"; fi
-  if [ -z "$GIVEN_IMAGE" ]; then docker image rm -f "$IMAGE" > /dev/null 2>&1 || true; fi
+  # The image, under both its names: build.sh adds the version as a second tag.
+  if [ -z "$GIVEN_IMAGE" ]; then
+    docker image rm -f "$IMAGE" "$IMAGE:$(oa_pin AGENT_VERSION)-oa$(oa_pin OA_REVISION)" > /dev/null 2>&1 || true
+  fi
 }
 
 # What a container prints, from inside: the Node.js program that reads /proc for us.
@@ -276,7 +279,14 @@ host_setup_checks() {
   "$CDIR/host-setup.sh" --root "$r" --remove > "$LOGDIR/host-setup-4.txt" 2>&1 && oa_has "--remove again: nothing to do, no complaint" "$LOGDIR/host-setup-4.txt" '^was not there' || oa_fail "--remove a second time failed"
   rc=0; "$CDIR/host-setup.sh" --bogus > /dev/null 2>&1 || rc=$?; oa_is "an unknown option: exit status 2" 2 "$rc"
   rc=0; "$CDIR/host-setup.sh" --group 'bad name' --root "$r" > /dev/null 2>&1 || rc=$?; oa_is "a group name with a space: exit status 2" 2 "$rc"
-  out=$(setpriv --reuid nobody --regid nogroup --clear-groups "$CDIR/host-setup.sh" 2>&1 || true)
+  # Run as an ordinary user: as "nobody" when this test runs as root; as
+  # itself when it is already an ordinary user (GitHub's runners), where
+  # setpriv may not change who it is.
+  if [ "$(id -u)" = 0 ]; then
+    out=$(setpriv --reuid nobody --regid nogroup --clear-groups "$CDIR/host-setup.sh" 2>&1 || true)
+  else
+    out=$("$CDIR/host-setup.sh" 2>&1 || true)
+  fi
   if printf '%s' "$out" | grep -q 'needs the administrator account'; then oa_ok "without the administrator account it says so and changes nothing"; else oa_fail "run as an ordinary user it did not stop with a plain message: $out"; fi
 }
 
@@ -338,7 +348,7 @@ build_checks() {
   oa_is "the agent's files are owned by root and cannot be written by the agent's user" "" "$(docker run --rm --entrypoint sh "$IMAGE" -c 'find /usr/lib/open-alert-base -writable 2>/dev/null | head -n 3')"
   oa_is "Node.js and rtl_sdr are the system's (Debian packages)" "ok ok" "$(docker run --rm --entrypoint sh "$IMAGE" -c 'dpkg -S /usr/bin/node >/dev/null 2>&1 && echo -n "ok " || echo -n "no "; dpkg -S /usr/bin/rtl_sdr >/dev/null 2>&1 && echo ok || echo no')"
   oa_note "the image holds Node.js $(docker run --rm --entrypoint node "$IMAGE" -p process.versions.node), $(docker run --rm --entrypoint sh "$IMAGE" -c 'dpkg-query -W rtl-sdr node-undici | tr "\t\n" " ;"')"
-  oa_is "the agent starts as itself when asked for its version" "0.23.1" "$(docker run --rm "$IMAGE" version 2>&1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)"
+  oa_is "the agent starts as itself when asked for its version" "$(oa_pin AGENT_VERSION)" "$(docker run --rm "$IMAGE" version 2>&1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -359,6 +369,14 @@ run_checks() {
   compose up -d > "$LOGDIR/compose-up.txt" 2>&1 && oa_ok "docker compose up -d" || { oa_fail "docker compose up failed — see $LOGDIR/compose-up.txt"; cat "$LOGDIR/compose-up.txt"; return 1; }
   if oa_wait 60 dash_ok; then oa_ok "the dashboard answers through the published port (127.0.0.1:$PORT)"; else oa_fail "the dashboard does not answer on 127.0.0.1:$PORT — see $LOGDIR/base.log"; docker logs "$P-base" > "$LOGDIR/base.log" 2>&1; fi
   oa_has "… it says it is RPi ALERT $(oa_pin AGENT_VERSION)" "$WORK/status.json" "\"version\":\"$(oa_pin AGENT_VERSION)\""
+  # Who the agent takes for the container itself. Docker brings the published
+  # port in from its own network, on the container's own address: a caller on
+  # this computer — its browser, or a program — is never the container's
+  # 127.0.0.1, so it is a visitor whether web.behindProxy is on or off. (The
+  # image turns it on all the same, for engines that bring callers in on
+  # 127.0.0.1: below.)
+  oa_has "… a caller on this computer, through the published port, is a visitor to the agent, not the container itself (\"local\":false)" "$WORK/status.json" '"local":false'
+  oa_is "… even asking for localhost by name: the settings answer \"log in first\"" "401 log in first" "$(curl -s -m 5 -o "$WORK/config-visitor.json" -w '%{http_code}' -H 'Host: localhost' "http://127.0.0.1:$PORT/api/config") $(sed -n 's/.*"error":"\([^"]*\)".*/\1/p' "$WORK/config-visitor.json")"
   oa_has "… the agent says its dashboard is on port 8080 (the port the image's settings ask for)" <(docker logs "$P-base" 2>&1) 'dashboard on http://[^ ]*:8080/'
   oa_has_not "… and the log has no \"cannot listen\" message" <(docker logs "$P-base" 2>&1) 'cannot listen'
   if oa_wait 120 readings_arrived "$P-flood"; then oa_ok "readings decoded from the stand-in stick reached the Flood-Net stand-in ($(docker logs "$P-flood" 2>&1 | grep -c '^ingest_http ') so far)"; else oa_fail "no decoded reading reached the stand-in in 120 s — see $LOGDIR/base.log"; fi
@@ -381,6 +399,15 @@ run_checks() {
   else oa_skip "the dashboard on this computer's other address — this computer has none"; fi
   # Where the container listens, from inside.
   oa_is "inside, the only port the agent listens on is 8080 (Docker's own name service listens on 127.0.0.11 as well, and is not the agent's)" "8080" "$(dx "$P-base" 'const fs=require("fs");const out=new Set();for(const f of ["/proc/net/tcp","/proc/net/tcp6"]){try{for(const l of fs.readFileSync(f,"utf8").split("\n").slice(1)){const c=l.trim().split(/\s+/);if(c[3]==="0A"&&c[1]!=="0B00007F:"+c[1].split(":")[1])out.add(parseInt(c[1].split(":")[1],16))}}catch(e){}}console.log([...out].sort().join(" "))')"
+  oa_is "inside, the agent listens on every address of the container (web.bind empty): Docker's published port comes in on the container's own address" "every" "$(dx "$P-base" 'const fs=require("fs");let a="none";for(const f of ["/proc/net/tcp","/proc/net/tcp6"]){try{for(const l of fs.readFileSync(f,"utf8").split("\n").slice(1)){const c=l.trim().split(/\s+/);if(c[3]==="0A"&&parseInt((c[1]||"").split(":")[1],16)===8080){const h=c[1].split(":")[0];a=/^0+$/.test(h)?"every":h}}}catch(e){}}console.log(a)')"
+  docker exec "$P-base" rpi-alert config get web > "$WORK/web-settings.json" 2>&1 || true
+  oa_is "… its settings leave web.bind empty, as RPi ALERT has it, and turn web.behindProxy on, as the native package does" '"" true' "$(node -e 'const w = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log(JSON.stringify(w.bind) + " " + w.behindProxy)' "$WORK/web-settings.json" 2>&1)"
+  oa_is "… while the container's own callers — the health check, rpi-alert inside — are the container itself (\"local\":true)" "true" "$(dx "$P-base" 'fetch("http://127.0.0.1:8080/api/status").then((r) => r.json()).then((j) => console.log(String(j.auth.local)), (e) => console.log(e.message))')"
+  oa_is "… and so is the rpi-alert command run with docker exec, with web.behindProxy on (it reads the settings, which only the container itself may)" "ok" "$(if docker exec "$P-base" rpi-alert config get web.port > /dev/null 2>&1; then echo ok; else echo refused; fi)"
+  # What web.behindProxy adds where a caller does arrive on 127.0.0.1 (as the
+  # host's own callers may under another engine): a page from another site,
+  # sent from inside to 127.0.0.1, is a visitor.
+  oa_is "… a request on the container's 127.0.0.1 from another site's page (Origin names the site) is a visitor — web.behindProxy at work" "false" "$(dx "$P-base" 'require("http").get({ host: "127.0.0.1", port: 8080, path: "/api/status", headers: { Origin: "http://site.example" } }, (r) => { let b = ""; r.on("data", (d) => { b += d; }); r.on("end", () => { try { console.log(String(JSON.parse(b).auth.local)); } catch (e) { console.log(r.statusCode + " " + b.slice(0, 80)); } }); }).on("error", (e) => console.log(e.message))')"
   # The root filesystem.
   w=$(docker exec "$P-base" sh -c 'touch /usr/x 2>&1; touch /etc/x 2>&1; touch /usr/lib/open-alert-base/agent/x 2>&1; touch /var/x 2>&1' || true)
   oa_is "the root filesystem is read-only: four writes to /usr, /etc, the agent's folder and /var all refused" "4" "$(printf '%s\n' "$w" | grep -c 'Read-only file system')"
@@ -433,14 +460,14 @@ run_checks() {
   sleep 3
   if oa_wait 60 dash_ok && [ "$(docker inspect "$P-base" --format '{{.RestartCount}}')" -ge 1 ]; then oa_ok "the agent killed inside (as a crash would): the container ends, and Docker's restart policy brings it back (restarts so far: $(docker inspect "$P-base" --format '{{.RestartCount}}'))"; else oa_fail "after the agent was killed the container did not come back in 60 s ($(docker inspect "$P-base" --format '{{.State.Status}} exit {{.State.ExitCode}} restarts {{.RestartCount}}'))"; fi
   compose down -v > /dev/null 2>&1 || true
-  docker rm -f "$P-flood" > /dev/null 2>&1 || true
+  docker rm -f -v "$P-flood" > /dev/null 2>&1 || true
   docker network rm "$net" > /dev/null 2>&1 || true
   # The same image with no stick at all: what the agent costs just for being there.
   docker run -d --name "$P-bare" --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp "$IMAGE" > /dev/null
   oa_wait 60 bash -c "docker logs $P-bare 2>&1 | grep -q 'dashboard on'" || oa_fail "the agent with no stick did not start"
   sleep 20
   oa_note "IDLE MEMORY with no stick at all: the agent itself $(dx "$P-bare" "$AGENT_PID_JS"'console.log(Math.round(/VmRSS:\s+([0-9]+)/.exec(fs.readFileSync("/proc/"+p+"/status","utf8"))[1]/1024))') MB resident; the container $(docker stats --no-stream --format '{{.MemUsage}}' "$P-bare" | awk '{print $1}') as Docker counts it"
-  docker rm -f "$P-bare" > /dev/null 2>&1 || true
+  docker rm -f -v "$P-bare" > /dev/null 2>&1 || true
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -526,7 +553,7 @@ proxy_checks() {
       if [ "$mode" = auth ]; then oa_has_not "proxy $mode: the proxy's password is not in the agent's log" "$LOGDIR/agent-proxy-$mode.log" "$pass"; fi
     fi
     compose down -v > /dev/null 2>&1 || true
-    for n in flood direct proxy; do docker rm -f "$P-$n" > /dev/null 2>&1 || true; done
+    for n in flood direct proxy; do docker rm -f -v "$P-$n" > /dev/null 2>&1 || true; done
   done
   docker network rm "$in" "$out" > /dev/null 2>&1 || true
   proxy_rule_checks
@@ -583,11 +610,11 @@ JS
   rule() {
     local log=$1 args=(); shift
     while [ "$1" != -- ]; do args+=("$1"); shift; done; shift
-    docker rm -f "$P-rule" > /dev/null 2>&1 || true
+    docker rm -f -v "$P-rule" > /dev/null 2>&1 || true
     timeout -k 10 120 docker run --rm --name "$P-rule" --network none --add-host direct.test:127.0.0.1 -v "$d/scripts:/sim/scripts:ro" -v "$d/tls:/sim/tls:ro" \
       -e NODE_EXTRA_CA_CERTS=/sim/tls/ca.crt "${args[@]}" --entrypoint node "$IMAGE" \
       --require=/usr/lib/open-alert-base/proxy-preload.js /sim/scripts/proxy-rules.js "$@" 2> "$log" | sed -n 's/^RESULT //p' | head -n 1 || true
-    docker rm -f "$P-rule" > /dev/null 2>&1 || true
+    docker rm -f -v "$P-rule" > /dev/null 2>&1 || true
   }
   got=$(rule "$LOGDIR/proxy-rule-none.txt" -- around)
   oa_is "with no proxy set, the far end in this check is reached directly (so the next lines show something)" "answered 200 seen=2" "$got"
@@ -626,13 +653,13 @@ JS
     *) oa_ok "… and once the wait is over and the proxy answers again, it is asked again" ;;
   esac
   # The whole container with a proxy address that cannot be used: it starts all the same.
-  docker rm -f "$P-unusable" > /dev/null 2>&1 || true
+  docker rm -f -v "$P-unusable" > /dev/null 2>&1 || true
   docker run -d --name "$P-unusable" -e HTTPS_PROXY=socks5://127.0.0.1:1080 "$IMAGE" > /dev/null 2>&1 || true
   if oa_wait 60 bash -c "docker logs $P-unusable 2>&1 | grep -q 'dashboard on'" && docker logs "$P-unusable" 2>&1 | grep -q 'cannot be used: it starts with "socks5://"'; then
     oa_ok "the container started with a proxy address that cannot be used: the agent runs and shows its dashboard, and the log says nothing is sent until the address is put right"
   else oa_fail "the container with an unusable proxy address did not start, or did not say why nothing is sent: $(docker logs "$P-unusable" 2>&1 | tail -n 3 | tr '\n' ' ')"; fi
   docker logs "$P-unusable" > "$LOGDIR/agent-proxy-unusable.log" 2>&1 || true
-  docker rm -f "$P-unusable" > /dev/null 2>&1 || true
+  docker rm -f -v "$P-unusable" > /dev/null 2>&1 || true
 }
 
 # ═════════════════════════════════════════════════════════════════════════════

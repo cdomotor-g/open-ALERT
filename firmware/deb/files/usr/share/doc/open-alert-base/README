@@ -34,8 +34,10 @@ First steps
 The dashboard is a web page the agent serves:
     standard profile     http://<this computer>/        from the local network
     enterprise profile   http://127.0.0.1:8080/         from this computer only
-From another computer, anybody can look at it (what is heard, how the base
-station is) without a password; changing anything needs its password.
+In the standard profile anybody on another computer can look at it (what is
+heard, how the base station is) without a password; changing anything needs
+its password. In the enterprise profile nothing is shown without the password
+to anything that reaches it through a reverse proxy on this computer.
 "rpi-alert status" shows the first password, "rpi-alert password" changes it.
 
 
@@ -45,7 +47,9 @@ The two commands
     rpi-alert          RPi ALERT's own command, as its documentation describes
                        (rpi-alert help). Three of its commands are for a
                        Raspberry Pi install and are turned away here: daemon,
-                       access, import-boot-config.
+                       access, import-boot-config. (So /etc/rpi-alert.conf,
+                       which RPi ALERT applies with that last one on a
+                       computer with no boot partition, is not used here.)
     open-alert-base    this package's command:
         version        what is installed, and the signed release it came from
         status         the service, the profile, and the agent's own status
@@ -79,6 +83,14 @@ link in its place is left alone, and "sync" stops with an error.
                               standard               enterprise
     dashboard port            80                     8080
     dashboard reached from    the local network      this computer only
+      (web.bind)              (every address)        (127.0.0.1)
+    a request on 127.0.0.1    only if it asks for    the same
+      is this computer        127.0.0.1 or localhost
+      itself                  by name, with no proxy's
+      (web.behindProxy)       headers (on)
+    without the password,     may look; changing     nothing at all
+      another computer        needs the password
+      (web.requireLogin)      (settings)             (all)
     Flood-Net may             change radio settings  only be told how it is
       (remote.mode)           (manage)               (report; "off" tells it nothing)
     own Wi-Fi hotspot         off                    off
@@ -86,12 +98,21 @@ link in its place is left alone, and "sync" stops with an error.
       networking by itself    never (off)            never (off)
     screen kiosk, audio       off                    off
 
-"This computer only" is kept by a small table of firewall rules
+Why web.behindProxy is on in both: as RPi ALERT comes, every request from
+this computer's own address counts as the computer itself and needs no
+password. On a computer where somebody browses the web, a web page in that
+browser could then be taken for the base station itself. With it on, a page
+from another site, or from a name pointed at this computer, is a visitor; the
+rpi-alert command and a browser here opening http://localhost/ are still the
+computer itself, and so is a page that another program on this computer
+serves under localhost or 127.0.0.1, on any port. Nothing another computer
+sees changes.
+
+"This computer only" has two guards. The agent itself listens on 127.0.0.1
+only (web.bind). And a small table of firewall rules
 (/etc/open-alert-base/dashboard-local-only.nft, loaded by
-open-alert-base-firewall.service; it needs the nftables package). RPi ALERT up
-to 0.23 opens its dashboard on every address of the computer and has no setting
-for that; from 0.24 it has one (web.bind), which the enterprise profile already
-sets, and the firewall rules stay as a second lock.
+open-alert-base-firewall.service; it needs the nftables package) keeps other
+computers out even if the agent listened on every address.
 
 No lock, no agent. In the enterprise profile the agent's service is tied to
 the lock's service (a small file of its own, 20-dashboard-lock.conf, in
@@ -109,6 +130,21 @@ agent's settings file belongs to the agent's user, so nothing in it can loosen
 what the profile asks for: if it no longer says "this computer only", the lock
 is kept, and "sync", "status" and "audit" say so loudly: "sync" ends with
 status 4 and "status" with status 1, and "audit" lists it as a fault.
+
+The profile also holds the dashboard's closed settings: the enterprise profile
+web.bind, web.behindProxy and web.requireLogin, the standard profile
+web.behindProxy. Each time the service starts, before the agent, what the
+settings file has looser than the profile is put back, and the service's log
+says so (journalctl -u open-alert-base). Something stricter is left as it is.
+A setting loosened while the agent runs ("rpi-alert config set ...") is named
+by "status", "audit" and "sync"; "sync" restarts the service to put it back.
+
+A reverse proxy for HTTPS: the dashboard is plain HTTP. To publish an
+enterprise base station's dashboard over HTTPS, put a reverse proxy on this
+computer in front of 127.0.0.1:8080. It must add X-Forwarded-For to every
+request and pass the browser's Host on; put that name in web.hosts
+(rpi-alert config set web.hosts bs01.example.org). RPi ALERT's own
+docs/configuration.md says what the proxy must do, and how to check it.
 
 To turn remote management off altogether:   rpi-alert remote off
 

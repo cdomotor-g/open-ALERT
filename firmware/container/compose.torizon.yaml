@@ -34,13 +34,13 @@
 # Steps to load it (from your computer; the board is at 192.0.2.10, user "torizon"):
 #   1. Build for the board's processor (64-bit ARM) and put it in a registry the
 #      board can reach:
-#        firmware/container/build.sh --platform linux/arm64 --tag registry.example.org/open-alert-base:0.23.1-oa2 --push
+#        firmware/container/build.sh --platform linux/arm64 --tag registry.example.org/open-alert-base:0.24.0-oa1 --push
 #   2. Copy this file and the host set-up to the board:
 #        scp firmware/container/compose.torizon.yaml firmware/container/host-setup.sh torizon@192.0.2.10:
 #   3. On the board, once:        sudo bash ./host-setup.sh --gid 990
 #      then unplug and replug the stick (or restart the board).
 #   4. On the board:
-#        OA_IMAGE=registry.example.org/open-alert-base:0.23.1-oa2 docker compose -f compose.torizon.yaml up -d
+#        OA_IMAGE=registry.example.org/open-alert-base:0.24.0-oa1 docker compose -f compose.torizon.yaml up -d
 #   5. From your computer: the SSH tunnel above, then http://127.0.0.1:8080/ .
 name: open-alert-base
 

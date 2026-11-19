@@ -1,8 +1,8 @@
 {
   "profile": "enterprise",
-  "about": "Locked down, for a base station inside a government or corporate network. The dashboard is on port 8080 and answers this computer only. Flood-Net is told how the base station is, and can change nothing on it.",
+  "about": "Locked down, for a base station inside a government or corporate network. The dashboard is on port 8080 and answers this computer only; anything that reaches it through a reverse proxy on this computer must log in before it is shown anything. Flood-Net is told how the base station is, and can change nothing on it.",
   "settings": {
-    "web": { "port": 8080, "bind": "127.0.0.1" },
+    "web": { "port": 8080, "bind": "127.0.0.1", "behindProxy": true, "requireLogin": "all" },
     "remote": { "mode": "report" },
     "hotspot": { "mode": "off" },
     "recover": { "mode": "off" },

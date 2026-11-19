@@ -110,6 +110,49 @@ load_profile() {
 # Does the profile in force keep the dashboard to this computer?
 profile_locks() { [ -n "$P_NAME" ] && is_loopback "$P_BIND"; }
 
+# The settings the profile in force holds (settings.js held), and those the
+# settings file now has looser than the profile holds them (settings.js
+# looser: a line each). The start command puts the looser ones back each time
+# the agent starts; until then the running agent may be using them.
+P_HELD=''; LOOSER=''
+load_held() {
+  local file
+  P_HELD=''; LOOSER=''
+  [ -n "$P_NAME" ] || return 0
+  file=$(profile_file "$P_NAME") || return 0
+  P_HELD=$(as_agent "$NODE" "$LIB/settings.js" held "$file" 2>/dev/null) || P_HELD=''
+  LOOSER=$(as_agent "$NODE" "$LIB/settings.js" looser "$file" 2>/dev/null) || LOOSER=''
+}
+# The looser ones other than web.bind (which has words of its own, beside the firewall lock).
+looser_others() { printf '%s\n' "$LOOSER" | grep -v -e '^web\.bind ' -e '^$' || true; }
+
+# The port the agent really opens. One below 1024 needs the privilege that only
+# the drop-in file ($DROPIN) gives the service (unless this computer lets every
+# user open it: net.ipv4.ip_unprivileged_port_start); without it the agent is
+# refused that port and falls back to 8080.
+served_port() {
+  local low
+  low=$(cat /proc/sys/net/ipv4/ip_unprivileged_port_start 2>/dev/null || true)
+  case "$low" in ''|*[!0-9]*) low=1024 ;; esac
+  if [ "$1" -lt 1024 ] 2>/dev/null && [ "$1" -lt "$low" ] && [ ! -e "$DROPIN" ]; then echo 8080; else echo "$1"; fi
+}
+
+# The dashboard's settings in words.
+login_words() {
+  case "$1" in
+    all) echo "nothing is shown to another computer, or through a reverse proxy, without the dashboard's password" ;;
+    settings) echo "looking needs no password; changing anything needs the dashboard's password" ;;
+    *) echo "${1:-not set}" ;;
+  esac
+}
+itself_words() {
+  case "$1" in
+    true) echo "a request on this computer's own address (127.0.0.1) is this computer itself only when it asks for 127.0.0.1 or localhost by name, with none of a reverse proxy's headers. A reverse proxy's caller is a visitor, and so is a web page in a browser here that comes from another site or from a name pointed at this computer; any program on this computer, and a page that this computer itself serves (localhost or 127.0.0.1, on any port), still count as this computer itself" ;;
+    false) echo "every request on this computer's own address (127.0.0.1) without X-Forwarded-For is taken for this computer itself — a web page in a browser here, too, from any site" ;;
+    *) echo "${1:-not set}" ;;
+  esac
+}
+
 # The running agent's process number, or nothing: asked of systemd, else found
 # among the agent user's own processes.
 agent_pid() {
@@ -177,21 +220,46 @@ cmd_status() {
   say "Profile    $(current_profile)"
   local bad=0
   if is_root && load_summary; then
-    local port bind
-    port=$(setting web.port); bind=$(setting web.bind)
+    local port bind served
+    port=$(setting web.port); bind=$(setting web.bind); served=$(served_port "$port")
     load_profile
     if [ -n "$(setting unusable)" ]; then
       say "Settings   CANNOT BE USED — $(setting unusable)"
-      say "           (the agent runs on its built-in settings until this is put right; then: sudo open-alert-base sync)"
+      if [ -n "$P_NAME" ] && printf '%s' "$(setting unusable)" | grep -q 'not valid JSON'; then
+        say "           (when the agent next starts, it starts on the settings of the profile \"$P_NAME\", and the file is kept as config.json.bad)"
+      else
+        say "           (the agent runs on its built-in settings until this is put right — the dashboard's own at their most closed; then: sudo open-alert-base sync)"
+      fi
       bad=1
-    elif is_loopback "$bind" || profile_locks; then
-      say "Dashboard  http://127.0.0.1:$port/ — for this computer only (firewall lock: $(lock_state))"
-      if ! is_loopback "$bind"; then
-        say "           THE SETTINGS NO LONGER MATCH THE PROFILE: they do not ask for \"this computer only\" any more. The lock is kept. See: sudo open-alert-base audit"
+    else
+      if is_loopback "$bind" || profile_locks; then
+        say "Dashboard  http://127.0.0.1:$served/ — for this computer only (firewall lock: $(lock_state))"
+        if ! is_loopback "$bind"; then
+          say "           THE SETTINGS NO LONGER MATCH THE PROFILE: they do not ask for \"this computer only\" any more. The lock is kept, and web.bind is put back when the agent next starts. See: sudo open-alert-base audit"
+          bad=1
+        fi
+      elif [ -n "$bind" ]; then
+        say "Dashboard  port $served, on $bind and on this computer itself"
+      else
+        say "Dashboard  port $served, for the local network"
+      fi
+      if [ "$served" != "$port" ]; then
+        if [ -n "$P_NAME" ]; then
+          say "           THE SETTINGS NO LONGER MATCH THE PROFILE: they ask for port $port, below 1024, and \"$P_NAME\" gives the service no privilege for a low port, so the agent falls back to $served. See: sudo open-alert-base audit"
+        else
+          say "           the settings ask for port $port, below 1024, and the service has no privilege for it, so the agent falls back to $served. To give it: sudo open-alert-base sync"
+        fi
         bad=1
       fi
-    else
-      say "Dashboard  port $port, for the local network"
+      say "Login      $(login_words "$(setting web.requireLogin)") (web.requireLogin $(setting web.requireLogin))"
+      say "Own calls  $(if [ "$(setting web.behindProxy)" = true ]; then echo "only a request on 127.0.0.1 that asks for 127.0.0.1 or localhost by name, with none of a proxy's headers and from no other site's page, counts as this computer's own (web.behindProxy on)"; else echo "every request on 127.0.0.1 counts as this computer's own (web.behindProxy off)"; fi)"
+      load_held
+      local l
+      while IFS= read -r l; do
+        [ -n "$l" ] || continue
+        say "           THE SETTINGS NO LONGER MATCH THE PROFILE: $l — put back when the agent next starts (sudo systemctl restart open-alert-base)"
+        bad=1
+      done < <(looser_others)
     fi
   fi
   say ""
@@ -251,7 +319,7 @@ remove_dropin() {    # remove_dropin FILE
 # of the two is kept).
 CHANGED=0
 sync_platform() {
-  local port bind rc=0 want want_lock=0 may_low=1
+  local port bind rc=0 want want_lock=0 may_low=1 l served
   adopt_settings
   load_summary || die "cannot read the agent's settings (is the package fully installed?)"
   if [ -n "$(setting unusable)" ]; then
@@ -269,11 +337,23 @@ sync_platform() {
 
   if profile_locks && ! is_loopback "$bind"; then
     warn "THE SETTINGS NO LONGER MATCH THE PROFILE IN FORCE ($P_NAME)."
-    warn "The profile keeps the dashboard to this computer. The settings file (which the agent's own user can write) no longer asks for that: web.bind is \"${bind:-not set}\"."
-    warn "The firewall lock is KEPT ON. If the settings were not changed on purpose, find out who changed them."
+    warn "The profile keeps the dashboard to this computer. The settings file (which the agent's own user can write) no longer asks for that: web.bind is $(if [ -n "$bind" ]; then echo "\"$bind\""; else echo "empty (every address)"; fi)."
+    warn "The firewall lock is KEPT ON, and web.bind is put back to $P_BIND each time the agent starts. If the settings were not changed on purpose, find out who changed them."
     warn "To open the dashboard to the local network on purpose: sudo open-alert-base profile standard"
     warn "To put the settings back as the profile has them:       sudo open-alert-base profile $P_NAME"
-    rc=4
+    rc=4; CHANGED=1
+  fi
+  # The other settings the profile holds (web.behindProxy, web.requireLogin):
+  # no firewall stands behind them, so the agent is restarted, and the start
+  # command puts them back as the profile has them before the agent starts.
+  load_held
+  local others
+  others=$(looser_others)
+  if [ -n "$others" ]; then
+    warn "THE SETTINGS NO LONGER MATCH THE PROFILE IN FORCE ($P_NAME): the settings file, which the agent's own user can write, is looser than the profile holds:"
+    while IFS= read -r l; do warn "    $l"; done <<< "$others"
+    warn "They are put back as the profile has them each time the agent starts$(if have_systemd; then echo "; the service is restarted for it now, if it runs"; fi). If they were not changed on purpose, find out who changed them."
+    rc=4; CHANGED=1
   fi
 
   # 1. A port below 1024 needs one privilege; any other port needs none. The
@@ -303,9 +383,14 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE"
     fi
   fi
 
-  # 2. "For this computer only" is kept by a firewall rule (RPi ALERT before
-  #    0.24 listens on every address whatever its settings say), and the agent
-  #    is tied to it: it runs only while the lock's service does.
+  # The port the agent will really open, now that the privilege is decided.
+  served=$(served_port "$port")
+
+  # 2. "For this computer only": the agent itself listens on this computer's
+  #    own address only (web.bind, which the profile holds), and a firewall
+  #    rule keeps other computers out as well — the second guard, should the
+  #    agent ever listen on every address. The agent is tied to the rule: it
+  #    runs only while the lock's service does.
   if [ "$want_lock" = 1 ]; then
     want="# Written by \"open-alert-base profile\" and \"open-alert-base sync\" — do not edit; it is rewritten.
 # The dashboard is for this computer only, and the firewall lock is what keeps
@@ -315,8 +400,8 @@ BindsTo=$FW_UNIT
 After=$FW_UNIT"
     write_dropin "$LOCK_DROPIN" "$want" || true
     if [ "$UNITS_CHANGED" = 1 ] && have_systemd; then systemctl daemon-reload; UNITS_CHANGED=0; fi
-    if ! grep -Eq "^define dashboard_port = $port\$" "$FW_RULES" 2>/dev/null; then
-      warn "the dashboard is on port $port, and $FW_RULES names another: change its \"define dashboard_port\" line to $port, then run this again"
+    if ! grep -Eq "^define dashboard_port = $served\$" "$FW_RULES" 2>/dev/null; then
+      warn "the dashboard is on port $served, and $FW_RULES names another: change its \"define dashboard_port\" line to $served, then run this again"
     fi
     unit_enable "$FW_UNIT" || warn "could not set the firewall lock to load at start-up"
     if ! command -v nft >/dev/null 2>&1; then
@@ -327,7 +412,7 @@ After=$FW_UNIT"
       # Running already: load the rules again in place (the agent is not disturbed). Otherwise start it.
       if { if systemctl is-active --quiet "$FW_UNIT"; then systemctl reload "$FW_UNIT"; else systemctl restart "$FW_UNIT"; fi; } \
          && nft list table inet "$FW_TABLE" >/dev/null 2>&1; then
-        say "Firewall lock on: only this computer can reach the dashboard (port $port). The agent runs only while it holds."
+        say "Firewall lock on: only this computer can reach the dashboard (port $served). The agent runs only while it holds."
       else
         warn "THE DASHBOARD'S LOCK COULD NOT BE PUT ON: the firewall rules do not load."
         warn "The agent is not started without it (no lock, no agent). See: systemctl status $FW_UNIT"
@@ -360,7 +445,7 @@ cmd_sync() {
   fi
   case "$rc" in
     0) say "The service and the firewall lock match the profile and the settings." ;;
-    4) warn "sync: the stricter of the two was kept (see above); nothing was loosened" ;;
+    4) warn "sync: the stricter of the two is kept (see above); nothing was loosened" ;;
   esac
   return "$rc"
 }
@@ -459,7 +544,7 @@ absent() { if [ -e "$2" ] || [ -L "$2" ]; then say "    PRESENT  $1 ($2) — not
 env_value() { sed -n "s|^$1=\(.*\)\$|\1|p" "$ETC/env" 2>/dev/null | tail -n 1; }
 
 cmd_audit() {
-  local uid='' port bind remote node_ver major rest minor proxy shown pid run_node node_pkg lock
+  local uid='' port bind served remote node_ver major rest minor proxy shown pid run_node node_pkg lock
   say "open-ALERT base station — security posture"
   say "Taken $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(hostname) ($(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' /etc/os-release 2>/dev/null), $(uname -m))"
   is_root || say "NOTE: not run as root, so the agent's settings, the firewall and the sudo rules could not be read. For all of it: sudo open-alert-base audit"
@@ -562,34 +647,56 @@ cmd_audit() {
   say "5. Profile and the settings that decide the posture"
   say "    profile in force: $(current_profile)"
   if is_root && load_summary; then
-    port=$(setting web.port); bind=$(setting web.bind); remote=$(setting remote.mode)
+    port=$(setting web.port); bind=$(setting web.bind); remote=$(setting remote.mode); served=$(served_port "$port")
     load_profile
     if [ -n "$(setting unusable)" ]; then
       say "    FAULT — THE SETTINGS FILE CANNOT BE USED: $(setting unusable). The agent runs on its built-in settings, and what follows is those."
     elif [ -n "$(setting problems)" ]; then
       say "    SETTINGS FILE PROBLEM: $(setting problems)"
     fi
+    load_held
     if profile_locks && ! is_loopback "$bind"; then
       say "    FAULT — THE SETTINGS NO LONGER MATCH THE PROFILE: \"$P_NAME\" keeps the dashboard to this computer, and the settings file"
-      say "      (which the agent's own user can write) no longer asks for that: web.bind is \"${bind:-not set}\". The firewall lock is kept on all the same."
-      say "      If nobody changed it on purpose, find out who did. To put it back: sudo open-alert-base profile $P_NAME"
+      say "      (which the agent's own user can write) no longer asks for that: web.bind is $(if [ -n "$bind" ]; then echo "\"$bind\""; else echo "empty (every address)"; fi). The firewall lock is kept on all the same,"
+      say "      and web.bind is put back to $P_BIND when the agent next starts. If nobody changed it on purpose, find out who did."
+      say "      To put it back now: sudo open-alert-base sync"
     fi
+    while IFS= read -r k; do
+      [ -n "$k" ] || continue
+      say "    FAULT — THE SETTINGS NO LONGER MATCH THE PROFILE: $k."
+      say "      The settings file (which the agent's own user can write) is looser than the profile holds; it is put back when the agent next starts."
+      say "      If nobody changed it on purpose, find out who did. To put it back now: sudo open-alert-base sync"
+    done < <(looser_others)
     if [ -n "$P_NAME" ] && [ "$port" -lt 1024 ] 2>/dev/null && [ "${P_PORT:-0}" -ge 1024 ] 2>/dev/null; then
       say "    FAULT — THE SETTINGS NO LONGER MATCH THE PROFILE: the settings put the dashboard on port $port (below 1024); \"$P_NAME\" uses port $P_PORT,"
       say "      and gives the service no privilege for a low port. None is given."
     fi
     [ -n "$P_NAME" ] || say "    no profile is recorded, so the settings file alone decides the lock and the low-port privilege"
-    say "    dashboard port          $port, plain HTTP, password $(setting web.password)"
+    if [ "$served" != "$port" ]; then
+      say "    dashboard port          $served, plain HTTP, password $(setting web.password) — the settings ask for $port, which the service has no privilege for, so the agent falls back to $served"
+    else
+      say "    dashboard port          $port, plain HTTP, password $(setting web.password)"
+    fi
+    if [ -z "$bind" ]; then say "    web.bind                empty — the dashboard listens on every address of this computer"
+    else say "    web.bind                $bind — the dashboard listens on $(if is_loopback "$bind"; then echo "this computer's own address only"; else echo "$bind, and on this computer's own address (127.0.0.1)"; fi)"; fi
+    say "    web.behindProxy         $(setting web.behindProxy) — $(itself_words "$(setting web.behindProxy)")"
+    say "    web.requireLogin        $(setting web.requireLogin) — $(login_words "$(setting web.requireLogin)")"
+    say "    web.hosts               $(if [ -n "$(setting web.hosts)" ]; then echo "$(setting web.hosts) — more names the dashboard answers to"; else echo "none — the dashboard answers only to this computer's addresses, its own name and localhost"; fi)"
+    if [ -n "$P_HELD" ]; then
+      say "    held by the profile     $P_HELD — the settings file, which the agent's own user can write, may ask for more, never for less:"
+      say "                            what it has looser is put back each time the agent starts"
+    fi
     if is_loopback "$bind" || profile_locks; then
       # Said from what is so at this moment, not from what the settings ask for.
       lock=$(lock_state)
       case "$lock:$(reach_of "$uid")" in
-        on:*)  say "    dashboard reach         this computer only — the firewall lock is on" ;;
-        *:no)  say "    dashboard reach         this computer only — the agent listens on this computer's own address only; the firewall lock, the second lock, is $lock" ;;
-        *:yes) say "    dashboard reach         NOT KEPT TO THIS COMPUTER — it should be, but this agent listens on every address (see 4) and the firewall lock is $lock" ;;
-        *)     say "    dashboard reach         meant for this computer only; the agent is not running and the firewall lock is $lock, so that cannot be confirmed now" ;;
+        on:no)  say "    dashboard reach         this computer only — the firewall lock is on, and the agent itself listens on this computer's own address only" ;;
+        on:yes) say "    dashboard reach         this computer only — the firewall lock is on; but the agent itself listens on every address (see 4), so the lock alone keeps other computers out" ;;
+        on:*)   say "    dashboard reach         this computer only — the firewall lock is on (the agent is not running now)" ;;
+        *:no)   say "    dashboard reach         this computer only — the agent listens on this computer's own address only; the firewall lock, the second guard, is $lock" ;;
+        *:yes)  say "    dashboard reach         NOT KEPT TO THIS COMPUTER — it should be, but the agent listens on every address (see 4) and the firewall lock is $lock" ;;
+        *)      say "    dashboard reach         meant for this computer only; the agent is not running and the firewall lock is $lock, so that cannot be confirmed now" ;;
       esac
-      say "    web.bind                ${bind:-not set} — RPi ALERT takes notice of this setting from 0.24; this one is $(agent_version)"
       say "    firewall lock           $lock  (table inet $FW_TABLE; $FW_UNIT)"
       if have_systemd; then
         case "$(systemctl is-active "$FW_UNIT" 2>/dev/null || true)" in
@@ -598,11 +705,12 @@ cmd_audit() {
         esac
       fi
     else
-      say "    dashboard reach         the local network (every address of this computer)"
-      say "                            from another computer, looking needs no password; changing anything needs the dashboard's password"
+      if [ -n "$bind" ]; then say "    dashboard reach         the network, on $bind only"
+      else say "    dashboard reach         the local network (every address of this computer)"; fi
+      say "                            from another computer: $(login_words "$(setting web.requireLogin)")"
       say "    firewall lock           not used by this profile"
     fi
-    say "    anyone logged in on this computer can read and change the agent's settings through http://127.0.0.1:$port/"
+    say "    anyone logged in on this computer can read and change the agent's settings through http://127.0.0.1:$served/$(if [ "$(setting web.behindProxy)" = true ]; then echo " (asking for it by that name)"; fi)"
     case "$remote" in
       manage) say "    remote management       manage — Flood-Net's administrators may change radio settings and restart receivers; with no root helper they cannot reboot, update or touch SSH" ;;
       report) say "    remote management       report — Flood-Net is told how the base station is; whatever it asks is refused" ;;
@@ -664,6 +772,14 @@ cmd_audit() {
   absent "self-updater" /etc/systemd/system/rpi-alert-update.service
   absent "nightly update timer" /etc/systemd/system/rpi-alert-update-auto.timer
   absent "settings import from a boot partition, as root" /etc/systemd/system/rpi-alert-boot-config.service
+  # RPi ALERT 0.24 reads its boot-partition settings from /etc/rpi-alert.conf on
+  # a computer that has no boot partition — as root, through the import above
+  # or "rpi-alert import-boot-config". Neither is here: the file does nothing.
+  if [ -e /etc/rpi-alert.conf ] || [ -L /etc/rpi-alert.conf ]; then
+    say "    PRESENT  /etc/rpi-alert.conf — not from this package, and not applied: nothing here reads it (\"rpi-alert import-boot-config\" is turned away). Settings: rpi-alert config set, or a profile"
+  else
+    say "    absent   /etc/rpi-alert.conf (RPi ALERT's settings file for a computer with no boot partition; this package would not apply it)"
+  fi
   absent "screen kiosk" /etc/systemd/system/rpi-alert-kiosk.service
   absent "Bluetooth GPS service, as root" /etc/systemd/system/rpi-alert-btgps.service
   absent "cap on the whole system's log" /etc/systemd/journald.conf.d/rpi-alert.conf
@@ -678,13 +794,34 @@ cmd_audit() {
 }
 
 # ── selftest ─────────────────────────────────────────────────────────────────
+# What of the agent's own tests is left out, and why: they test parts of RPi
+# ALERT's own Raspberry Pi install that this package does not install — its
+# root helper, its updater, and (by name, three tests in files that are
+# otherwise run) its installer's own files in the release's os/ folder.
+LEFT_OUT_FILES="priv-net.test.js update-tag.test.js"
+LEFT_OUT_TESTS=(
+  "settings file: a Wi-Fi network is joined on whichever Wi-Fi device the computer has"
+  "install.sh sets config.json's owner and mode only through ownNoFollow, never chmod on the path"
+  "settings file: one in the agent's own directory is never applied"
+)
+# Node.js runs only the tests whose names match this. A test also runs when
+# the one around it matches; the outermost of all is called "<root>", which
+# the last part keeps from matching. Node.js 18 and 20 list a test left out
+# as "# SKIP test name does not match pattern"; 22 and newer leave it out of
+# the count.
+name_pattern() {
+  local n out=''
+  for n in "${LEFT_OUT_TESTS[@]}"; do out="${out:+$out|}$(printf '%s' "$n" | sed 's/[][\\.^$*+?(){}|/]/\\&/g')"; done
+  printf '^(?!(%s)$)[^<]' "$out"
+}
 # Run test files of the agent, as the service's user when root. Output to $1.
 run_tests() {
-  local out=$1; shift
+  local out=$1 pat; shift
+  pat=$(name_pattern)
   if is_root; then
-    ( cd "$AGENT" && runuser -u "$SVC_USER" -- env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/tmp TMPDIR=/tmp "$run_node" --test --test-reporter=tap "$@" ) > "$out" 2>&1
+    ( cd "$AGENT" && runuser -u "$SVC_USER" -- env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/tmp TMPDIR=/tmp "$run_node" --test --test-reporter=tap "--test-name-pattern=$pat" "$@" ) > "$out" 2>&1
   else
-    ( cd "$AGENT" && env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME="${TMPDIR:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" "$run_node" --test --test-reporter=tap "$@" ) > "$out" 2>&1
+    ( cd "$AGENT" && env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME="${TMPDIR:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" "$run_node" --test --test-reporter=tap "--test-name-pattern=$pat" "$@" ) > "$out" 2>&1
   fi
 }
 
@@ -702,9 +839,9 @@ cmd_selftest() {
   fi
   say ""
   say "2. The agent's own tests (RPi ALERT's test suite, as shipped in the release; a few minutes)"
-  # One file is left out: it tests RPi ALERT's root helper, which is not installed here.
+  # Two files are left out, and three tests by name (LEFT_OUT_FILES, LEFT_OUT_TESTS).
   for f in "$AGENT"/test/*.test.js; do
-    if [ "$(basename "$f")" = priv-net.test.js ]; then left=1; else files+=("test/$(basename "$f")"); fi
+    case " $LEFT_OUT_FILES " in *" $(basename "$f") "*) left=$((left + 1)) ;; *) files+=("test/$(basename "$f")") ;; esac
   done
   command -v socat >/dev/null 2>&1 || say "   note: socat is not installed, so the two tests that need pretend serial ports are skipped (apt install socat)"
   command -v sshd >/dev/null 2>&1 || [ -x /usr/sbin/sshd ] || say "   note: no SSH server is installed, so the one test that checks a file against it is skipped"
@@ -713,6 +850,14 @@ cmd_selftest() {
   run_tests "$log" "${files[@]}" || rc=1
   grep -E '^not ok ' "$log" | sed 's/^/   /' || true
   say "   $(grep -E '^# (tests|pass|fail|skipped) ' "$log" | sed 's/^# //' | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
+  # Only the tests named above may have been left out by name.
+  local skipped_by_name n extra=''
+  skipped_by_name=$(sed -n 's/^ *ok [0-9]* - \(.*\) # SKIP test name does not match pattern$/\1/p' "$log")
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    if ! printf '%s\n' "${LEFT_OUT_TESTS[@]}" | grep -qxF -- "$n"; then extra="$extra \"$n\""; fi
+  done <<< "$skipped_by_name"
+  if [ -n "$extra" ]; then say "   LEFT OUT THAT SHOULD NOT HAVE BEEN:$extra"; rc=1; files_rc=1; fi
   # Some of the agent's tests time one decoder against another, and can fail
   # on a computer that is busy with something else (the test files run side by
   # side). A file with a failure is run once more, by itself.
@@ -729,7 +874,9 @@ cmd_selftest() {
       if [ ${#again[@]} -gt 0 ]; then say "   failed again when run alone: ${again[*]} (output: $log.again)"; fi
     fi
   fi
-  say "   run as $(if is_root; then echo "the service's user ($SVC_USER)"; else id -un; fi), from ${#files[@]} test files; $left left out (it tests RPi ALERT's root helper, which is not installed here)"
+  say "   run as $(if is_root; then echo "the service's user ($SVC_USER)"; else id -un; fi), from ${#files[@]} test files"
+  say "   left out: $left test files ($(printf '%s' "$LEFT_OUT_FILES" | sed 's/ /, /g')) and ${#LEFT_OUT_TESTS[@]} tests by name — they test RPi ALERT's root helper, its updater"
+  say "   and its Raspberry Pi installer's own files, none of which is installed here"
   say "   full output: $log"
   say ""
   if [ "$rc" = 0 ]; then say "Self-test passed."; else say "Self-test FAILED."; fi

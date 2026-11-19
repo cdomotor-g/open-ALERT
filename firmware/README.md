@@ -4,7 +4,10 @@
 [What has been tested, and where](#what-has-been-tested-and-where). Not reviewed by a second
 person, and not released.** Two automated reviews (one for security, one for correctness) read
 it and tried it on 18 November 2026; what they found, and what was done about each point, is in
-[After the two reviews](#after-the-two-reviews-18-november-2026).
+[After the two reviews](#after-the-two-reviews-18-november-2026). The automatic build first ran
+on GitHub on 19 November 2026 ([what it found](#the-first-run-on-github-19-november-2026)), and
+the same day the pin moved to RPi ALERT 0.24.0
+([what that changed](#moving-to-rpi-alert-0240-19-november-2026)).
 
 [RPi ALERT](https://github.com/cdomotor-g/RPi_ALERT) is the program a base station runs: it
 listens to ALERT and ALERT2 flood-warning radio telemetry on RTL-SDR USB sticks, decodes it, and
@@ -47,7 +50,8 @@ All three start from the same checked release (`PIN`, `keys/`, `lib/`).
 
 ## The pin: which release is shipped, and how it is checked
 
-`PIN` is a short file of `NAME=value` lines. Today it names RPi ALERT **v0.23.1**.
+`PIN` is a short file of `NAME=value` lines. Today it names RPi ALERT **v0.24.0** (released 19
+November 2026; until then the layer was built on v0.23.1).
 
 A *hash* (here SHA-256) is a fingerprint of a file: change one byte and the hash is different. A
 *signature* is a proof, made with a secret key that only RPi ALERT's release process holds, that
@@ -84,16 +88,33 @@ anywhere is accepted if, and only if, it passes the five checks.
 
 ### Moving the pin to a newer release
 
-1. Read the release's notes. Download its two files (`rpi-alert-<tag>-src.tar.gz` and `.sig`)
-   and work out the SHA-256: `sha256sum rpi-alert-<tag>-src.tar.gz`.
-2. In `PIN`, change `AGENT_TAG`, `AGENT_VERSION`, both addresses and `AGENT_SHA256`, and set
-   `OA_REVISION` back to 1. Leave the key lines alone unless RPi ALERT has announced a new key —
-   and then check the new fingerprint against its `docs/release-signing.md` and, better, with
-   the owner by another route.
-3. Add an entry at the top of `deb/changelog` for the new version.
-4. Run `firmware/test/deb.sh`. `deb/build-deb.sh` stops if the release holds a file or folder it
-   does not know, so that somebody decides where it belongs.
-5. Read "Waiting for RPi ALERT 0.24" below: some things here are stop-gaps until then.
+These are the steps the move to 0.24.0 took.
+
+1. Read the release's notes, and what its `docs/configuration.md` says of any new setting.
+   Download its two files (`rpi-alert-<tag>-src.tar.gz` and `.sig`) and work out the SHA-256:
+   `sha256sum rpi-alert-<tag>-src.tar.gz`.
+2. In `PIN`, change `AGENT_TAG`, `AGENT_VERSION`, both addresses and `AGENT_SHA256`, set
+   `OA_REVISION` back to 1, and make the comment above it say what came before. Leave the key
+   lines alone unless RPi ALERT has announced a new key — and then check the new fingerprint
+   against its `docs/release-signing.md` and, better, with the owner by another route.
+3. Check the two files against the new pin:
+   `firmware/lib/fetch-agent.sh --verify-only --tarball F --sig S`.
+4. Add an entry at the top of `deb/changelog` for the new version (`deb/build-deb.sh` builds
+   nothing without one).
+5. New settings: a profile may name only settings the agent knows (`test/deb.sh` checks it
+   against the release's own list), and `settings.js` names the ones a profile holds (`HELD`).
+6. The agent's own tests: run the release's suite from an agent folder with no `os/` folder
+   beside it, as the package installs it. A test that reads RPi ALERT's Raspberry Pi installer
+   files (`os/…`) cannot pass here: put it in `LEFT_OUT_FILES` or `LEFT_OUT_TESTS` in
+   `deb/files/usr/bin/open-alert-base`, with the reason, and nothing else.
+7. Run the checks: `test/deb.sh`, `test/container.sh`, `bench/test.sh`, and build the disk image
+   (`image/build-image.sh`). `test/image.sh` is best left to the automatic build, which has
+   KVM. `deb/build-deb.sh` stops if the release holds a file or folder it does not know, so that
+   somebody decides where it belongs.
+8. Change the version wherever it is named:
+   `grep -rn '<old version>' firmware docs .github atlas.json site/data` — this page, the
+   package's own README, `docs/security/`, the examples in `container/`, the consumes entry in
+   `atlas.json` (with its `since` date), and the catalogue's entry in `site/data/alert.js`.
 
 ## The native package: `open-alert-base`
 
@@ -106,9 +127,10 @@ firmware/deb/build-deb.sh --tarball F --sig S            # uses two files alread
 
 It needs `dpkg-deb`, `tar`, `gzip`, either OpenSSL 3 or Node.js, and `curl` for the download;
 no compiler. The result is
-`dist/open-alert-base_0.23.1+oa2_all.deb`, about 2.4 MB. The version is the agent's version,
-then `+oa` and this layer's own revision (2: the `0.23.1+oa1` that earlier snapshots of this
-folder built was never released, and differs from it). `all` means one file for every kind of processor: the
+`dist/open-alert-base_0.24.0+oa1_all.deb`, about 2.4 MB. The version is the agent's version,
+then `+oa` and this layer's own revision (1: the first on 0.24.0; before it the layer was built
+on RPi ALERT 0.23.1 as `0.23.1+oa1` and `0.23.1+oa2`, both built and tested, neither
+released). `all` means one file for every kind of processor: the
 package is JavaScript and shell scripts. Built twice from the same files it is the same file,
 byte for byte, whatever kind of disk it is built on and whatever file mask the builder has
 (the installed size it records is worked out from the files' own lengths, as Debian's tools
@@ -120,7 +142,7 @@ script unpacks its own result and compares every agent file with the release aga
 On Debian 13 or Ubuntu 24.04, as the administrator:
 
 ```
-sudo apt install ./open-alert-base_0.23.1+oa2_all.deb
+sudo apt install ./open-alert-base_0.24.0+oa1_all.deb
 rpi-alert setup                    # the Flood-Net token, a name, where the base station is
 open-alert-base status
 ```
@@ -139,7 +161,7 @@ and the better one for the enterprise profile.
 To start locked down from the first moment, name the profile at install:
 
 ```
-sudo OPEN_ALERT_BASE_PROFILE=enterprise apt install ./open-alert-base_0.23.1+oa2_all.deb
+sudo OPEN_ALERT_BASE_PROFILE=enterprise apt install ./open-alert-base_0.24.0+oa1_all.deb
 ```
 
 The same works on a computer that already has settings (the package removed and installed
@@ -216,18 +238,21 @@ not installed.
 
 `rpi-alert` is RPi ALERT's own command (`rpi-alert status`, `rpi-alert setup`, …). Three of its
 sub-commands belong to the Raspberry Pi install and are turned away with the reason: `daemon`,
-`access` and `import-boot-config`.
+`access` and `import-boot-config`. The last is the one that, from RPi ALERT 0.24, applies
+`/etc/rpi-alert.conf` as root on a computer with no boot partition: this package applies no such
+file (`audit` says so if one is there). Settings go through `rpi-alert setup`,
+`rpi-alert config set`, the dashboard, or a profile.
 
 `open-alert-base` is this layer's:
 
 | Command | What it does |
 |---|---|
 | `open-alert-base version` | The package, the agent, the signed release it came from, Node.js, and whether this computer's `rtl-sdr` knows the V4 stick |
-| `open-alert-base status` | Is the service running, which profile, and the agent's own status. Ends with an error when the settings file cannot be used or no longer matches the profile |
+| `open-alert-base status` | Is the service running, which profile, where the dashboard is, who must log in, and the agent's own status. Ends with an error when the settings file cannot be used or no longer matches the profile |
 | `open-alert-base profile` | The profile in force and the ones there are; as root, also what has been changed since |
 | `sudo open-alert-base profile <name>` | Put `standard` or `enterprise` in force |
-| `sudo open-alert-base sync` | After changing the dashboard's port by hand: make the service's one capability and the firewall lock follow the profile and the settings. An install and an update run it too. Status 3: the lock could not be put on; 4: the settings ask for less than the profile, and the profile was kept |
-| `sudo open-alert-base audit` | The security posture on one page, for a reviewer: what is installed and whether every agent file still matches the signed release, who it runs as, what it is kept from (read from the running program, not only from the file), what listens on the network, the profile and the settings that matter, the proxy, and which parts of RPi ALERT's Pi installer are absent |
+| `sudo open-alert-base sync` | After changing the dashboard's port by hand: make the service's one capability and the firewall lock follow the profile and the settings. An install and an update run it too. Status 3: the lock could not be put on; 4: the settings ask for less than the profile, and the profile was kept (where a setting the profile holds was loosened, the service is restarted, and its start puts it back) |
+| `sudo open-alert-base audit` | The security posture on one page, for a reviewer: what is installed and whether every agent file still matches the signed release, who it runs as, what it is kept from (read from the running program, not only from the file), what listens on the network, the profile and the settings that matter — the dashboard's address (`web.bind`), who counts as the computer itself (`web.behindProxy`), the login rule (`web.requireLogin`), its extra names (`web.hosts`) and which of them the profile holds — the proxy, and which parts of RPi ALERT's Pi installer are absent |
 | `open-alert-base selftest` | Run the agent's own test suite on this computer, as the service's user |
 | `open-alert-base bench` | Run the benchmark in `bench/`, when it was built into the package |
 
@@ -252,6 +277,23 @@ and ends with status 4; `status` calls it a fault and ends with status 1, and `a
 as a fault. Only `sudo open-alert-base
 profile standard` opens the dashboard to the network.
 
+**The settings a profile holds.** Three of RPi ALERT 0.24's dashboard settings have no firewall
+behind them, or (`web.bind`) only the lock. Where a profile asks for the closed value of one, it
+*holds* it: `web.bind` on this computer's own address, `web.behindProxy` on, `web.requireLogin`
+`all`. The enterprise profile holds all three; the standard profile holds `web.behindProxy`. The
+service's start command (`/usr/lib/open-alert-base/start`, root's file, run by systemd each time
+before the agent) reads the profile in force and, through the agent's own settings code, puts
+back any of them the settings file has looser, and says so in the service's log
+(`journalctl -u open-alert-base`). Something closer still is left as it is. If the settings
+file is not there, the agent starts on the profile's settings; if it is not valid JSON, the
+agent starts on the profile's settings too, and the broken file is kept as `config.json.bad`
+(as the agent itself would keep it, before it wrote its built-in settings over it); if it is a
+link or cannot be read, nothing is written over it, and the agent itself takes its most closed
+values for all three. If the held settings cannot be made to hold, the agent is not started.
+A setting loosened while the agent runs — `rpi-alert config set web.behindProxy false`, which
+anybody on the computer itself may do — is named by `status`, `audit` and `sync`; `sync` then
+restarts the service, which puts it back.
+
 A settings file that root put in place — by configuration management, a restored backup, or
 cloud-init's `write_files` — belongs to root, and the agent could not read it: it would run on
 its built-in settings, without the token. The install and `sync` hand such a file to the agent's
@@ -265,7 +307,10 @@ it.
 |---|---|---|
 | For | A base station on a small network, or a network of its own | A base station inside a government or corporate network |
 | Dashboard port (`web.port`) | 80, as on a Pi | 8080 |
-| Dashboard reached from | The local network | This computer only (`web.bind` = `127.0.0.1`, and the firewall lock) |
+| Dashboard reached from | The local network | This computer only: the agent listens on `127.0.0.1` only (`web.bind`), and the firewall lock keeps other computers out as well |
+| Who counts as the computer itself (`web.behindProxy`) | On: a request on `127.0.0.1` that asks for `127.0.0.1` or `localhost` by name, with none of a reverse proxy's headers. A reverse proxy's callers, and a web page in a browser on this computer that comes from another site or from a name pointed at this computer, are visitors. Any program on this computer, and a page that this computer itself serves (`localhost` or `127.0.0.1`, on any port), still count as the computer itself | On, the same |
+| What a visitor sees without the password (`web.requireLogin`) | `settings`: it may look; changing anything needs the password | `all`: nothing at all — what comes through a reverse proxy on this computer must log in first |
+| Settings the profile holds (the settings file may not loosen them) | `web.behindProxy` | `web.bind`, `web.behindProxy`, `web.requireLogin` |
 | What Flood-Net may do (`remote.mode`) | `manage`: change radio settings, restart receivers | `report`: it is told how the base station is, and whatever it asks is refused. `rpi-alert remote off` stops even that |
 | Wi-Fi hotspot (`hotspot.mode`) | off | off |
 | Restarting networking or the computer by itself (`recover.mode`) | off | off |
@@ -278,9 +323,32 @@ sound card, and without a root helper it could not restart anything.
 **What "the local network" can do, in the standard profile.** Anybody who can reach the
 computer can open the dashboard and look, without a password: what is being heard, the latest
 readings, how the base station is (its location and addresses are left out). Changing anything
-needs the dashboard's password. The page is plain HTTP, not HTTPS. That is RPi ALERT 0.23.1's
-own rule and this layer does not change it; it is the reason the enterprise profile keeps the
-dashboard to the computer itself.
+needs the dashboard's password. The page is plain HTTP, not HTTPS. That is RPi ALERT's own rule
+as it comes (`web.requireLogin` `settings`), and the standard profile keeps it; it is the reason
+the enterprise profile keeps the dashboard to the computer itself and shows nothing without the
+password.
+
+**Why `web.behindProxy` is on in both.** As it comes, RPi ALERT takes every request from the
+computer's own address (`127.0.0.1`) for the computer itself — its screen, or the `rpi-alert`
+command — and lets it in with no password. On a Raspberry Pi whose only browser is its own
+screen that is right. This package is for PCs, where somebody may browse the web: a web page in
+that browser whose name has been pointed at `127.0.0.1` would be taken for the base station
+itself and could change its settings, and so would every caller of a reverse proxy that does
+not add `X-Forwarded-For`. RPi ALERT's own `docs/configuration.md` asks for `web.behindProxy` on
+any such computer, even with no proxy. With it on, a request on `127.0.0.1` is the computer
+itself only when it asks for `127.0.0.1` or `localhost` by name, in HTTP/1.1, with none of a
+proxy's headers, and, when a browser sends it, from a page of one of those names. The
+`rpi-alert` command, `open-alert-base status` and a browser on the computer opening
+`http://localhost/` all do. The first two were tried as they are; for the browser, a request
+made like a browser's (`Host: localhost`, and a page on `localhost` named as its `Origin`) was
+tried, not a real browser. A page from another site, or from a name pointed at this computer,
+is a visitor. One limit stays, as RPi ALERT's own `docs/hardware.md` says ("from a page of that
+name"): a page that another program on this computer serves under `localhost` or `127.0.0.1`,
+on any port, counts as the computer itself too, and so can change the base station's settings
+without a password. On a computer that runs other web services for its browser, that is worth
+knowing; the package cannot close it. It changes nothing another computer sees. The agent says
+at each start that it is on, with a check to make from another computer when a reverse proxy is
+in front; with no proxy, that check has nothing to try.
 
 **Port 80 and the one capability.** A program that is not root may not open a port below 1024.
 The service file gives no capability at all. When the settings ask for a port below 1024 and
@@ -292,15 +360,16 @@ profile really serves port 80, and the enterprise profile holds no capability, w
 settings file says (a low port asked for there gets none, and `sync` says so with status 4).
 Without that file the agent is refused port 80 and falls back to 8080 (this is checked).
 
-**"This computer only", today.** RPi ALERT 0.23.1 opens its dashboard on every network address
-of the computer and has no setting for that. The profile writes `web.bind` = `127.0.0.1` all the
-same: checked, 0.23.1 keeps a setting it does not know, takes no notice of it, and does not lose
-it when it rewrites its settings file. What keeps other computers out today is the firewall
-lock: one small table of *nftables* rules (nftables is Linux's firewall) that
-`open-alert-base-firewall.service` loads. It refuses the dashboard's port to everything but the
-computer itself, and — a second net — throws away the reply to any call from another computer
-to any port the agent's user has open. It is a table of its own and changes nothing in whatever
-firewall the computer already has.
+**"This computer only": two guards.** The first is the agent itself: with `web.bind` =
+`127.0.0.1`, which the enterprise profile sets and holds, it listens on the computer's own
+address and nowhere else (RPi ALERT 0.24; 0.23 had no such setting and listened on every
+address). The second is the firewall lock: one small table of *nftables* rules (nftables is
+Linux's firewall) that `open-alert-base-firewall.service` loads. It refuses the dashboard's port
+to everything but the computer itself, and — a second net — throws away the reply to any call
+from another computer to any port the agent's user has open. It is a table of its own and
+changes nothing in whatever firewall the computer already has. Both are tested: from a second
+container, the agent alone keeps the dashboard's port shut; with the agent made to listen on
+every address, the lock alone does.
 
 **No lock, no agent.** In a profile that keeps the dashboard to the computer, the agent's
 service is tied to the lock's (`BindsTo=`, in a small file of its own,
@@ -325,18 +394,62 @@ Anybody logged in on the computer itself can still read and change the agent's s
 `http://127.0.0.1:8080/` without a password: RPi ALERT treats callers from the computer itself
 as its administrator. `audit` says so.
 
-### Waiting for RPi ALERT 0.24
+**A reverse proxy for HTTPS.** The dashboard is plain HTTP. To publish an enterprise base
+station's dashboard over HTTPS with your organisation's certificate, put a reverse proxy on the
+same computer, in front of `127.0.0.1:8080`. The profile already has the agent's side of it
+(`web.behindProxy` on, a login for everything); the proxy must add `X-Forwarded-For` on every
+route and pass the browser's `Host` on, and that name goes in `web.hosts`
+(`rpi-alert config set web.hosts bs01.council.example`). RPi ALERT's `docs/configuration.md`,
+"What the proxy has to do", gives the lines for nginx, Caddy and HAProxy and the check to make
+from another computer. Not tried with a real proxy here. The firewall lock refuses port 8080 to
+other computers, not the proxy's own port: open that one in the computer's own firewall.
 
-RPi ALERT 0.24.0, not yet released, adds `web.bind`, `web.hosts`, `web.behindProxy` and
-`web.requireLogin`. When the pin moves to it:
+### Moving to RPi ALERT 0.24.0 (19 November 2026)
 
-- `web.bind` takes effect by itself (the enterprise profile already carries it). The firewall
-  lock stays, as a second lock.
-- Decide whether the enterprise profile should also set `web.requireLogin` to `all` (nothing
-  readable without a password) and whether an organisation's DNS name goes into `web.hosts`.
-  Neither is set today, because 0.23.1 could not be checked against values it does not know.
-- Re-run `firmware/test/deb.sh`: its check of what the agent listens on already accepts either
-  answer and says which it found.
+RPi ALERT 0.24.0 adds four settings for a base station on an organisation's network, each as
+before until it is set: `web.bind` (the one address the dashboard listens on, beside
+`127.0.0.1`), `web.hosts` (more names it answers to), `web.behindProxy` (above) and
+`web.requireLogin` (`all`: nothing is read without a login). It also logs every login attempt,
+with the caller's address; reads `/etc/rpi-alert.conf` as root on a computer with no boot
+partition, through `rpi-alert import-boot-config` (not used here); finds the Wi-Fi device by its
+kind rather than its name (not used here: the hotspot is off and nothing joins Wi-Fi); and, where
+systemd's tools are installed but systemd is not running (a container), trusts the computer's
+clock as it does where there is no systemd at all.
+
+What the move changed here:
+
+- `PIN`: v0.24.0, its addresses and SHA-256; the key is unchanged. The layer's revision is 1:
+  `0.24.0+oa1`.
+- The enterprise profile: `web.bind` `127.0.0.1` (which it already asked for, and which 0.23.1
+  ignored) now takes effect; `web.behindProxy` on and `web.requireLogin` `all` are added. The
+  firewall lock stays, as the second guard, and so does the rule "no lock, no agent".
+- The standard profile: `web.behindProxy` on; `web.bind` and `web.requireLogin` as RPi ALERT has
+  them (named, as "as the agent has it", so that a move back from the enterprise profile opens
+  what it closed). Nothing another computer sees changes.
+- The profiles hold their closed settings, and the start command puts them back (above).
+- `audit` reports the four settings and which of them the profile holds, and notes
+  `/etc/rpi-alert.conf` if it is there; `status` gives where the dashboard is and who must log
+  in; `status`, `audit` and `sync` name any held setting the file has looser.
+- `sync`, `status` and `audit` name the port the agent really opens. A port below 1024 that the
+  service has no privilege for (one written into the settings behind the enterprise profile, or
+  the agent's own 80 when the port is taken out of the file) is refused to the agent, which
+  falls back to 8080; `sync` used to ask for the firewall lock to be moved to the port it could
+  not open, and `status` gave that port. `status` now calls it a fault, as `audit` and `sync`
+  already did. (This was so before the move too.)
+- `selftest` leaves out the tests of RPi ALERT's updater (`update-tag.test.js`) and three tests,
+  by name, that read its Raspberry Pi installer's own files (`os/install.sh`,
+  `os/files/systemd/rpi-alert-boot-config.service`, `os/libexec/`), which the package does not
+  install, as it already left out the tests of the root helper (`priv-net.test.js`). Node.js 18
+  and 20 list the three as skipped; 22 and newer leave them out of the count.
+- The container: its first settings turn `web.behindProxy` on, as in the package, and leave
+  `web.bind` empty (see [The container](#the-container)).
+- The checks: every check of 0.23's behaviour was rewritten for 0.24's (the part of the
+  listening check that only 0.23 needed is gone), and new ones added for the three settings the
+  profiles use, in both profiles. None was made weaker except one, where 0.24's own log forced
+  it: the standard profile's check that nothing was said about a web proxy looked for the word
+  "proxy" anywhere in the agent's log, and 0.24 says at every start that `web.behindProxy` is
+  on, so it now looks for "web proxy", "proxy-preload" and "NODE_USE_ENV_PROXY".
+  (`web.hosts` is named by neither profile, and not tried here.)
 
 ### A web proxy and a private certificate authority
 
@@ -435,8 +548,13 @@ passed. In order:
      user, groups, environment, capabilities, start command — read from the installed file)
      with RPi ALERT's own stand-ins for a stick and for Flood-Net, as its `simulate.sh` sets
      them up; the dashboard answers and decoded readings reach the stand-in; both profiles, and
+     what the dashboard lets in under each — raw requests from the computer itself as the
+     `rpi-alert` command, a browser, a reverse proxy's caller (`X-Forwarded-For`, `Forwarded`,
+     `Via`), HTTP/1.0 and a web page whose name was pointed at the computer would send them;
      that the settings file (as the agent's user would change it) cannot loosen the profile root
-     put in force; a web proxy that is the only way to the stand-in, with a private certificate
+     put in force — "every address", a reverse proxy's callers as the computer's own, looking
+     with no password, a settings file taken away, broken or replaced by a link, each put back
+     or kept closed by the start command; a web proxy that is the only way to the stand-in, with a private certificate
      authority, with and without a password, on the system's Node.js and on a Node.js 22.21+
      when the test computer has one; the start-up file's three rules — a proxy address that
      cannot be used is not gone around, a look-alike `undici` in the agent's own folder is not
@@ -445,18 +563,23 @@ passed. In order:
      before and after the install, and a link in its place; an install told which profile to use
      over settings that are already there; the refusal beside RPi ALERT's own install; systemd's
      checker and exposure score; udev's checker on the device rules.
-   - *b. The firewall lock*, tried from a second container that plays another computer; its
-     keeper put back the lock after every table was cleared, after the table was removed by name
-     and after its rules were emptied, and stopped with an error when the rules file no longer
-     loaded. This container is given the one capability that changing firewall rules needs
-     (`NET_ADMIN`).
+   - *b. The two guards*, tried from a second container that plays another computer: the agent
+     alone keeps the dashboard's port shut (it listens on `127.0.0.1` only); then, with the agent
+     made to listen on every address (started without the start command, its settings file set
+     to "every address"), the port is open until the lock is put on, and shut with it. The
+     lock's keeper put back the lock after every table was cleared, after the table was removed
+     by name and after its rules were emptied, and stopped with an error when the rules file no
+     longer loaded. This container is given the one capability that changing firewall rules
+     needs (`NET_ADMIN`).
    - *c. Under a real systemd*, as the container's first program: the package installed and the
      real service started, sandbox and all; the service itself tries what it should not be able
      to do, and asks what it must be able to ask (whether the clock is set from the network);
      both profiles; no lock, no agent — the lock cleared by hand and by the system's own
      `nftables` service started, restarted and stopped (put back each time, the agent running
      on), a slip in the rules file, the rules file missing, no `nft` program, the keeper killed
-     (the agent stopped each time, and started again by itself once the lock held); an update
+     (the agent stopped each time, and started again by itself once the lock held); the three
+     settings the enterprise profile holds loosened in the file and put back by the real
+     service, and loosened through `rpi-alert config set` and put back after `sync`; an update
      over itself; remove, an install again with `OPEN_ALERT_BASE_PROFILE=enterprise`, remove and
      purge. This container is given `SYS_ADMIN` (systemd needs it to build the sandbox) and
      `NET_ADMIN`, and Docker's AppArmor profile is left off it (`apparmor=unconfined`): on a
@@ -466,6 +589,46 @@ passed. In order:
      (`--require-systemd` makes that a failure).
 
 ## What has been tested, and where
+
+**19 November 2026, on RPi ALERT 0.24.0 (`0.24.0+oa1`), after the check of the move** (see
+[A check of the move](#a-check-of-the-move-19-november-2026)). On the same kind of computer as
+below (x86-64, Ubuntu 24.04.5, Docker 29.9, no USB, no KVM, shared with other work), from the
+release files already on it, on the files as they are in this folder:
+
+| Check | Result |
+|---|---|
+| `firmware/test/deb.sh --require-systemd`, all three systems (started 02:21 UTC, 24 minutes) | **1,310 passed, none failed, 2 skipped** — Debian 13 421 and 1 skipped, Ubuntu 24.04 422, Debian 12 420 and 1 skipped, and 47 on the test computer itself. The two skips are the same two as before (the device list Debian 13's systemd keeps out of sight, and Debian 12's udev, which has no checker). The run before the check of the move: 1,280 passed, none failed, the same two skipped |
+| The agent's own tests, from the installed package, as the service's user (`selftest`) | 281 tests, 277 passed, none failed, 4 skipped, on each of the three systems: the three left out by name, and one of RPi ALERT's own that needs nginx and skips itself without it. 31 of the 33 test files |
+| The package | 2,467,260 bytes, 5,775 kB installed, SHA-256 `a8049af3…`; built three times, the same file each time; lintian: no errors, 6 warnings (the same six as before) |
+| `firmware/test/container.sh` (3½ minutes) | **115 passed, none failed, none skipped** (113 before the check of the move). Afterwards no container, network, volume or image of its own was left |
+| `firmware/bench/test.sh` on the release's agent (before the check of the move, which changed nothing it runs) | 11 of 11 on Node.js 22.23. On Node.js 18.19 (by hand, for once): 10 of 11 — the quick run took 1 minute 25 seconds there, and the summary's first line, which gives that time, came to 128 characters, over the check's limit of 125. The benchmark's wording, not 0.24.0: noted, not changed |
+| shellcheck 0.9.0 on all 24 shell scripts under `firmware/` | Nothing to report |
+| `npm test` at the top of the repository | 75 of 75 |
+| The disk image, `image/build-image.sh`, built with 0.24.0 | Built in 3 minutes 36 seconds: 3.0 GB, 705 MB of it in use, 269 packages, about 288 MB packed; Debian 13.8, kernel 6.12.117. The package inside it is the same file as the one `deb.sh` checked (SHA-256 `a8049af3…`), its standard profile put in force by its own install |
+
+`test/image.sh` was not run here: it is left to the automatic build, which has KVM and takes
+about 4 minutes where this computer takes over 20.
+
+What the new checks showed, on all three systems: in the standard profile the `rpi-alert`
+command and a request for `localhost` are the computer itself, while a reverse proxy's caller
+(`X-Forwarded-For`, or only `Via`) is a visitor, a web page under a name of its own pointed at
+`127.0.0.1` is refused (`unrecognised Host header`), and one under a `.local` name, or from
+another site (its `Origin`), is a visitor; a page from `localhost` on another port is still the
+computer itself, in both profiles (the limit above); in the enterprise profile the agent listens
+on `127.0.0.1` only, the `rpi-alert` command still works without a password, and a reverse
+proxy's caller, a request in HTTP/1.0 and one with `Forwarded` get "log in first" for
+everything — the status and the readings included — while the page itself is still served;
+from a second container, the agent alone keeps the dashboard's port shut, and with the agent
+made to listen on every address the lock alone does; the three held settings loosened in the
+file are put back by the start command (also with the file taken away, broken, or replaced by a
+link), and under a real systemd by the real service; loosened through `rpi-alert config set`
+while it runs, `sync` names it, restarts the service, and it is put back; with port 81 written
+into the settings behind the enterprise profile, `sync`, `status` and `audit` give 8080, where
+the agent falls back, and `status` ends with an error. Before the first whole run on 0.24.0, a
+shake-out run found two faults, both in the new checks and not in the package: a long answer
+read only in part, and a stand-in stick not set up for one part.
+
+**Everything below was run on RPi ALERT 0.23.1.**
 
 **18 November 2026, after the third check** (see [A check of the result](#a-check-of-the-result-18-november-2026-later)).
 A whole run of `firmware/test/deb.sh --require-systemd` on the files as they are in this folder
@@ -577,8 +740,10 @@ results are under [The disk image](#the-disk-image-what-has-been-tested-where).*
   agent going from "not trusted" to "trusted" on a computer whose time service has just
   answered has not been watched under this service.
 - **Any ARM computer.** The package holds no compiled code, so there is no reason to expect a
-  difference, but it has not been run on one. The automatic build is to run these checks on
-  GitHub's ARM machines.
+  difference, but it has not been run on one. *Since then (19 November 2026): the automatic
+  build ran these checks on GitHub's ARM computers, the part under a real systemd included, and
+  none failed (RPi ALERT 0.23.1; see [the first run](#the-first-run-on-github-19-november-2026)).
+  Still not on an ARM computer outside GitHub's, and not with a stick.*
 - **A real computer start-up.** The systemd checks ran in containers. Nothing has been
   restarted to see the service, the firewall lock and the two serial drivers come up by
   themselves, and the firewall lock has not been tried beside another firewall (`ufw`,
@@ -600,11 +765,16 @@ results are under [The disk image](#the-disk-image-what-has-been-tested-where).*
 - **An update from an older version of this package.** There is no older version. The same
   package installed over itself is tested.
 - **Flood-Net itself.** The stand-in is RPi ALERT's own test helper.
-- **RPi ALERT 0.24.**
-- **The checks themselves on another kind of test computer.** `firmware/test/deb.sh` has only
+- **A reverse proxy in front of the dashboard.** RPi ALERT 0.24's `web.behindProxy` and
+  `web.requireLogin` were tried here with requests made to look like a proxy's, not with a real
+  nginx, Caddy or HAProxy; RPi ALERT's own tests and `docs/configuration.md` cover those three.
+  Nor has `web.hosts` been tried with a real DNS name.
+- **The checks themselves on another kind of test computer.** `firmware/test/deb.sh` had only
   been run on the one computer described above. Its real-systemd part depends on how the test
   computer keeps its groups of processes (cgroups); on a computer where systemd will not start
-  in a container it skips that part and says so, and that path has not been seen.
+  in a container it skips that part and says so, and that path has not been seen. *Since then
+  (19 November 2026): GitHub's x86-64 and ARM computers ran it, and the part under a real
+  systemd started on both.*
 
 ## Choices made here
 
@@ -625,9 +795,18 @@ Where the design left something open, this is what was chosen and why.
   table every 20 seconds as well. An organisation that loads its own firewall can also put the
   line `include "/etc/open-alert-base/dashboard-local-only.nft"` in its file, which leaves no
   gap at all.
-- **`web.bind` is in the enterprise profile already**, after checking that 0.23.1 keeps and
-  ignores it. In the standard profile it is written as "the agent's own default", which takes
-  it out of the file while the agent does not know the setting.
+- **The enterprise profile closes the dashboard with RPi ALERT's own settings** (`web.bind`,
+  `web.behindProxy`, `web.requireLogin`, from 0.24), and keeps the firewall lock beside them as
+  the second guard, with "no lock, no agent" as before. In the standard profile `web.bind` and
+  `web.requireLogin` are written as "as the agent has it", so that a move back from the
+  enterprise profile opens what it closed; `web.hosts` is named by neither profile, since it is
+  a name only your network knows.
+- **A profile holds its closed settings; the start command puts them back.** The settings file
+  is the agent's user's, so root cannot stop it being changed; what root does decide is what the
+  agent starts with. Putting the settings back (and saying so) was chosen over refusing to start
+  the agent: a flood-warning receiver that keeps receiving with the profile's settings is better
+  than one that stops because a setting was edited. Where they cannot be put back at all, the
+  agent is not started.
 - **Profiles are applied as the agent's user, through the agent's own settings code**, never by
   root editing the file: the settings folder belongs to that user, and root following a link
   there would be a way up.
@@ -653,8 +832,10 @@ Where the design left something open, this is what was chosen and why.
   `/etc/open-alert-base/env` says how to, for a computer whose clock is kept right another way.
 - **Purge deletes the agent's user**, with its settings and data, unless RPi ALERT's own install
   has appeared on the computer since — then all three are left alone.
-- **The agent's `priv-net` test file is left out of `selftest`**: it tests RPi ALERT's root
-  helper, which is not installed here. The other 30 files are run.
+- **`selftest` leaves out what tests parts of RPi ALERT that are not installed here**: its root
+  helper (`priv-net.test.js`), its updater (`update-tag.test.js`), and three tests, by name, that
+  read its Raspberry Pi installer's own files (in `config.test.js` and `root-files.test.js`).
+  Of 0.24.0's 33 test files, 31 are run: 29 whole, and those two less the three tests.
 - **The benchmark is built into the package when `bench/open-alert-bench.js` is there** and
   parses; `--no-bench` leaves it out.
 
@@ -694,13 +875,30 @@ containers (Docker, or Podman with a compose file).
   `su` and `mount`, have that ability taken off). `RPI_ALERT_PRIV` points at nothing, so the agent
   can ask root for nothing, and `RPI_ALERT_ASSUME_CLOCK=1`: inside a box the agent cannot ask the
   computer whether its clock has been set from the network, so it trusts the clock, and **the
-  computer must keep correct time**.
+  computer must keep correct time**. (RPi ALERT 0.24 sees for itself that systemd is not running
+  in the box and trusts the clock the same way; the variable says so outright.)
 - The settings (`/etc/rpi-alert`) and what the agent has heard and not yet sent
   (`/var/lib/rpi-alert`) are two volumes, which are folders that outlive the container. A new
   settings volume starts with `config.default.json`: dashboard on port 8080; the Wi-Fi hotspot,
   self-recovery, the screen and the sound off (none of them can work in a box); remote management
   on `report` (Flood-Net is told how the station is, and can change nothing). RPi ALERT's updater
   does not apply here: **an update is a new image** built from the next signed release.
+- Two of RPi ALERT 0.24's dashboard settings, on purpose. `web.bind` stays empty (every address
+  in the box), as RPi ALERT has it: Docker brings the published port in on the box's own network
+  address, not on its `127.0.0.1`, so an agent kept to `127.0.0.1` could not be reached from the
+  computer at all — the published port (`127.0.0.1:8080` on the computer) is what keeps the
+  dashboard to the computer. `web.behindProxy` is on, as in the native package. With Docker every
+  caller from outside, the computer's own browser included, comes in from Docker's network,
+  never from the box's own `127.0.0.1`, so none is taken for the box itself, with the setting on
+  or off (checked: the computer's request through the published port is a visitor, and asking
+  for `localhost` by name changes nothing). That rests on how Docker brings the port in, and was
+  checked with Docker only. Another engine (rootless Podman, say, which has not been tried) or
+  the computer's own network (`network_mode: host`, which neither compose file uses and the
+  check refuses) may bring the computer's own callers in on the box's `127.0.0.1`; then the
+  setting is what keeps a web page in the computer's browser from being taken for the box
+  itself. It costs one line in the log at each start. The box's own callers — the health check,
+  and `rpi-alert` run with `docker exec` — are still the box itself (checked), and a page from
+  another site, sent to the box's `127.0.0.1` from inside, is a visitor (checked).
 - Labels a registry shows (title, description, source, licence, version, revision, created, base
   image), and a health check on the dashboard.
 
@@ -708,7 +906,7 @@ containers (Docker, or Podman with a compose file).
 
 ```
 firmware/container/build.sh                     # for this computer; the release is downloaded and checked
-firmware/container/build.sh --platform linux/arm64 --tag registry.example.org/open-alert-base:0.23.1-oa2 --push
+firmware/container/build.sh --platform linux/arm64 --tag registry.example.org/open-alert-base:0.24.0-oa1 --push
 ```
 
 The base image can be fixed to one exact version: `docker buildx imagetools inspect
@@ -776,7 +974,9 @@ On the computer named at the top of this section. **98 passed, none failed, none
 of computer: Ubuntu 24.04, Docker 29.9, Compose 5.6): **108 passed, none failed, none
 skipped** — ten more than then, among them the proxy rules in the last row below. And once
 more on the files as they are in this folder, after the third check (started 23:23 UTC, 3
-minutes 20 seconds): **108 passed, none failed, none skipped**. Both runs built the image on
+minutes 20 seconds): **108 passed, none failed, none skipped**. And on RPi ALERT 0.24.0, after
+the check of the move (19 November, started 02:45 UTC, 3 minutes 19 seconds): **115 passed, none
+failed, none skipped**. These last three runs built the image on
 `debian:trixie-slim` by name, so their check of the digest label only noted that none was
 given; a run on an image built with `--base-image` and a digest, as the automatic build makes
 the published one, is described under the table.
@@ -790,7 +990,8 @@ the published one, is described under the table.
 | The agent in the image is the release's, file for file; its files cannot be written by its own user | Passed |
 | Both compose files are read by Docker Compose and every hardening line above is in them (each checked by reading the resolved file); the Torizon file refuses to start with no image named | Passed |
 | `host-setup.sh` in a scratch folder: written, repeated (nothing rewritten), checked, removed, repeated; another group name; bad option and bad name refused; without the administrator account it says so and changes nothing; its rule and block list are the package's, line for line | Passed |
-| `compose.yaml` run: the dashboard through the published port (and not on the computer's other address); version 0.23.1; the agent finds the stand-in stick; decoded readings reach the Flood-Net stand-in | Passed |
+| `compose.yaml` run: the dashboard through the published port (and not on the computer's other address); the pinned version (0.23.1 until 19 November, then 0.24.0); the agent finds the stand-in stick; decoded readings reach the Flood-Net stand-in | Passed |
+| *New, 19 November (0.24.0).* Who the agent takes for the box itself: the computer's request through the published port is a visitor (`"local":false`), and asking for `localhost` by name still gets "log in first" for the settings; inside, the agent listens on every address of the box, with `web.bind` empty and `web.behindProxy` on; the box's own request to `127.0.0.1`, and `rpi-alert` run with `docker exec`, are the box itself, and a request on the box's `127.0.0.1` from another site's page is a visitor | Passed |
 | The agent's process: user 990; every capability set zero; no-new-privileges on; the system-call filter on; only port 8080 open by the agent | Passed |
 | Read-only root (writes to `/usr`, `/etc`, the agent's folder and `/var` refused; `/tmp`, settings and data writable); `/tmp` cannot run programs; no helper behind `RPI_ALERT_PRIV` | Passed |
 | Docker's health check says healthy; `rpi-alert status` works inside | Passed |
@@ -820,8 +1021,11 @@ Numbers, measured there (a stand-in stick, so not what a real station will use):
 - **Serial receivers** (Quansheng, ERT-A2, GPS) in a container.
 - **Torizon itself.** `compose.torizon.yaml` has never been loaded on a Torizon board; its
   statements about Torizon (no `plugdev` group, how compose is run, the memory) are expectations.
-- **ARM.** The recipe has no compiled code of its own, but no arm64 image has been built or
-  run. The automatic build is to do that on GitHub's ARM machines.
+- **ARM.** The recipe has no compiled code of its own. The automatic build's first run (19
+  November 2026) built the image and ran `test/container.sh` on GitHub's ARM computers as well
+  as its PCs; one check failed on both, for a reason in the check, since put right (see
+  [the first run](#the-first-run-on-github-19-november-2026)). Not on an ARM board of anybody's
+  own.
 - **Podman.** The compose file is written for Docker; it has not been tried with Podman.
 - **A real web proxy and inspecting network**, as for the package.
 - **The clock.** The image trusts the computer's clock. The computer's own time service is not
@@ -847,9 +1051,11 @@ Numbers, measured there (a stand-in stick, so not what a real station will use):
 ## The disk image
 
 **Built and started on 14 November 2026, and again on 18 November after the two reviews, on one
-x86-64 computer (Ubuntu 24.04, QEMU 8.2.2), in a virtual machine only. It has never been
-written to a real disk or started a real computer, no real radio stick has been near it, and
-the image for ARM computers has not been built at all. Not reviewed by a second person. See
+x86-64 computer (Ubuntu 24.04, QEMU 8.2.2), in a virtual machine only; on 19 November the
+automatic build built the PC image on GitHub's computers and its whole start test passed there,
+with Secure Boot on, under KVM. It has never been written to a real disk or started a real
+computer, and no real radio stick has been near it. The image for ARM computers has been built
+(on GitHub, 19 November) and has not yet started. Not reviewed by a second person. See
 [what is not yet proved](#the-disk-image-what-is-not-yet-proved).**
 
 A *disk image* is one file that holds a whole disk, byte for byte. Written to an SSD or a USB
@@ -931,14 +1137,16 @@ The results, in `dist/`:
 
 | File | What |
 |---|---|
-| `open-alert-base-0.23.1+oa2-amd64-uefi.img` | The disk, 3.0 GB (it fits any disk of 4 GB or more) |
+| `open-alert-base-0.24.0+oa1-amd64-uefi.img` | The disk, 3.0 GB (it fits any disk of 4 GB or more) |
 | `…-uefi.img.xz` and `…-uefi.img.xz.sha256` | The same packed for download, about 290 MB, and its SHA-256 |
 | `…-uefi.packages.tsv` | Every Debian package in it with its version |
 | `…-uefi.spdx.json` | The bill of materials: the same list, the `open-alert-base` package, and the RPi ALERT release with its hash and the key that signed it |
 
 `--arch arm64` builds the image for 64-bit ARM computers that start the way a PC does (UEFI
 firmware: ARM servers and "SystemReady" boards). The build does not cross over: it must be run
-on an ARM computer. **It has not been run**; the automatic build is to do it. A board that
+on an ARM computer. The automatic build first ran it on 19 November 2026: the image built, and
+did not start in its virtual machine (QEMU found no start-up program for the network card;
+`test/image.sh` now starts the card without one, untried on GitHub as yet). A board that
 starts from its maker's own boot loader (most small ARM boards) needs its maker's image, and
 takes the package or the container.
 
@@ -956,8 +1164,8 @@ systems, and Debian's archive moves on). What is in a build is recorded beside i
    be sure of it, everything on it is lost):
 
    ```
-   sha256sum -c open-alert-base-0.23.1+oa2-amd64-uefi.img.xz.sha256
-   xz -dc open-alert-base-0.23.1+oa2-amd64-uefi.img.xz | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
+   sha256sum -c open-alert-base-0.24.0+oa1-amd64-uefi.img.xz.sha256
+   xz -dc open-alert-base-0.24.0+oa1-amd64-uefi.img.xz | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
    ```
 
    Any program that writes a disk image will do. None has been tried (the checks start the
@@ -1227,8 +1435,10 @@ Numbers, measured there. **The times are on an emulated processor**; a real PC w
   hardware.
 - **A real serial receiver.** The adapter was QEMU's emulated one (an FTDI type), fed by the
   test. A real Quansheng radio, an ERT-A2 or a GPS has not been plugged in.
-- **The ARM image.** `build-image.sh --arch arm64` and `image.sh --arch arm64` are written and
-  have never been run. The automatic build is their first run.
+- **The ARM image.** `build-image.sh --arch arm64` ran on GitHub's ARM computer on 19 November
+  2026 and built the image; `image.sh --arch arm64` could not start it (no `efi-virtio.rom` for
+  the network card in that QEMU). The change that starts the card without that file has not
+  run on GitHub yet, so the ARM image has never been seen to start.
 - **An update really installed.** `unattended-upgrades` has not fetched or installed anything
   here, and the virtual machine could not reach Debian's archive at all. A kernel update
   followed by a restart with Secure Boot on has not been tried; the boot-loader update was
@@ -1247,7 +1457,8 @@ Numbers, measured there. **The times are on an emulated processor**; a real PC w
   one has done it.
 - **A program that writes disk images** (`dd`, or any other).
 - **A long run, a power cut, a full disk.** Each start in the test lasted minutes.
-- **The image built by the automatic build.** See the next section: that has never run.
+- **The image built by the automatic build** has not been written to a disk or started outside
+  a virtual machine either. Its start test passed on GitHub's PC (see the next section).
 
 ### What the start test showed about the package
 
@@ -1378,6 +1589,21 @@ on this page:
   not running that number was 0, which ends the check script itself. They now check the number
   first.
 
+### A check of the move (19 November 2026)
+
+An independent check then tried the move. Each point was tried again before it was put right:
+
+| | What was found | What was done |
+|---|---|---|
+| A | This page, `audit`, the package's changelog and the security overview said that with `web.behindProxy` on, a web page in a browser on this computer is a visitor. A page that this computer itself serves, under `localhost` or `127.0.0.1` on any port, still counts as the computer itself, as RPi ALERT's own `docs/hardware.md` says ("from a page of that name"): a request asking for `127.0.0.1` with `Origin: http://localhost:3000` was given the settings, while one from `http://evil.example` got "log in first" | All four, the package's own README and `status` now say what is so: a page from another site, or from a name pointed at this computer, is a visitor; any program on the computer, and a page the computer itself serves, are not (see [Why `web.behindProxy` is on in both](#the-two-profiles)). New checks in both profiles try a page from another site, a page from `localhost` on another port, and a `.local` name |
+| B | Answer A7 in `docs/security/controls.md` said the settings file cannot loosen the settings the profile holds. Anybody on the computer can, with `rpi-alert config set`, until the agent next starts or `sync` restarts it; and a proxy's callers are visitors only when the proxy adds `X-Forwarded-For` | A7 now says both, as this page already did |
+| C | This page said a browser on the computer had been tried | It was a request made like a browser's; now said so |
+| D | This page said no check had been made weaker | One had, for a reason: now named, with the reason |
+| E | The container left `web.behindProxy` off, for a reason that holds for Docker's published ports only; another engine may bring the computer's own callers in on the box's `127.0.0.1` | It is on in the container's first settings, as in the package. The health check and `docker exec … rpi-alert` are still the box itself, and a page from another site, sent to the box's `127.0.0.1`, is a visitor (checked) |
+| F | `test/container.sh` left two unnamed volumes behind for each test container it removed (the image declares two), and the image's version tag; the report of the run said none was left | Each container is now removed with its volumes, and the image under both names. After a whole run, none of either is left. Those left by earlier runs since 13 November are still on the test computer |
+| G | The new changelog entry has an e-mail address in its signature line | Kept: Debian's changelog format requires one, and every earlier entry uses the same GitHub no-reply address, which names only the repository's public account. The owner may choose a placeholder for every entry instead (lintian would then warn) |
+| H | Older than the move: with the port taken out of the settings file behind the enterprise profile, the agent falls back to 8080, but `sync` asked for the firewall lock to be moved to port 80, and `status` gave `http://127.0.0.1:80/` | `sync`, `status` and `audit` name the port the agent really opens (above). Nothing was open to other computers meanwhile: the agent stayed on `127.0.0.1`, and the lock keeps other computers from the agent on every port |
+
 ### A check of the result (18 November 2026, later)
 
 A third, independent check then tried the result. It found one point that should hold back a
@@ -1394,9 +1620,38 @@ release, two that should be put right and three small ones:
 
 ## How it is built and checked automatically
 
-**`.github/workflows/firmware.yml` has never run.** It was written and read on a computer that
-cannot run it; its first push to GitHub is its first run, and it should be expected to need
-fixes. What was checked without running it, on 14 November 2026:
+### The first run on GitHub (19 November 2026)
+
+`.github/workflows/firmware.yml` first ran on GitHub with the push of commit `10858be` (run 1),
+still on RPi ALERT 0.23.1 (`0.23.1+oa2`):
+
+| Job | What it showed |
+|---|---|
+| Scripts | shellcheck: nothing to report |
+| Benchmark, x86-64 and ARM | The quick test passed on both |
+| Disk image for PCs | Built, and its whole start test passed with Secure Boot on, under KVM, in under 4 minutes |
+| Disk image for ARM | Built; did not start: QEMU on the ARM computer could not find `efi-virtio.rom`, the network card's start-up program |
+| Package, ARM | Every check ran, the part under a real systemd included: **1,029 passed, none failed, 4 skipped** |
+| Package, x86-64 | **1,028 passed, 1 failed, 4 skipped.** The failure was in RPi ALERT's own test suite on Debian 12: a timing test failed in the full run and passed when the self-test ran it again alone — and `test/deb.sh` counted that as a failure although the self-test said it passed. Its logs could not be kept: the test containers write some of them as root |
+| Container, x86-64 and ARM | One check failed on both: it used `setpriv` to become the user `nobody`, which only root may do, and on GitHub's computers the check already runs as an ordinary user |
+
+What was put right after it, before the next run:
+
+1. `test/image.sh`: on ARM the network card is started with no start-up program of its own
+   (`virtio-net-pci,romfile=`); ARM's UEFI firmware brings its own driver for it.
+2. `test/deb.sh`: a self-test that says "FAILED IN THE FULL RUN, PASSED WHEN RUN AGAIN ALONE"
+   passed, and is counted so, with a note of the test that failed in the full run.
+3. `firmware.yml`: a step makes the test logs readable by the job's own user before they are
+   kept.
+4. `test/container.sh`: run as root, the check becomes `nobody`; run as an ordinary user, it
+   runs as itself.
+
+Then the pin moved to RPi ALERT 0.24.0 (above). The next run is the first on `0.24.0+oa1`.
+
+### Before the first run
+
+The file was first written and read on a computer that cannot run it. What was checked without
+running it, on 14 November 2026:
 
 - it is well-formed (a YAML reader takes it), and every option it gives a script exists in
   that script. No checker made for such files (`actionlint`, for one) was run on it;
@@ -1454,7 +1709,7 @@ is still going.
 repository, as this one is.
 
 **A release.** When a person starts it by hand and fills in *release tag* (for example
-`firmware-0.23.1-oa2`), and only then. The first job's checks run alongside the builds, and
+`firmware-0.24.0-oa1`), and only then. The first job's checks run alongside the builds, and
 nothing is published unless they pass: they stop the release unless the tag is a plain name on
 one line, the run is on the `main` branch, and the tag is in use nowhere — not as a git tag,
 not as a release (published or draft), not as a container under `<tag>`, `<tag>-amd64` or
@@ -1492,8 +1747,8 @@ organisation's) *Packages* → `open-alert-base` → *Package settings* → *Cha
 *Public*. Then:
 
 ```
-docker pull ghcr.io/cdomotor-g/open-alert-base:firmware-0.23.1-oa2
-OA_IMAGE=ghcr.io/cdomotor-g/open-alert-base:firmware-0.23.1-oa2 docker compose -f firmware/container/compose.yaml up -d
+docker pull ghcr.io/cdomotor-g/open-alert-base:firmware-0.24.0-oa1
+OA_IMAGE=ghcr.io/cdomotor-g/open-alert-base:firmware-0.24.0-oa1 docker compose -f firmware/container/compose.yaml up -d
 ```
 
 The release is marked "pre-release" unless the box is unticked. Leave it ticked until an image
@@ -1504,7 +1759,7 @@ were built (`--ignore-missing` passes over the files of the release you did not 
 
 ```
 sha256sum -c --ignore-missing SHA256SUMS
-gh attestation verify open-alert-base_0.23.1+oa2_all.deb --repo cdomotor-g/open-ALERT
+gh attestation verify open-alert-base_0.24.0+oa1_all.deb --repo cdomotor-g/open-ALERT
 ```
 
 **What a reviewer will ask about the file itself:**
@@ -1529,10 +1784,9 @@ gh attestation verify open-alert-base_0.23.1+oa2_all.deb --repo cdomotor-g/open-
   it the stand-in proxy, its agent may fetch Flood-Net's public list of stations, as any new
   base station does. The other virtual machines can reach nothing outside themselves.
 
-What only the first runs will show: whether `test/deb.sh`'s part under a real systemd starts on
-GitHub's computers (on x86-64 the job is run with `--require-systemd`, so a skip there fails the
-job and the first run settles it; on ARM a skip is a warning on the run, until a first run has
-shown it starts); whether GitHub's x86-64 computer
-offers KVM to the image test; whether the ARM image builds and starts at all; whether the two
-packages really are the same file; and the publishing steps, which cannot be tried without
-publishing.
+What the first run settled: `test/deb.sh`'s part under a real systemd starts on GitHub's
+computers, x86-64 and ARM (on ARM a skip is still only a warning; it could now be made a
+failure, as on x86-64); GitHub's x86-64 computer offers KVM to the image test; the ARM image
+builds. What it did not: whether the ARM image starts (the fix has not run there yet), and the
+publishing steps, which cannot be tried without publishing. Whether the two packages are the
+same file is not among what is recorded of that run here.

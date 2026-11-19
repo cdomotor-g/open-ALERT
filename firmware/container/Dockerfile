@@ -99,14 +99,32 @@ COPY --from=fetch /out/agent/package.json /usr/lib/open-alert-base/agent/package
 COPY deb/files/usr/lib/open-alert-base/proxy-preload.js /usr/lib/open-alert-base/proxy-preload.js
 COPY container/healthcheck.js /usr/lib/open-alert-base/healthcheck.js
 # Kept in a new settings volume the first time it is used (Docker copies the
-# image's files into an empty named volume).
+# image's files into an empty named volume). Two of RPi ALERT 0.24's dashboard
+# settings, on purpose:
+#   web.bind empty (every address), as RPi ALERT has it: Docker brings the
+#     published port in on the container's own network address, not on its
+#     127.0.0.1, so an agent kept to 127.0.0.1 could not be reached from the
+#     host at all.
+#   web.behindProxy on, as in the native package. With Docker every caller
+#     from outside, the host's own browser included, comes in from Docker's
+#     network, never from the container's 127.0.0.1, so it is a visitor with
+#     the setting on or off. That rests on how Docker brings the port in, and
+#     was checked with Docker only: another engine (rootless Podman, say) or
+#     the host's network may bring the host's own callers in on 127.0.0.1, and
+#     then the setting is what keeps a web page in the host's browser from
+#     being taken for the container itself. It costs a line in the log at each
+#     start; the health check and "docker exec … rpi-alert" ask the way the
+#     rpi-alert command does, and are still the container itself.
+#     (firmware/test/container.sh checks all of this.)
 COPY --chown=990:990 container/config.default.json /etc/rpi-alert/config.json
 # The agent's own command line, by the name its documentation uses (docker exec NAME rpi-alert status).
 RUN ln -s /usr/lib/open-alert-base/agent/bin/rpi-alert /usr/local/bin/rpi-alert
 
 # Nothing in here can ask for the administrator account: the helper the agent
 # would call does not exist. The host keeps the time, so the agent need not ask
-# systemd (which is not here) whether the clock is right.
+# systemd (which is not here) whether the clock is right. (From 0.24 the agent
+# sees for itself that systemd is not running here and trusts the clock; this
+# says so outright.)
 ENV NODE_ENV=production \
     UV_THREADPOOL_SIZE=8 \
     HOME=/var/lib/rpi-alert \

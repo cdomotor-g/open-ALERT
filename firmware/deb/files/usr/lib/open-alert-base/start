@@ -1,8 +1,20 @@
 #!/bin/bash
 # Starts the RPi ALERT agent for open-alert-base.service.
 #
-# The service's own file says who it runs as and what it may touch; this only
-# decides how a web proxy is handed to Node.js, then becomes the agent.
+# The service's own file says who it runs as and what it may touch. This does
+# two things, then becomes the agent:
+#
+# 1. The settings the profile in force holds. The profile is root's own
+#    (/etc/open-alert-base/profile names it); the settings file is the agent's
+#    user's. Where the profile asks for the dashboard closed — on this computer
+#    only (web.bind), a reverse proxy's callers never taken for this computer
+#    itself (web.behindProxy), a login for everything (web.requireLogin) — the
+#    settings file may ask for that or more, never for less: what it has looser
+#    is put back as the profile has it, through the agent's own settings code,
+#    and the service's log says so (settings.js hold). If that cannot be done,
+#    the agent is not started.
+#
+# 2. How a web proxy is handed to Node.js:
 #   No HTTPS_PROXY in /etc/open-alert-base/env: nothing is added at all.
 #   Node.js 22.21 or newer (and 24 or newer): it reads the proxy settings
 #     itself once told to (NODE_USE_ENV_PROXY=1).
@@ -24,6 +36,24 @@ if [ ! -x "$NODE" ]; then
   echo "open-alert-base: Node.js was not found at $NODE (see OPEN_ALERT_BASE_NODE in /etc/open-alert-base/env)" >&2
   exit 78
 fi
+
+# 1. The settings the profile in force holds.
+profile=''
+if [ -r /etc/open-alert-base/profile ]; then profile=$(head -n 1 /etc/open-alert-base/profile); fi
+case "$profile" in
+  ''|*[!a-z0-9-]*) ;;
+  *)
+    if [ -f "/usr/share/open-alert-base/profiles/$profile.json" ]; then
+      rc=0
+      "$NODE" "$LIB/settings.js" hold "/usr/share/open-alert-base/profiles/$profile.json" || rc=$?
+      if [ "$rc" != 0 ]; then
+        echo "open-alert-base: THE AGENT IS NOT STARTED: the settings the profile \"$profile\" holds could not be made to hold (see above). Put it right, then: sudo systemctl restart open-alert-base" >&2
+        exit 1
+      fi
+    fi ;;
+esac
+
+# 2. The web proxy.
 
 proxy="${HTTPS_PROXY:-${https_proxy:-}}"
 if [ -n "$proxy" ]; then

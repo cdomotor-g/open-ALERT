@@ -1,5 +1,5 @@
 {
-  "web": { "port": 8080 },
+  "web": { "port": 8080, "behindProxy": true },
   "remote": { "mode": "report" },
   "hotspot": { "mode": "off" },
   "recover": { "mode": "off" },

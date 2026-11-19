@@ -801,7 +801,7 @@
   // not the README's counts.
   const software = {
     lead: 'No rewrite is needed. RPi ALERT\'s own program already runs unchanged off a Raspberry Pi: all 247 of its tests pass on plain {{debian|Ubuntu}} on an ordinary {{arm|PC processor}}. What ties it to a Raspberry Pi is its installer and its memory-card image. The firmware/ folder of this repository replaces those two: it takes RPi ALERT\'s {{signed|signed release}}, unchanged, and wraps it three ways.',
-    source: { name: 'RPi ALERT\'s signed release', sub: 'Taken unchanged. Checked five ways before anything is unpacked. Version 0.23.1 on 13 November 2026.' },
+    source: { name: 'RPi ALERT\'s signed release', sub: 'Taken unchanged. Checked five ways before anything is unpacked. Version 0.24.0 since 19 November 2026 (0.23.1 before).' },
     forms: [
       { id: 'package', name: 'A package: open-alert-base', sub: 'For any Debian 13 or Ubuntu 24.04 computer, PC or ARM.', status: 'Built, and tested with stand-ins for the radio', cls: 'warn',
         takes: 'Every PC here, and the CompuLab box. The Moxa should take it, but nobody has checked: ask Moxa. The Beagle boards take it on BeagleBoard.org\'s own Debian.' },
@@ -817,7 +817,7 @@
       rows: [
         ['For', 'A base station on a small network, or a network of its own', 'A base station inside a government or corporate network'],
         ['Its {{dashboard|dashboard}} is on', 'Port 80, as on a Raspberry Pi', 'Port 8080'],
-        ['The dashboard can be reached from', 'The local network', 'The computer itself only, kept so by a firewall lock'],
+        ['The dashboard can be reached from', 'The local network', 'The computer itself only: the program listens there alone, and a firewall lock keeps others out as well'],
         ['What Flood-Net may do', 'Manage it: change radio settings, restart receivers', 'Be told how it is. Whatever Flood-Net asks is refused, and even the reports can be switched off'],
         ['Its own Wi-Fi hotspot', 'Off', 'Off'],
         ['Restarting the network or the computer by itself', 'Off', 'Off'],
@@ -825,7 +825,7 @@
         ['A web proxy and a private certificate authority', 'Supported', 'Supported'],
       ],
       note: 'In both, the package installs no administrator shortcut, no maintenance account, no updater and no hotspot: accounts, remote login, operating-system updates and logs stay the organisation\'s own. A new version arrives as a new package built from the next signed release.',
-      caveat: 'Two things the firmware\'s notes say plainly. RPi ALERT 0.23.1 has no setting of its own to keep its dashboard to the computer itself, so today the firewall lock is what does it; version 0.24 adds the setting. And anybody logged in on the computer itself can still open the dashboard without a password.',
+      caveat: 'Two things the firmware\'s notes say plainly. Until 19 November 2026 the firmware shipped RPi ALERT 0.23.1, which had no setting of its own to keep its dashboard to the computer itself, and the firewall lock alone did it; with 0.24.0 the program keeps to the computer itself, and the lock is a second guard. And anybody logged in on the computer itself can still open the dashboard without a password.',
     },
     containerLead: 'On the worry that a container wastes processor power: it does not.',
     container: [

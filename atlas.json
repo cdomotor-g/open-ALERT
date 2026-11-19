@@ -385,7 +385,7 @@
         "os/install.sh"
       ],
       "since": {
-        "date": "2026-11-11"
+        "date": "2026-11-19"
       },
       "on_change": "Re-check model.windows (each window's Pi 4 figure), loadFactor, the decoders' burstS and a2S, a2DecodeS and kioskCore in site/data/builder.js, the channel rule in site/js/engine.js (SDR_CH_CORE) and the steps() text in site/js/builder.js; run npm test."
     }

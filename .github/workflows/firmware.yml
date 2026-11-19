@@ -35,7 +35,8 @@ name: firmware
 # both. Signing in to the container registry is one line of "docker login",
 # not an action.
 #
-# This file has not yet run on GitHub: its first push is its first run. See
+# It first ran on GitHub on 19 November 2026 (run 1, the push of commit
+# 10858be). What that run found, and what was put right after it, is under
 # "How it is built and checked automatically" in firmware/README.md.
 
 on:
@@ -48,7 +49,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Publish a release under this tag (for example firmware-0.23.1-oa2). Leave empty to build and check only.'
+        description: 'Publish a release under this tag (for example firmware-0.24.0-oa1). Leave empty to build and check only.'
         required: false
         default: ''
         type: string
@@ -156,7 +157,8 @@ jobs:
         # "systemd": the part of the check that runs the service under a real
         # systemd, in a container. On a PC it is required: if systemd will not
         # start there, the job fails. On ARM it is wanted: a skip is a warning
-        # on the run, not a failure, until a first run has shown it starts.
+        # on the run, not a failure. (In the first run, on 19 November 2026,
+        # it started on both; ARM can be made "required" too.)
         include:
           - { arch: amd64, runner: ubuntu-24.04, systemd: required }
           - { arch: arm64, runner: ubuntu-24.04-arm, systemd: wanted }
@@ -216,6 +218,11 @@ jobs:
           path: dist/open-alert-base_*_all.deb
           if-no-files-found: error
           retention-days: 14
+      # The test containers write some logs as root, readable by root only;
+      # the upload runs as the runner's own user.
+      - name: Make the logs readable by this job
+        if: ${{ always() }}
+        run: if [ -d dist/test-logs ]; then sudo chown -R "$(id -u):$(id -g)" dist/test-logs; fi
       - name: Keep the logs
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -366,9 +373,12 @@ jobs:
           retention-days: 14
 
   # The ARM image is built on an ARM computer (the build does not cross over).
-  # Its start test has never been run by anybody: the first runs of this job
-  # are its first runs. So a failed start test does not fail the whole run —
-  # but an ARM image whose start test did not pass is not published.
+  # Its start test has not passed yet: in the first run (19 November 2026) the
+  # image built, and QEMU could not start it because it found no start-up
+  # program for the network card (efi-virtio.rom); test/image.sh now starts
+  # the card without one. Until a run shows it starting, a failed start test
+  # does not fail the whole run — but an ARM image whose start test did not
+  # pass is not published.
   image-arm64:
     name: Disk image for 64-bit ARM (arm64) — build, then try to start it
     runs-on: ubuntu-24.04-arm

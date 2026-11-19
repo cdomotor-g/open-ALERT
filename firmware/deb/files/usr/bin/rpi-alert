@@ -21,8 +21,9 @@ case "${1:-}" in
     echo "your organisation's own accounts and rules." >&2
     exit 2 ;;
   import-boot-config)
-    echo "rpi-alert: 'import-boot-config' reads a settings file from a Raspberry Pi's SD card as root." >&2
-    echo "open-alert-base does not use one: use 'rpi-alert setup', 'rpi-alert config set' or the dashboard." >&2
+    echo "rpi-alert: 'import-boot-config' applies a settings file as root: from a Raspberry Pi's SD card, or" >&2
+    echo "(on other computers) /etc/rpi-alert.conf. open-alert-base applies neither: use 'rpi-alert setup'," >&2
+    echo "'rpi-alert config set', the dashboard, or a profile (sudo open-alert-base profile <name>)." >&2
     exit 2 ;;
 esac
 
